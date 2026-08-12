@@ -20,7 +20,7 @@
     --line:#3A3327;
     --ink:#EDE6D8;
     --ink-dim:#9C9384;
-    --gold:#C9A227;
+    --gold:#8e4aa8;
     --gold-dim:#8A7020;
     --teal:#4F8F86;
     --radius:10px;
@@ -30,6 +30,7 @@
   body{padding-bottom:64px;}
   .display{font-family:'Fraunces',serif;}
   ::selection{background:var(--gold); color:#17140F;}
+  .hidden{display:none !important;}
 
   header{
     padding:28px 20px 18px;
@@ -40,13 +41,14 @@
   }
   .eyebrow{
     font-size:11px; letter-spacing:0.18em; text-transform:uppercase;
-    color:var(--gold); font-weight:600; display:flex; justify-content:space-between; align-items:center;
+    color:var(--gold); font-weight:600; display:flex; justify-content:space-between; align-items:center; gap:10px;
   }
-  .gear{
+  .eyebrow .label{flex:1;}
+  .gear, .back-btn{
     background:none; border:none; color:var(--ink-dim); font-size:18px; cursor:pointer;
     padding:4px 6px; line-height:1;
   }
-  .gear:active{color:var(--gold);}
+  .gear:active, .back-btn:active{color:var(--gold);}
   h1{
     font-family:'Fraunces',serif; font-weight:600; font-size:26px; margin:6px 0 0;
     letter-spacing:-0.01em; line-height:1.15;
@@ -93,12 +95,14 @@
   .sync-btn:active{background:var(--gold-dim);}
   .sync-btn:disabled{opacity:0.55;}
   .sync-btn.needs-setup{background:var(--card-hi); color:var(--ink-dim); border:1px solid var(--line);}
+  .sync-btn-secondary{background:var(--card-hi); color:var(--ink-dim); border:1px solid var(--line); margin-top:10px;}
+  .sync-btn-secondary:active{background:var(--line);}
+  .library-stat{font-size:10.5px; color:var(--ink-dim); margin-top:6px; line-height:1.5;}
 
-  .sync-note{font-size:11px; color:var(--ink-dim); margin-top:8px; min-height:14px;}
+  .sync-note{font-size:11px; color:var(--ink-dim); margin-top:8px; min-height:14px; line-height:1.5;}
 
   .filters{
-    display:flex; gap:6px; padding:14px 20px 0; position:sticky; top:157px; z-index:4;
-    background:var(--bg);
+    display:flex; gap:6px; margin-top:14px;
   }
   .filters button{
     flex:1; padding:8px 4px; font-size:11px; letter-spacing:0.06em; text-transform:uppercase;
@@ -108,6 +112,29 @@
   .filters button.active{background:var(--gold); color:#17140F; border-color:var(--gold); font-weight:600;}
 
   main{padding:14px 14px 20px;}
+
+  /* dashboard */
+  .dash-grid{display:flex; flex-direction:column; gap:10px;}
+  .dash-card{
+    position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:16px; cursor:pointer;
+  }
+  .dash-card:active{background:var(--card-hi);}
+  .dash-card-top{display:flex; justify-content:flex-end;}
+  .dash-count{font-size:11px; color:var(--ink-dim);}
+  .dash-title{font-family:'Fraunces',serif; font-weight:500; font-size:17px; margin-top:2px;}
+  .dash-bar{height:4px; background:var(--line); border-radius:2px; margin-top:10px; overflow:hidden;}
+  .dash-bar-fill{height:100%; background:var(--gold); border-radius:2px;}
+  .dash-icon{font-size:15px; margin-right:auto;}
+  .world-card{border-color:var(--gold-dim);}
+  .dash-add{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; border-style:dashed; color:var(--ink-dim);}
+  .dash-add-plus{font-size:22px; color:var(--gold);}
+  .dash-add .dash-title{color:var(--ink-dim);}
+  .dash-delete{
+    position:absolute; top:10px; right:10px; background:none; border:none; color:var(--ink-dim);
+    font-size:16px; cursor:pointer; line-height:1; padding:2px 6px;
+  }
+
   .album{
     display:flex; gap:12px; align-items:flex-start;
     padding:14px 10px; border-bottom:1px solid var(--line);
@@ -121,7 +148,6 @@
   .album-title{
     font-family:'Fraunces',serif; font-weight:500; font-size:17px; line-height:1.3; margin-top:1px;
   }
-  .album-title.editable{border-bottom:1px dashed transparent;}
   .album-meta{
     font-size:10.5px; color:var(--ink-dim); margin-top:5px; display:flex; gap:8px; flex-wrap:wrap;
   }
@@ -150,11 +176,25 @@
     background:var(--card-hi); color:var(--ink-dim); font-family:'IBM Plex Mono',monospace; cursor:pointer;
   }
 
+  /* world tour */
+  .country-row{
+    display:flex; gap:12px; align-items:center; padding:12px 10px; border-bottom:1px solid var(--line);
+  }
+  .country-row .flag{font-size:22px; flex:none; opacity:0.55;}
+  .country-row.visited .flag{opacity:1;}
+  .country-main{flex:1; min-width:0;}
+  .country-name{font-family:'Fraunces',serif; font-weight:500; font-size:15px;}
+  .country-row:not(.visited) .country-name{color:var(--ink-dim);}
+  .country-match{font-size:10.5px; color:var(--teal); margin-top:3px; line-height:1.4;}
+  .match-list{color:var(--ink-dim);}
+  .country-row .check{width:24px; height:24px; font-size:12px;}
+  .country-row.visited .check{background:var(--teal); border-color:var(--teal); color:#17140F;}
+
   .empty-hint{
     text-align:center; color:var(--ink-dim); font-size:12px; padding:40px 20px; line-height:1.6;
   }
 
-  /* settings modal */
+  /* modals */
   .modal-backdrop{
     position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10; display:none;
   }
@@ -162,7 +202,7 @@
   .modal{
     position:fixed; left:0; right:0; bottom:0; z-index:11; background:var(--card);
     border-top:1px solid var(--line); border-radius:16px 16px 0 0; padding:20px 20px 32px;
-    transform:translateY(100%); transition:transform .25s ease;
+    transform:translateY(100%); transition:transform .25s ease; max-height:82vh; overflow-y:auto;
   }
   .modal.open{transform:translateY(0);}
   .modal h2{font-family:'Fraunces',serif; font-size:19px; margin:0 0 4px;}
@@ -170,10 +210,11 @@
   .modal a{color:var(--gold);}
   .field{margin-bottom:14px;}
   .field label{font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-dim); display:block; margin-bottom:5px;}
-  .field input{
+  .field input, .field textarea{
     width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink);
     padding:10px 12px; font-family:'IBM Plex Mono',monospace; font-size:13px; border-radius:8px;
   }
+  .field textarea{resize:vertical; line-height:1.5;}
   .modal-actions{display:flex; gap:10px; margin-top:6px;}
   .modal-actions button{
     flex:1; padding:12px; border-radius:8px; border:none; font-family:'IBM Plex Mono',monospace;
@@ -191,44 +232,76 @@
 
 <header>
   <div class="eyebrow">
-    <span>Listening Log</span>
+    <button class="back-btn hidden" id="backBtn" onclick="goDashboard()">&larr;</button>
+    <span class="label">Listening Log</span>
     <button class="gear" onclick="openSettings()">⚙</button>
   </div>
-  <select id="listSelector" onchange="switchList(this.value)"></select>
 
-  <div class="status-row">
-    <div class="ring-wrap">
-      <svg width="64" height="64" viewBox="0 0 64 64">
-        <circle class="ring-track" cx="32" cy="32" r="27"></circle>
-        <circle class="ring-fill" id="ringFill" cx="32" cy="32" r="27" stroke-dasharray="169.6" stroke-dashoffset="169.6"></circle>
-      </svg>
-      <div class="ring-count" id="ringPct">0%</div>
+  <div id="dashboardHeader">
+    <h1>Your Lists</h1>
+  </div>
+
+  <div id="listHeader" class="hidden">
+    <select id="listSelector" onchange="goList(this.value)"></select>
+    <div class="status-row">
+      <div class="ring-wrap">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle class="ring-track" cx="32" cy="32" r="27"></circle>
+          <circle class="ring-fill" id="ringFill" cx="32" cy="32" r="27" stroke-dasharray="169.6" stroke-dashoffset="169.6"></circle>
+        </svg>
+        <div class="ring-count" id="ringPct">0%</div>
+      </div>
+      <div class="status-text">
+        <div class="big" id="progressCount">0 of 0 listened</div>
+        <div class="small" id="progressSub"></div>
+        <div class="small" id="tripleStat"></div>
+      </div>
     </div>
-    <div class="status-text">
-      <div class="big" id="progressCount">0 of 100 listened</div>
-      <div class="small" id="progressSub">Manual check-off — connect Last.fm to auto-sync</div>
-      <div class="small" id="tripleStat"></div>
+    <button class="sync-btn needs-setup" id="syncBtn" onclick="handleSyncClick()">Connect Last.fm to sync</button>
+    <div class="sync-note" id="syncNote"></div>
+    <div class="filters">
+      <button class="active" data-filter="all" onclick="setFilter('all')">All</button>
+      <button data-filter="unheard" onclick="setFilter('unheard')">Unheard</button>
+      <button data-filter="heard" onclick="setFilter('heard')">Heard</button>
     </div>
   </div>
 
-  <button class="sync-btn needs-setup" id="syncBtn" onclick="handleSyncClick()">Connect Last.fm to sync</button>
-  <div class="sync-note" id="syncNote"></div>
-
-  <div class="filters">
-    <button class="active" data-filter="all" onclick="setFilter('all')">All</button>
-    <button data-filter="unheard" onclick="setFilter('unheard')">Unheard</button>
-    <button data-filter="heard" onclick="setFilter('heard')">Heard</button>
+  <div id="worldHeader" class="hidden">
+    <h1>World Tour</h1>
+    <div class="status-row">
+      <div class="ring-wrap">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle class="ring-track" cx="32" cy="32" r="27"></circle>
+          <circle class="ring-fill" id="worldRingFill" cx="32" cy="32" r="27" stroke-dasharray="169.6" stroke-dashoffset="169.6"></circle>
+        </svg>
+        <div class="ring-count" id="worldRingPct">0%</div>
+      </div>
+      <div class="status-text">
+        <div class="big" id="worldProgressCount">0 of 195 countries</div>
+        <div class="small" id="worldProgressSub">Match artists to countries via MusicBrainz</div>
+      </div>
+    </div>
+    <button class="sync-btn needs-setup" id="worldSyncBtn" onclick="syncCountries()">Match artist countries</button>
+    <div class="sync-note" id="worldSyncNote"></div>
+    <button class="sync-btn sync-btn-secondary" id="librarySyncBtn" onclick="syncLibraryArtists()">Also check my full Last.fm library</button>
+    <div class="library-stat" id="libraryStat"></div>
+    <div class="filters">
+      <button class="active" data-filter="all" onclick="setWorldFilter('all')">All</button>
+      <button data-filter="unvisited" onclick="setWorldFilter('unvisited')">Unvisited</button>
+      <button data-filter="visited" onclick="setWorldFilter('visited')">Visited</button>
+    </div>
   </div>
 </header>
 
-<main id="albumList"></main>
+<main id="content"></main>
 
-<div class="modal-backdrop" id="backdrop" onclick="closeSettings()"></div>
+<div class="modal-backdrop" id="backdrop" onclick="closeAllModals()"></div>
+
 <div class="modal" id="settingsModal">
   <h2>Connect Last.fm</h2>
   <p>
     Free API key from <a href="https://www.last.fm/api/account/create" target="_blank">last.fm/api/account/create</a>
-    — any app name/description works. Nothing is sent anywhere except directly from this page to Last.fm.
+    — any app name/description works. Nothing is sent anywhere except directly from this page to Last.fm and MusicBrainz.
   </p>
   <div class="field">
     <label>Last.fm username</label>
@@ -239,16 +312,34 @@
     <input id="inputApiKey" type="text" autocapitalize="off" autocorrect="off" placeholder="32-character key">
   </div>
   <div class="modal-actions">
-    <button class="btn-close" onclick="closeSettings()">Close</button>
+    <button class="btn-close" onclick="closeAllModals()">Close</button>
     <button class="btn-save" onclick="saveSettings()">Save</button>
   </div>
 </div>
 
+<div class="modal" id="newListModal">
+  <h2>New list</h2>
+  <p>
+    Paste lines like <em>Artist — Album Title (Year) | Genre</em>, one per line. Year and genre are optional,
+    junk/placeholder lines are skipped automatically, and exact duplicates get merged.
+  </p>
+  <div class="field">
+    <label>List name</label>
+    <input id="newListName" type="text" placeholder="e.g. Jazz Essentials">
+  </div>
+  <div class="field">
+    <label>Albums (one per line)</label>
+    <textarea id="newListText" rows="10" placeholder="Miles Davis — Kind of Blue (1959) | Jazz"></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn-close" onclick="closeAllModals()">Cancel</button>
+    <button class="btn-save" onclick="createNewList()">Create list</button>
+  </div>
+</div>
+
 <script>
-/* ---------- ALBUM DATA ----------
-   Add more lists by pushing another {id, title, albums} object into LISTS.
-   Each album: a = artist, t = title, y = year, g = genre (used for lookup + display) */
-const LISTS = [
+/* ---------- ALBUM DATA ---------- */
+const BUILTIN_LISTS = [
   {
     id: "100-albums-understand-music",
     title: "100 Albums to Understand Music",
@@ -715,30 +806,70 @@ const LISTS = [
   }
 ];
 
-/* ---------- STATE ---------- */
-let activeList = LISTS.find(l => l.id === localStorage.getItem("ll_active_list_id")) || LISTS[0];
-let filter = "all";
+/* ---------- COUNTRY DATA ----------
+   195 widely-recognized countries (193 UN member states + Holy See + State of Palestine). */
+const COUNTRIES = [
+  {name:"Algeria",iso2:"DZ"},{name:"Angola",iso2:"AO"},{name:"Benin",iso2:"BJ"},{name:"Botswana",iso2:"BW"},
+  {name:"Burkina Faso",iso2:"BF"},{name:"Burundi",iso2:"BI"},{name:"Cabo Verde",iso2:"CV"},{name:"Cameroon",iso2:"CM"},
+  {name:"Central African Republic",iso2:"CF"},{name:"Chad",iso2:"TD"},{name:"Comoros",iso2:"KM"},
+  {name:"Congo (Republic of the)",iso2:"CG"},{name:"Congo (Democratic Republic of the)",iso2:"CD"},
+  {name:"Djibouti",iso2:"DJ"},{name:"Egypt",iso2:"EG"},{name:"Equatorial Guinea",iso2:"GQ"},{name:"Eritrea",iso2:"ER"},
+  {name:"Eswatini",iso2:"SZ"},{name:"Ethiopia",iso2:"ET"},{name:"Gabon",iso2:"GA"},{name:"Gambia",iso2:"GM"},
+  {name:"Ghana",iso2:"GH"},{name:"Guinea",iso2:"GN"},{name:"Guinea-Bissau",iso2:"GW"},{name:"Ivory Coast",iso2:"CI"},
+  {name:"Kenya",iso2:"KE"},{name:"Lesotho",iso2:"LS"},{name:"Liberia",iso2:"LR"},{name:"Libya",iso2:"LY"},
+  {name:"Madagascar",iso2:"MG"},{name:"Malawi",iso2:"MW"},{name:"Mali",iso2:"ML"},{name:"Mauritania",iso2:"MR"},
+  {name:"Mauritius",iso2:"MU"},{name:"Morocco",iso2:"MA"},{name:"Mozambique",iso2:"MZ"},{name:"Namibia",iso2:"NA"},
+  {name:"Niger",iso2:"NE"},{name:"Nigeria",iso2:"NG"},{name:"Rwanda",iso2:"RW"},{name:"Sao Tome and Principe",iso2:"ST"},
+  {name:"Senegal",iso2:"SN"},{name:"Seychelles",iso2:"SC"},{name:"Sierra Leone",iso2:"SL"},{name:"Somalia",iso2:"SO"},
+  {name:"South Africa",iso2:"ZA"},{name:"South Sudan",iso2:"SS"},{name:"Sudan",iso2:"SD"},{name:"Tanzania",iso2:"TZ"},
+  {name:"Togo",iso2:"TG"},{name:"Tunisia",iso2:"TN"},{name:"Uganda",iso2:"UG"},{name:"Zambia",iso2:"ZM"},{name:"Zimbabwe",iso2:"ZW"},
 
-function populateListSelector(){
-  const sel = document.getElementById("listSelector");
-  sel.innerHTML = "";
-  LISTS.forEach(l => {
-    const opt = document.createElement("option");
-    opt.value = l.id;
-    opt.textContent = l.title;
-    if(l.id === activeList.id) opt.selected = true;
-    sel.appendChild(opt);
-  });
-}
-function switchList(id){
-  activeList = LISTS.find(l => l.id === id) || LISTS[0];
-  localStorage.setItem("ll_active_list_id", activeList.id);
-  progress = loadProgress();
-  filter = "all";
-  document.querySelectorAll(".filters button").forEach(b => b.classList.toggle("active", b.dataset.filter === "all"));
-  render();
-}
+  {name:"Afghanistan",iso2:"AF"},{name:"Armenia",iso2:"AM"},{name:"Azerbaijan",iso2:"AZ"},{name:"Bahrain",iso2:"BH"},
+  {name:"Bangladesh",iso2:"BD"},{name:"Bhutan",iso2:"BT"},{name:"Brunei",iso2:"BN"},{name:"Cambodia",iso2:"KH"},
+  {name:"China",iso2:"CN"},{name:"Cyprus",iso2:"CY"},{name:"Georgia",iso2:"GE"},{name:"India",iso2:"IN"},
+  {name:"Indonesia",iso2:"ID"},{name:"Iran",iso2:"IR"},{name:"Iraq",iso2:"IQ"},{name:"Israel",iso2:"IL"},
+  {name:"Japan",iso2:"JP"},{name:"Jordan",iso2:"JO"},{name:"Kazakhstan",iso2:"KZ"},{name:"Kuwait",iso2:"KW"},
+  {name:"Kyrgyzstan",iso2:"KG"},{name:"Laos",iso2:"LA"},{name:"Lebanon",iso2:"LB"},{name:"Malaysia",iso2:"MY"},
+  {name:"Maldives",iso2:"MV"},{name:"Mongolia",iso2:"MN"},{name:"Myanmar",iso2:"MM"},{name:"Nepal",iso2:"NP"},
+  {name:"North Korea",iso2:"KP"},{name:"Oman",iso2:"OM"},{name:"Pakistan",iso2:"PK"},{name:"Palestine",iso2:"PS"},
+  {name:"Philippines",iso2:"PH"},{name:"Qatar",iso2:"QA"},{name:"Saudi Arabia",iso2:"SA"},{name:"Singapore",iso2:"SG"},
+  {name:"South Korea",iso2:"KR"},{name:"Sri Lanka",iso2:"LK"},{name:"Syria",iso2:"SY"},{name:"Tajikistan",iso2:"TJ"},
+  {name:"Thailand",iso2:"TH"},{name:"Timor-Leste",iso2:"TL"},{name:"Turkey",iso2:"TR"},{name:"Turkmenistan",iso2:"TM"},
+  {name:"United Arab Emirates",iso2:"AE"},{name:"Uzbekistan",iso2:"UZ"},{name:"Vietnam",iso2:"VN"},{name:"Yemen",iso2:"YE"},
 
+  {name:"Albania",iso2:"AL"},{name:"Andorra",iso2:"AD"},{name:"Austria",iso2:"AT"},{name:"Belarus",iso2:"BY"},
+  {name:"Belgium",iso2:"BE"},{name:"Bosnia and Herzegovina",iso2:"BA"},{name:"Bulgaria",iso2:"BG"},{name:"Croatia",iso2:"HR"},
+  {name:"Czech Republic",iso2:"CZ"},{name:"Denmark",iso2:"DK"},{name:"Estonia",iso2:"EE"},{name:"Finland",iso2:"FI"},
+  {name:"France",iso2:"FR"},{name:"Germany",iso2:"DE"},{name:"Greece",iso2:"GR"},{name:"Hungary",iso2:"HU"},
+  {name:"Iceland",iso2:"IS"},{name:"Ireland",iso2:"IE"},{name:"Italy",iso2:"IT"},{name:"Latvia",iso2:"LV"},
+  {name:"Liechtenstein",iso2:"LI"},{name:"Lithuania",iso2:"LT"},{name:"Luxembourg",iso2:"LU"},{name:"Malta",iso2:"MT"},
+  {name:"Moldova",iso2:"MD"},{name:"Monaco",iso2:"MC"},{name:"Montenegro",iso2:"ME"},{name:"Netherlands",iso2:"NL"},
+  {name:"North Macedonia",iso2:"MK"},{name:"Norway",iso2:"NO"},{name:"Poland",iso2:"PL"},{name:"Portugal",iso2:"PT"},
+  {name:"Romania",iso2:"RO"},{name:"Russia",iso2:"RU"},{name:"San Marino",iso2:"SM"},{name:"Serbia",iso2:"RS"},
+  {name:"Slovakia",iso2:"SK"},{name:"Slovenia",iso2:"SI"},{name:"Spain",iso2:"ES"},{name:"Sweden",iso2:"SE"},
+  {name:"Switzerland",iso2:"CH"},{name:"Ukraine",iso2:"UA"},{name:"United Kingdom",iso2:"GB"},{name:"Vatican City",iso2:"VA"},
+
+  {name:"Antigua and Barbuda",iso2:"AG"},{name:"Argentina",iso2:"AR"},{name:"Bahamas",iso2:"BS"},{name:"Barbados",iso2:"BB"},
+  {name:"Belize",iso2:"BZ"},{name:"Bolivia",iso2:"BO"},{name:"Brazil",iso2:"BR"},{name:"Canada",iso2:"CA"},
+  {name:"Chile",iso2:"CL"},{name:"Colombia",iso2:"CO"},{name:"Costa Rica",iso2:"CR"},{name:"Cuba",iso2:"CU"},
+  {name:"Dominica",iso2:"DM"},{name:"Dominican Republic",iso2:"DO"},{name:"Ecuador",iso2:"EC"},{name:"El Salvador",iso2:"SV"},
+  {name:"Grenada",iso2:"GD"},{name:"Guatemala",iso2:"GT"},{name:"Guyana",iso2:"GY"},{name:"Haiti",iso2:"HT"},
+  {name:"Honduras",iso2:"HN"},{name:"Jamaica",iso2:"JM"},{name:"Mexico",iso2:"MX"},{name:"Nicaragua",iso2:"NI"},
+  {name:"Panama",iso2:"PA"},{name:"Paraguay",iso2:"PY"},{name:"Peru",iso2:"PE"},{name:"Saint Kitts and Nevis",iso2:"KN"},
+  {name:"Saint Lucia",iso2:"LC"},{name:"Saint Vincent and the Grenadines",iso2:"VC"},{name:"Suriname",iso2:"SR"},
+  {name:"Trinidad and Tobago",iso2:"TT"},{name:"United States",iso2:"US"},{name:"Uruguay",iso2:"UY"},{name:"Venezuela",iso2:"VE"},
+
+  {name:"Australia",iso2:"AU"},{name:"Fiji",iso2:"FJ"},{name:"Kiribati",iso2:"KI"},{name:"Marshall Islands",iso2:"MH"},
+  {name:"Micronesia",iso2:"FM"},{name:"Nauru",iso2:"NR"},{name:"New Zealand",iso2:"NZ"},{name:"Palau",iso2:"PW"},
+  {name:"Papua New Guinea",iso2:"PG"},{name:"Samoa",iso2:"WS"},{name:"Solomon Islands",iso2:"SB"},{name:"Tonga",iso2:"TO"},
+  {name:"Tuvalu",iso2:"TV"},{name:"Vanuatu",iso2:"VU"}
+];
+
+const AREA_TO_COUNTRY_ISO = {
+  "England":"GB", "Scotland":"GB", "Wales":"GB", "Northern Ireland":"GB"
+};
+
+/* ---------- SETTINGS / CUSTOM LISTS ---------- */
 function loadSettings(){
   try{
     const s = JSON.parse(localStorage.getItem("ll_settings"));
@@ -748,77 +879,217 @@ function loadSettings(){
 }
 function saveSettingsObj(s){ localStorage.setItem("ll_settings", JSON.stringify(s)); }
 
-function loadProgress(){
-  try{ return JSON.parse(localStorage.getItem("ll_progress_" + activeList.id)) || {}; }
+function loadCustomLists(){
+  try{ return JSON.parse(localStorage.getItem("ll_custom_lists")) || []; }
+  catch(e){ return []; }
+}
+function saveCustomLists(l){ localStorage.setItem("ll_custom_lists", JSON.stringify(l)); }
+
+function loadArtistCountries(){
+  try{ return JSON.parse(localStorage.getItem("ll_artist_countries")) || {}; }
   catch(e){ return {}; }
 }
-function saveProgress(p){ localStorage.setItem("ll_progress_" + activeList.id, JSON.stringify(p)); }
+function saveArtistCountries(m){ localStorage.setItem("ll_artist_countries", JSON.stringify(m)); }
+
+function loadLibraryArtists(){
+  try{ return JSON.parse(localStorage.getItem("ll_library_artists")) || {list: [], syncedAt: null}; }
+  catch(e){ return {list: [], syncedAt: null}; }
+}
+function saveLibraryArtists(obj){ localStorage.setItem("ll_library_artists", JSON.stringify(obj)); }
 
 let settings = loadSettings();
-let progress = loadProgress();
+let customLists = loadCustomLists();
+let artistCountries = loadArtistCountries();
+let libraryArtists = loadLibraryArtists();
 
-function entryFor(i){
-  if(!progress[i]) progress[i] = {manual:null, playcount:null, syncedAt:null, ov_a:null, ov_t:null};
-  return progress[i];
+function getAllLists(){ return BUILTIN_LISTS.concat(customLists); }
+function isCustomListId(id){ return customLists.some(l => l.id === id); }
+
+/* ---------- PROGRESS HELPERS (list-agnostic) ---------- */
+function getProgressFor(listId){
+  try{ return JSON.parse(localStorage.getItem("ll_progress_" + listId)) || {}; }
+  catch(e){ return {}; }
 }
-function isListened(i){
-  const e = entryFor(i);
+function saveProgressFor(listId, prog){
+  localStorage.setItem("ll_progress_" + listId, JSON.stringify(prog));
+}
+function entryForIn(prog, i){
+  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null};
+  return prog[i];
+}
+function isListenedIn(prog, i){
+  const e = entryForIn(prog, i);
   if(e.manual !== null) return e.manual;
   return e.playcount !== null && e.playcount > 0;
 }
-function lookupArtist(i){ const e = entryFor(i); return e.ov_a || activeList.albums[i].a; }
-function lookupAlbum(i){ const e = entryFor(i); return e.ov_t || activeList.albums[i].t; }
+function lookupArtistIn(list, prog, i){
+  const e = entryForIn(prog, i);
+  return e.ov_a || list.albums[i].a;
+}
+function lookupAlbumIn(list, prog, i){
+  const e = entryForIn(prog, i);
+  return e.ov_t || list.albums[i].t;
+}
+function estFullListensIn(e){
+  if(e.playcount === null || !e.trackCount) return null;
+  return Math.floor(e.playcount / e.trackCount);
+}
 
-/* ---------- RENDER ---------- */
+/* ---------- STATE ---------- */
+let mode = localStorage.getItem("ll_mode") || "dashboard";
+let activeList = getAllLists()[0];
+let filter = "all";
+let worldFilter = "all";
+
+if(mode === "albums"){
+  const found = getAllLists().find(l => l.id === localStorage.getItem("ll_active_list_id"));
+  if(found) activeList = found; else mode = "dashboard";
+}
+let progress = activeList ? getProgressFor(activeList.id) : {};
+
+/* wrappers scoped to the active list, used by the album view */
+function entryFor(i){ return entryForIn(progress, i); }
+function isListened(i){ return isListenedIn(progress, i); }
+function lookupArtist(i){ return lookupArtistIn(activeList, progress, i); }
+function lookupAlbum(i){ return lookupAlbumIn(activeList, progress, i); }
+function estFullListens(e){ return estFullListensIn(e); }
+
+/* ---------- NAVIGATION ---------- */
 function render(){
+  document.getElementById("backBtn").classList.toggle("hidden", mode === "dashboard");
+  document.getElementById("dashboardHeader").classList.toggle("hidden", mode !== "dashboard");
+  document.getElementById("listHeader").classList.toggle("hidden", mode !== "albums");
+  document.getElementById("worldHeader").classList.toggle("hidden", mode !== "world");
+
+  if(mode === "dashboard") renderDashboard();
+  else if(mode === "albums") renderAlbums();
+  else if(mode === "world") renderWorld();
+}
+function goDashboard(){
+  mode = "dashboard";
+  localStorage.setItem("ll_mode", "dashboard");
+  render();
+}
+function goList(id){
+  const found = getAllLists().find(l => l.id === id);
+  if(!found) return;
+  activeList = found;
+  progress = getProgressFor(activeList.id);
+  filter = "all";
+  mode = "albums";
+  localStorage.setItem("ll_mode", "albums");
+  localStorage.setItem("ll_active_list_id", activeList.id);
+  populateListSelector();
+  render();
+}
+function goWorld(){
+  mode = "world";
+  worldFilter = "all";
+  localStorage.setItem("ll_mode", "world");
+  render();
+}
+
+function populateListSelector(){
+  const sel = document.getElementById("listSelector");
+  sel.innerHTML = "";
+  getAllLists().forEach(l => {
+    const opt = document.createElement("option");
+    opt.value = l.id;
+    opt.textContent = l.title;
+    if(l.id === activeList.id) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+/* ---------- DASHBOARD ---------- */
+function renderDashboard(){
+  const content = document.getElementById("content");
+  const matches = computeCountryMatches();
+  const visitedCount = Object.keys(matches).length;
+  const worldPct = Math.round((visitedCount / COUNTRIES.length) * 100);
+
+  let html = '<div class="dash-grid">';
+  html += '<div class="dash-card world-card" onclick="goWorld()">' +
+    '<div class="dash-card-top"><span class="dash-icon">🌐</span><span class="dash-count">' + visitedCount + ' / ' + COUNTRIES.length + '</span></div>' +
+    '<div class="dash-title">World Tour</div>' +
+    '<div class="dash-bar"><div class="dash-bar-fill" style="width:' + worldPct + '%"></div></div>' +
+  '</div>';
+
+  getAllLists().forEach(list => {
+    const prog = getProgressFor(list.id);
+    let heard = 0;
+    list.albums.forEach((al, i) => { if(isListenedIn(prog, i)) heard++; });
+    const pct = list.albums.length ? Math.round((heard / list.albums.length) * 100) : 0;
+    html += '<div class="dash-card" onclick="goList(\'' + list.id + '\')">' +
+      (isCustomListId(list.id) ? '<button class="dash-delete" onclick="event.stopPropagation(); deleteList(\'' + list.id + '\')">✕</button>' : '') +
+      '<div class="dash-card-top"><span class="dash-count">' + heard + ' / ' + list.albums.length + '</span></div>' +
+      '<div class="dash-title">' + list.title + '</div>' +
+      '<div class="dash-bar"><div class="dash-bar-fill" style="width:' + pct + '%"></div></div>' +
+    '</div>';
+  });
+
+  html += '<div class="dash-card dash-add" onclick="openNewListModal()"><div class="dash-add-plus">+</div><div class="dash-title">New list</div></div>';
+  html += '</div>';
+  content.innerHTML = html;
+}
+
+/* ---------- ALBUM VIEW ---------- */
+function renderAlbums(){
   const total = activeList.albums.length;
   let heard = 0;
-  activeList.albums.forEach((_, i) => { if(isListened(i)) heard++; });
+  activeList.albums.forEach((al, i) => { if(isListened(i)) heard++; });
 
   document.getElementById("progressCount").textContent = heard + " of " + total + " listened";
-  const pct = Math.round((heard/total)*100);
-  document.getElementById("ringPct").textContent = pct + "%";
+  const pct = total ? Math.round((heard / total) * 100) : 0;
   const circumference = 169.6;
-  document.getElementById("ringFill").style.strokeDashoffset = circumference - (circumference * pct/100);
+  document.getElementById("ringPct").textContent = pct + "%";
+  document.getElementById("ringFill").style.strokeDashoffset = circumference - (circumference * pct / 100);
 
   document.getElementById("progressSub").textContent = settings.username
     ? "Synced against @" + settings.username + " on Last.fm"
     : "Manual check-off — connect Last.fm to auto-sync";
 
   let tripleCount = 0;
-  activeList.albums.forEach((_, i) => { if(entryFor(i).playcount !== null && entryFor(i).playcount >= 3) tripleCount++; });
+  activeList.albums.forEach((al, i) => {
+    const est = estFullListens(entryFor(i));
+    if(est !== null && est >= 3) tripleCount++;
+  });
   document.getElementById("tripleStat").innerHTML = tripleCount > 0
-    ? '<span class="triple-stat">★ ' + tripleCount + ' with 3+ plays</span>'
+    ? '<span class="triple-stat">★ ~' + tripleCount + ' with 3+ full listens (estimated)</span>'
     : "";
 
-  const list = document.getElementById("albumList");
-  list.innerHTML = "";
+  const content = document.getElementById("content");
+  const wrap = document.createElement("div");
   activeList.albums.forEach((al, i) => {
     const heardNow = isListened(i);
     if(filter === "heard" && !heardNow) return;
     if(filter === "unheard" && heardNow) return;
 
     const e = entryFor(i);
-    const isTriple = e.playcount !== null && e.playcount >= 3;
+    const est = estFullListens(e);
+    const isTriple = est !== null && est >= 3;
     const row = document.createElement("div");
     row.className = "album" + (heardNow ? " listened" : "") + (e.manual === null && e.playcount !== null ? " auto-only" : "") + (isTriple ? " triple" : "");
 
     const metaBits = [];
     metaBits.push('<span class="genre-tag">' + al.g + '</span>');
     metaBits.push('<span>' + al.y + '</span>');
-    if(e.playcount !== null && e.playcount > 0) metaBits.push('<span class="playcount">' + e.playcount + ' play' + (e.playcount===1?"":"s") + '</span>');
+    if(e.playcount !== null && e.playcount > 0){
+      metaBits.push('<span class="playcount">' + e.playcount + ' scrobble' + (e.playcount === 1 ? "" : "s") + '</span>');
+      if(est !== null && est >= 1) metaBits.push('<span class="playcount">~' + est + ' full listen' + (est === 1 ? "" : "s") + '</span>');
+    }
     if(e.syncedAt && e.playcount === 0) metaBits.push('<span class="no-match">no scrobbles found</span>');
 
     row.innerHTML =
-      '<div class="num">' + String(i+1).padStart(2,"0") + '</div>' +
+      '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="album-main">' +
         '<div class="album-artist">' + lookupArtist(i) + '</div>' +
         '<div class="album-title">' + lookupAlbum(i) + (isTriple ? ' <span class="badge-triple">★ 3+</span>' : '') + '</div>' +
         '<div class="album-meta">' + metaBits.join("") + '</div>' +
         '<div class="edit-link" onclick="toggleEdit(' + i + ')">fix artist/title match</div>' +
         '<div class="edit-row" id="edit-' + i + '">' +
-          '<input id="ov_a_' + i + '" placeholder="Artist as on Last.fm" value="' + lookupArtist(i).replace(/"/g,"&quot;") + '">' +
-          '<input id="ov_t_' + i + '" placeholder="Album as on Last.fm" value="' + lookupAlbum(i).replace(/"/g,"&quot;") + '">' +
+          '<input id="ov_a_' + i + '" placeholder="Artist as on Last.fm" value="' + lookupArtist(i).replace(/"/g, "&quot;") + '">' +
+          '<input id="ov_t_' + i + '" placeholder="Album as on Last.fm" value="' + lookupAlbum(i).replace(/"/g, "&quot;") + '">' +
           '<div class="edit-actions">' +
             '<button onclick="saveOverride(' + i + ')">Save</button>' +
             '<button onclick="toggleEdit(' + i + ')">Cancel</button>' +
@@ -827,12 +1098,14 @@ function render(){
       '</div>' +
       '<div class="check" onclick="toggleManual(' + i + ')">✓</div>';
 
-    list.appendChild(row);
+    wrap.appendChild(row);
   });
 
-  if(list.children.length === 0){
-    list.innerHTML = '<div class="empty-hint">Nothing here yet — try a different filter, or sync with Last.fm.</div>';
+  if(wrap.children.length === 0){
+    wrap.innerHTML = '<div class="empty-hint">Nothing here yet — try a different filter, or sync with Last.fm.</div>';
   }
+  content.innerHTML = "";
+  content.appendChild(wrap);
 
   const syncBtn = document.getElementById("syncBtn");
   if(!settings.username || !settings.apiKey){
@@ -846,12 +1119,10 @@ function render(){
 
 function toggleManual(i){
   const e = entryFor(i);
-  const current = isListened(i);
-  e.manual = !current;
-  saveProgress(progress);
+  e.manual = !isListened(i);
+  saveProgressFor(activeList.id, progress);
   render();
 }
-
 function toggleEdit(i){
   document.getElementById("edit-" + i).classList.toggle("open");
 }
@@ -862,27 +1133,28 @@ function saveOverride(i){
   e.ov_a = a || null;
   e.ov_t = t || null;
   e.playcount = null;
+  e.trackCount = null;
   e.syncedAt = null;
-  saveProgress(progress);
+  saveProgressFor(activeList.id, progress);
   render();
 }
-
 function setFilter(f){
   filter = f;
-  document.querySelectorAll(".filters button").forEach(b => b.classList.toggle("active", b.dataset.filter === f));
-  render();
+  document.querySelectorAll("#listHeader .filters button").forEach(b => b.classList.toggle("active", b.dataset.filter === f));
+  renderAlbums();
 }
 
-/* ---------- SETTINGS MODAL ---------- */
+/* ---------- MODALS ---------- */
+function closeAllModals(){
+  document.getElementById("backdrop").classList.remove("open");
+  document.getElementById("settingsModal").classList.remove("open");
+  document.getElementById("newListModal").classList.remove("open");
+}
 function openSettings(){
   document.getElementById("inputUsername").value = settings.username || "";
   document.getElementById("inputApiKey").value = settings.apiKey || "";
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("settingsModal").classList.add("open");
-}
-function closeSettings(){
-  document.getElementById("backdrop").classList.remove("open");
-  document.getElementById("settingsModal").classList.remove("open");
 }
 function saveSettings(){
   settings = {
@@ -890,7 +1162,76 @@ function saveSettings(){
     apiKey: document.getElementById("inputApiKey").value.trim()
   };
   saveSettingsObj(settings);
-  closeSettings();
+  closeAllModals();
+  render();
+}
+function openNewListModal(){
+  document.getElementById("newListName").value = "";
+  document.getElementById("newListText").value = "";
+  document.getElementById("backdrop").classList.add("open");
+  document.getElementById("newListModal").classList.add("open");
+}
+
+/* ---------- CUSTOM LIST CREATION ---------- */
+function parseAlbumLines(text){
+  const lines = text.split("\n");
+  const albums = [];
+  const seen = new Set();
+  lines.forEach(raw => {
+    const line = raw.trim();
+    if(!line) return;
+    const yearMatch = line.match(/\((\d{4}s?)\)/);
+    const dashSplit = line.split(/\s+[—–]\s+/);
+    let artist = "", rest = "";
+    if(dashSplit.length >= 2){
+      artist = dashSplit[0].trim();
+      rest = dashSplit.slice(1).join(" — ").trim();
+    } else if(!yearMatch){
+      return; // no dash and no year — likely a placeholder/junk line, skip it
+    } else {
+      rest = line;
+    }
+    const pipeSplit = rest.split("|");
+    const titleYearPart = pipeSplit[0].trim();
+    const genre = pipeSplit.length > 1 ? pipeSplit.slice(1).join("|").trim() : "";
+    let title = titleYearPart, year = "";
+    const ym = titleYearPart.match(/\(([^)]*)\)\s*$/);
+    if(ym){
+      year = ym[1].trim();
+      title = titleYearPart.slice(0, ym.index).trim();
+    }
+    if(!title) return;
+    if(/^\[.*\]$/.test(title)) return; // e.g. "[removed duplicate]" placeholder lines
+    if(!artist) artist = title;
+    const key = (artist + "|" + title).toLowerCase();
+    if(seen.has(key)) return;
+    seen.add(key);
+    albums.push({a: artist, t: title, y: year, g: genre});
+  });
+  return albums;
+}
+function slugify(s){
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "list";
+}
+function createNewList(){
+  const name = document.getElementById("newListName").value.trim();
+  const text = document.getElementById("newListText").value;
+  if(!name){ alert("Give the list a name first."); return; }
+  const albums = parseAlbumLines(text);
+  if(albums.length === 0){ alert("Couldn't find any albums in that text — check the format (Artist — Title (Year) | Genre)."); return; }
+  let id = slugify(name);
+  const existingIds = new Set(getAllLists().map(l => l.id));
+  if(existingIds.has(id)) id = id + "-" + Date.now();
+  customLists.push({id, title: name, albums});
+  saveCustomLists(customLists);
+  closeAllModals();
+  goList(id);
+}
+function deleteList(id){
+  if(!confirm("Delete this list? Its progress will be lost.")) return;
+  customLists = customLists.filter(l => l.id !== id);
+  saveCustomLists(customLists);
+  localStorage.removeItem("ll_progress_" + id);
   render();
 }
 
@@ -900,6 +1241,42 @@ function handleSyncClick(){
   syncAll();
 }
 
+async function fetchAlbumStats(artist, album){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&album=" + encodeURIComponent(album)
+    + "&username=" + encodeURIComponent(settings.username)
+    + "&autocorrect=1&format=json";
+
+  let res;
+  try{
+    res = await fetch(url);
+  }catch(networkErr){
+    throw {type: "network", detail: networkErr.message || "Failed to fetch"};
+  }
+
+  let data;
+  try{
+    data = await res.json();
+  }catch(parseErr){
+    throw {type: "network", detail: "Bad response (HTTP " + res.status + ")"};
+  }
+
+  if(data.error){
+    if(data.error === 10) throw {type: "auth", detail: data.message || "Invalid API key"};
+    return {playcount: 0, trackCount: 0, notFound: true};
+  }
+  const pc = data.album && data.album.userplaycount ? parseInt(data.album.userplaycount, 10) : 0;
+  let trackCount = 0;
+  if(data.album && data.album.tracks && data.album.tracks.track){
+    trackCount = Array.isArray(data.album.tracks.track) ? data.album.tracks.track.length : 1;
+  }
+  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false};
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
 async function syncAll(){
   const btn = document.getElementById("syncBtn");
   const note = document.getElementById("syncNote");
@@ -908,19 +1285,20 @@ async function syncAll(){
   let networkErrors = 0, lastNetworkError = "", noMatch = 0, authError = null;
 
   for(let i = 0; i < total; i++){
-    note.textContent = "Syncing " + (i+1) + " of " + total + "…";
+    note.textContent = "Syncing " + (i + 1) + " of " + total + "…";
     try{
-      const result = await fetchUserPlaycount(lookupArtist(i), lookupAlbum(i));
+      const result = await fetchAlbumStats(lookupArtist(i), lookupAlbum(i));
       const e = entryFor(i);
       e.playcount = result.playcount;
+      e.trackCount = result.trackCount;
       e.syncedAt = Date.now();
       if(result.notFound) noMatch++;
-      saveProgress(progress);
+      saveProgressFor(activeList.id, progress);
       render();
     }catch(err){
       if(err.type === "auth"){
         authError = err.detail;
-        break; // same key will fail every time — no point burning through the rest
+        break;
       }
       networkErrors++;
       lastNetworkError = err.detail;
@@ -934,8 +1312,7 @@ async function syncAll(){
     note.textContent = 'Stopped — Last.fm says: "' + authError + '". Double-check the API key in Settings.';
   } else if(networkErrors > 0){
     note.textContent = networkErrors + " of " + total + " requests couldn't reach Last.fm (e.g. \"" + lastNetworkError
-      + "\"). If this keeps happening, it's likely the local file:// page being blocked from making network calls — "
-      + "try hosting this same file at a real https:// address (e.g. Netlify Drop or GitHub Pages) and reopening it from there.";
+      + "\"). If this keeps happening, try hosting the file at a real https:// address instead of opening it locally.";
   } else if(noMatch > 0){
     note.textContent = "Synced. " + noMatch + " album(s) had no scrobbles found — check spelling via \"fix artist/title match\" if you know you've heard them.";
   } else {
@@ -943,41 +1320,200 @@ async function syncAll(){
   }
 }
 
-function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+/* ---------- WORLD TOUR (MusicBrainz country matching) ---------- */
+function getAllUniqueArtists(){
+  const set = new Set();
+  getAllLists().forEach(list => {
+    const prog = getProgressFor(list.id);
+    list.albums.forEach((al, i) => set.add(lookupArtistIn(list, prog, i)));
+  });
+  libraryArtists.list.forEach(n => set.add(n));
+  return Array.from(set);
+}
 
-async function fetchUserPlaycount(artist, album){
-  const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
+function computeCountryMatches(){
+  const matches = {};
+  getAllLists().forEach(list => {
+    const prog = getProgressFor(list.id);
+    list.albums.forEach((al, i) => {
+      const name = lookupArtistIn(list, prog, i);
+      const info = artistCountries[name];
+      if(info && info.iso2 && isListenedIn(prog, i) && !matches[info.iso2]){
+        matches[info.iso2] = {artist: name, album: lookupAlbumIn(list, prog, i), listTitle: list.title, source: "list"};
+      }
+    });
+  });
+  libraryArtists.list.forEach(name => {
+    const info = artistCountries[name];
+    if(info && info.iso2 && !matches[info.iso2]){
+      matches[info.iso2] = {artist: name, album: null, listTitle: null, source: "library"};
+    }
+  });
+  return matches;
+}
+
+async function fetchLibraryArtistsPage(page){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=user.gettopartists"
+    + "&user=" + encodeURIComponent(settings.username)
     + "&api_key=" + encodeURIComponent(settings.apiKey)
-    + "&artist=" + encodeURIComponent(artist)
-    + "&album=" + encodeURIComponent(album)
-    + "&username=" + encodeURIComponent(settings.username)
-    + "&autocorrect=1&format=json";
-
+    + "&period=overall&limit=1000&page=" + page + "&format=json";
   let res;
   try{
     res = await fetch(url);
   }catch(networkErr){
-    throw {type:"network", detail: networkErr.message || "Failed to fetch"};
+    throw {type: "network", detail: networkErr.message || "Failed to fetch"};
   }
-
   let data;
   try{
     data = await res.json();
-  }catch(parseErr){
-    throw {type:"network", detail: "Bad response (HTTP " + res.status + ")"};
+  }catch(e){
+    throw {type: "network", detail: "Bad response (HTTP " + res.status + ")"};
   }
-
-  if(data.error){
-    if(data.error === 10){
-      throw {type:"auth", detail: data.message || "Invalid API key"};
-    }
-    // Other error codes (e.g. artist/album not found) aren't fatal — just an unmatched album.
-    return {playcount: 0, notFound: true};
-  }
-  const pc = data.album && data.album.userplaycount ? parseInt(data.album.userplaycount, 10) : 0;
-  return {playcount: isNaN(pc) ? 0 : pc, notFound: false};
+  if(data.error) throw {type: data.error === 10 ? "auth" : "api", detail: data.message || "Last.fm error"};
+  const artists = data.topartists && data.topartists.artist ? data.topartists.artist : [];
+  const attr = data.topartists && data.topartists["@attr"] ? data.topartists["@attr"] : {page: 1, totalPages: 1};
+  return {names: artists.map(a => a.name), totalPages: parseInt(attr.totalPages || 1, 10)};
 }
 
+async function syncLibraryArtists(){
+  if(!settings.username || !settings.apiKey){ openSettings(); return; }
+  const btn = document.getElementById("librarySyncBtn");
+  const note = document.getElementById("worldSyncNote");
+  btn.disabled = true;
+  const names = new Set(libraryArtists.list);
+  let page = 1, totalPages = 1;
+  try{
+    do{
+      note.textContent = "Fetching your Last.fm library — page " + page + (totalPages > 1 ? " of " + totalPages : "") + "…";
+      const result = await fetchLibraryArtistsPage(page);
+      result.names.forEach(n => names.add(n));
+      totalPages = result.totalPages;
+      page++;
+      await sleep(300);
+    } while(page <= totalPages);
+    libraryArtists = {list: Array.from(names), syncedAt: Date.now()};
+    saveLibraryArtists(libraryArtists);
+    note.textContent = "Pulled " + libraryArtists.list.length + " artists from your library. Tap \"Match artist countries\" to cross-reference the new ones.";
+  }catch(err){
+    note.textContent = "Couldn't fetch your library" + (err.detail ? (': "' + err.detail + '"') : "") + ".";
+  }
+  btn.disabled = false;
+  render();
+}
+
+async function fetchArtistCountry(artistName){
+  const url = "https://musicbrainz.org/ws/2/artist/?query=" + encodeURIComponent('artist:"' + artistName + '"') + "&fmt=json&limit=1";
+  let res;
+  try{
+    res = await fetch(url);
+  }catch(networkErr){
+    throw {type: "network", detail: networkErr.message || "Failed to fetch"};
+  }
+  let data;
+  try{
+    data = await res.json();
+  }catch(e){
+    throw {type: "network", detail: "Bad response (HTTP " + res.status + ")"};
+  }
+  if(!data.artists || data.artists.length === 0) return {iso2: null, areaName: null, notFound: true};
+  const artist = data.artists[0];
+  let iso2 = artist.country || null;
+  const areaName = artist.area ? artist.area.name : null;
+  if(!iso2 && areaName && AREA_TO_COUNTRY_ISO[areaName]) iso2 = AREA_TO_COUNTRY_ISO[areaName];
+  return {iso2, areaName, notFound: !iso2};
+}
+
+async function syncCountries(){
+  const btn = document.getElementById("worldSyncBtn");
+  const note = document.getElementById("worldSyncNote");
+  const toSync = getAllUniqueArtists().filter(a => !artistCountries[a]);
+  if(toSync.length === 0){
+    note.textContent = "Everything's already matched.";
+    return;
+  }
+  note.textContent = "This can take a few minutes the first time (MusicBrainz allows about 1 request/second). Results are cached, so it's a one-time cost per artist.";
+  await sleep(1200);
+  btn.disabled = true;
+  let networkErrors = 0, lastError = "";
+  for(let i = 0; i < toSync.length; i++){
+    note.textContent = "Matching " + (i + 1) + " of " + toSync.length + ": " + toSync[i];
+    try{
+      const result = await fetchArtistCountry(toSync[i]);
+      artistCountries[toSync[i]] = Object.assign({}, result, {syncedAt: Date.now()});
+      saveArtistCountries(artistCountries);
+      renderWorld();
+    }catch(err){
+      networkErrors++;
+      lastError = err.detail;
+    }
+    await sleep(1100);
+  }
+  btn.disabled = false;
+  note.textContent = networkErrors > 0
+    ? networkErrors + " artist(s) failed to reach MusicBrainz (e.g. \"" + lastError + "\") — run the sync again to retry just those."
+    : "Artist matching complete.";
+  renderWorld();
+}
+
+function isoToFlagEmoji(iso2){
+  if(!iso2 || iso2.length !== 2) return "🏳";
+  const codes = [...iso2.toUpperCase()].map(c => 127397 + c.charCodeAt(0));
+  return String.fromCodePoint(codes[0], codes[1]);
+}
+
+function renderWorld(){
+  const matches = computeCountryMatches();
+  const total = COUNTRIES.length;
+  const visited = Object.keys(matches).length;
+  const pct = Math.round((visited / total) * 100);
+  const circumference = 169.6;
+
+  document.getElementById("worldProgressCount").textContent = visited + " of " + total + " countries";
+  document.getElementById("worldRingPct").textContent = pct + "%";
+  document.getElementById("worldRingFill").style.strokeDashoffset = circumference - (circumference * pct / 100);
+
+  const uncached = getAllUniqueArtists().filter(a => !artistCountries[a]).length;
+  document.getElementById("worldProgressSub").textContent = uncached > 0
+    ? uncached + " artist(s) not yet matched to a country"
+    : "All known artists matched";
+
+  const syncBtn = document.getElementById("worldSyncBtn");
+  syncBtn.textContent = uncached > 0 ? "Match " + uncached + " artist" + (uncached === 1 ? "" : "s") + " to countries" : "Re-check artist matches";
+
+  document.getElementById("libraryStat").textContent = libraryArtists.syncedAt
+    ? libraryArtists.list.length + " library artist" + (libraryArtists.list.length === 1 ? "" : "s") + " pulled, last synced " + new Date(libraryArtists.syncedAt).toLocaleDateString()
+    : "Not synced yet — this checks your whole Last.fm history, not just your lists.";
+
+  const content = document.getElementById("content");
+  const wrap = document.createElement("div");
+  COUNTRIES.forEach(c => {
+    const m = matches[c.iso2];
+    if(worldFilter === "visited" && !m) return;
+    if(worldFilter === "unvisited" && m) return;
+    const row = document.createElement("div");
+    row.className = "country-row" + (m ? " visited" : "");
+    const matchLine = !m ? "" : (m.source === "list"
+      ? m.album + " — " + m.artist + '<span class="match-list"> (' + m.listTitle + ')</span>'
+      : m.artist + '<span class="match-list"> — from your Last.fm library</span>');
+    row.innerHTML =
+      '<div class="flag">' + isoToFlagEmoji(c.iso2) + '</div>' +
+      '<div class="country-main">' +
+        '<div class="country-name">' + c.name + '</div>' +
+        (m ? '<div class="country-match">' + matchLine + '</div>' : '') +
+      '</div>' +
+      '<div class="check">✓</div>';
+    wrap.appendChild(row);
+  });
+  content.innerHTML = "";
+  content.appendChild(wrap);
+}
+function setWorldFilter(f){
+  worldFilter = f;
+  document.querySelectorAll("#worldHeader .filters button").forEach(b => b.classList.toggle("active", b.dataset.filter === f));
+  renderWorld();
+}
+
+/* ---------- INIT ---------- */
 populateListSelector();
 render();
 </script>
