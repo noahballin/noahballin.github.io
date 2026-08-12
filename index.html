@@ -27,7 +27,7 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Mono',monospace;}
-  body{padding-bottom:64px;}
+  body{padding-bottom:calc(80px + env(safe-area-inset-bottom));}
   .display{font-family:'Fraunces',serif;}
   ::selection{background:var(--gold); color:#17140F;}
   .hidden{display:none !important;}
@@ -110,6 +110,57 @@
   .filters button.active{background:var(--gold); color:#17140F; border-color:var(--gold); font-weight:600;}
 
   main{padding:14px 14px 20px;}
+
+  /* tab bar */
+  .tab-bar{
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    display:flex; border-top:1px solid var(--line);
+    background:rgba(23,20,15,0.96); backdrop-filter:blur(6px);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .tab-bar button{
+    flex:1; background:none; border:none; color:var(--ink-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:0.03em;
+    padding:10px 4px 8px; display:flex; flex-direction:column; align-items:center; gap:3px;
+    cursor:pointer;
+  }
+  .tab-bar button .tab-icon{font-size:19px;}
+  .tab-bar button.active{color:var(--gold);}
+
+  /* discover */
+  .week-picker{display:flex; gap:6px; margin-top:16px;}
+  .week-btn{
+    flex:1; padding:10px 4px; background:var(--card); border:1px solid var(--line); border-radius:10px;
+    color:var(--ink-dim); font-family:'IBM Plex Mono',monospace; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+  }
+  .week-btn .week-label{font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em;}
+  .week-btn .week-range{font-size:9.5px; color:var(--ink-dim);}
+  .week-btn.active{background:var(--gold); border-color:var(--gold); color:#17140F;}
+  .week-btn.active .week-range{color:#17140F; opacity:0.75;}
+
+  .count-picker{display:flex; gap:6px; margin-top:12px;}
+  .count-btn{
+    flex:1; padding:9px 4px; background:var(--card); border:1px solid var(--line); border-radius:20px;
+    color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .count-btn.active{background:var(--gold); border-color:var(--gold); color:#17140F;}
+  .count-btn:disabled{opacity:0.3; cursor:not-allowed;}
+
+  .discover-card{
+    display:flex; gap:12px; align-items:flex-start; padding:14px 10px; border-bottom:1px solid var(--line);
+  }
+  .discover-card .num{font-size:11px; color:var(--ink-dim); width:22px; flex:none; padding-top:3px;}
+  .discover-main{flex:1; min-width:0;}
+  .discover-artist{font-size:11px; color:var(--ink-dim); letter-spacing:0.03em;}
+  .discover-title{font-family:'Fraunces',serif; font-weight:500; font-size:17px; line-height:1.3; margin-top:1px;}
+  .discover-meta{font-size:10.5px; color:var(--ink-dim); margin-top:5px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .underground-badge{
+    display:inline-flex; align-items:center; background:var(--teal); color:#17140F;
+    font-size:9px; font-weight:700; padding:2px 7px; border-radius:10px;
+    text-transform:uppercase; letter-spacing:0.03em; margin-left:2px; vertical-align:middle;
+  }
+  .save-discover-btn{margin:16px 14px 4px; width:calc(100% - 28px);}
 
   /* dashboard */
   .dash-grid{display:flex; flex-direction:column; gap:10px;}
@@ -268,7 +319,44 @@
       <button data-filter="heard" onclick="setFilter('heard')">Heard</button>
     </div>
   </div>
+
+  <div id="discoverHeader" class="hidden">
+    <h1>New This Week</h1>
+    <div class="week-picker">
+      <button class="week-btn active" data-week="0" onclick="selectDiscoverWeek(0)">
+        <span class="week-label">This Week</span>
+        <span class="week-range" id="weekRange0"></span>
+      </button>
+      <button class="week-btn" data-week="1" onclick="selectDiscoverWeek(1)">
+        <span class="week-label">Last Week</span>
+        <span class="week-range" id="weekRange1"></span>
+      </button>
+      <button class="week-btn" data-week="2" onclick="selectDiscoverWeek(2)">
+        <span class="week-label">2 Weeks Ago</span>
+        <span class="week-range" id="weekRange2"></span>
+      </button>
+    </div>
+    <div class="count-picker" id="countPicker">
+      <button class="count-btn" data-count="5" onclick="selectDiscoverCount(5)">5</button>
+      <button class="count-btn active" data-count="10" onclick="selectDiscoverCount(10)">10</button>
+      <button class="count-btn" data-count="25" onclick="selectDiscoverCount(25)">25</button>
+      <button class="count-btn" data-count="50" onclick="selectDiscoverCount(50)">50</button>
+      <button class="count-btn" data-count="100" onclick="selectDiscoverCount(100)">100</button>
+    </div>
+    <div class="sync-note" id="discoverPoolNote">Checking how many albums came out…</div>
+    <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscoverList()">Find albums</button>
+    <div class="sync-note" id="discoverNote"></div>
+  </div>
 </header>
+
+<div class="tab-bar">
+  <button id="tabLists" class="active" onclick="switchSection('lists')">
+    <span class="tab-icon">📚</span><span>Lists</span>
+  </button>
+  <button id="tabDiscover" onclick="switchSection('discover')">
+    <span class="tab-icon">🧭</span><span>Discover</span>
+  </button>
+</div>
 
 <main id="content"></main>
 
@@ -494,7 +582,19 @@ function lookupAlbum(i){ return lookupAlbumIn(activeList, progress, i); }
 function estFullListens(e){ return estFullListensIn(e); }
 
 /* ---------- NAVIGATION ---------- */
+let section = "lists"; // "lists" | "discover"
+let discoverInitialized = false;
+
 function render(){
+  if(section === "discover"){
+    document.getElementById("backBtn").classList.add("hidden");
+    document.getElementById("dashboardHeader").classList.add("hidden");
+    document.getElementById("listHeader").classList.add("hidden");
+    document.getElementById("discoverHeader").classList.remove("hidden");
+    renderDiscoverResultsArea();
+    return;
+  }
+  document.getElementById("discoverHeader").classList.add("hidden");
   document.getElementById("backBtn").classList.toggle("hidden", mode === "dashboard");
   document.getElementById("dashboardHeader").classList.toggle("hidden", mode !== "dashboard");
   document.getElementById("listHeader").classList.toggle("hidden", mode !== "albums");
@@ -502,7 +602,18 @@ function render(){
   if(mode === "dashboard") renderDashboard();
   else if(mode === "albums") renderAlbums();
 }
+function switchSection(s){
+  section = s;
+  document.getElementById("tabLists").classList.toggle("active", s === "lists");
+  document.getElementById("tabDiscover").classList.toggle("active", s === "discover");
+  if(s === "discover" && !discoverInitialized){
+    discoverInitialized = true;
+    initDiscoverHeader();
+  }
+  render();
+}
 function goDashboard(){
+  section = "lists";
   mode = "dashboard";
   localStorage.setItem("ll_mode", "dashboard");
   render();
@@ -510,6 +621,9 @@ function goDashboard(){
 function goList(id){
   const found = getAllLists().find(l => l.id === id);
   if(!found) return;
+  section = "lists";
+  document.getElementById("tabLists").classList.add("active");
+  document.getElementById("tabDiscover").classList.remove("active");
   activeList = found;
   progress = getProgressFor(activeList.id);
   filter = "all";
@@ -1082,6 +1196,254 @@ async function syncAll(){
   } else {
     note.textContent = "Synced just now.";
   }
+}
+
+/* ---------- DISCOVER (weekly new releases) ---------- */
+const DISCOVER_POOL_CAP = 250; // max raw MusicBrainz candidates fetched & scored per generation
+
+let discoverWeekOffset = 0;
+let discoverCount = 10;
+let discoverResults = null;
+
+function releaseWeekRange(offsetWeeks){
+  // A "release week" runs Friday through Thursday. offsetWeeks: 0 = current week, 1 = last week, 2 = two weeks ago.
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun ... 5=Fri, 6=Sat
+  const daysSinceFriday = (day - 5 + 7) % 7;
+  const mostRecentFriday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceFriday);
+  const start = new Date(mostRecentFriday);
+  start.setDate(start.getDate() - 7 * offsetWeeks);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {start, end};
+}
+function isoDate(d){
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function formatRange(start, end){
+  const opts = {month: "short", day: "numeric"};
+  const startStr = start.toLocaleDateString("en-US", opts);
+  const endStr = end.toLocaleDateString("en-US", opts);
+  return startStr + " – " + endStr + ", " + end.getFullYear();
+}
+function formatListeners(n){
+  if(n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
+}
+
+function initDiscoverHeader(){
+  for(let i = 0; i < 3; i++){
+    const {start, end} = releaseWeekRange(i);
+    const el = document.getElementById("weekRange" + i);
+    if(el) el.textContent = formatRange(start, end);
+  }
+  checkDiscoverPoolSize();
+}
+function selectDiscoverWeek(offset){
+  discoverWeekOffset = offset;
+  document.querySelectorAll(".week-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.week, 10) === offset));
+  discoverResults = null;
+  document.getElementById("discoverNote").textContent = "";
+  checkDiscoverPoolSize();
+  renderDiscoverResultsArea();
+}
+function selectDiscoverCount(n){
+  const btn = document.querySelector('.count-btn[data-count="' + n + '"]');
+  if(btn && btn.disabled) return;
+  discoverCount = n;
+  document.querySelectorAll(".count-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.count, 10) === n));
+}
+
+function discoverQuery(startISO, endISO){
+  return 'firstreleasedate:[' + startISO + ' TO ' + endISO + '] AND primarytype:Album AND NOT secondarytype:*';
+}
+
+async function checkDiscoverPoolSize(){
+  const note = document.getElementById("discoverPoolNote");
+  note.textContent = "Checking how many albums came out…";
+  const {start, end} = releaseWeekRange(discoverWeekOffset);
+  const q = discoverQuery(isoDate(start), isoDate(end));
+  try{
+    const res = await fetch("https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=1");
+    const data = await res.json();
+    const count = data.count || 0;
+    note.textContent = count > 0
+      ? ("~" + count + " albums cataloged for this week so far — coverage can lag a few days behind release day.")
+      : "No albums cataloged for this week yet — try again in a day or two, MusicBrainz coverage can lag.";
+    document.querySelectorAll(".count-btn").forEach(b => {
+      const n = parseInt(b.dataset.count, 10);
+      b.disabled = count < n;
+      if(b.disabled && b.classList.contains("active")){
+        b.classList.remove("active");
+        const fallback = document.querySelector('.count-btn:not(:disabled)');
+        if(fallback){ fallback.classList.add("active"); discoverCount = parseInt(fallback.dataset.count, 10); }
+      }
+    });
+  }catch(err){
+    note.textContent = "Couldn't check MusicBrainz right now — you can still try generating.";
+  }
+}
+
+async function fetchMBReleaseGroupsPage(startISO, endISO, offset){
+  const q = discoverQuery(startISO, endISO);
+  const url = "https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=100&offset=" + offset;
+  const res = await fetch(url);
+  const data = await res.json();
+  const groups = (data["release-groups"] || []).map(rg => ({
+    artist: (rg["artist-credit"] && rg["artist-credit"][0] && rg["artist-credit"][0].name) || rg["artist-credit-phrase"] || "Unknown Artist",
+    title: rg.title,
+    date: rg["first-release-date"] || ""
+  }));
+  return {groups, total: data.count || 0};
+}
+async function fetchLastfmListeners(artist, title){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&album=" + encodeURIComponent(title)
+    + "&autocorrect=1&format=json";
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.error) return 0;
+    const l = data.album && data.album.listeners ? parseInt(data.album.listeners, 10) : 0;
+    return isNaN(l) ? 0 : l;
+  }catch(err){
+    return 0;
+  }
+}
+function shuffleArray(arr){
+  for(let i = arr.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  return arr;
+}
+
+async function generateDiscoverList(){
+  if(!settings.apiKey){
+    document.getElementById("discoverNote").textContent = "Add a Last.fm API key in Settings first — it's used to rank results by popularity.";
+    return;
+  }
+  const btn = document.getElementById("discoverGenerateBtn");
+  const note = document.getElementById("discoverNote");
+  btn.disabled = true;
+  const {start, end} = releaseWeekRange(discoverWeekOffset);
+  const startISO = isoDate(start), endISO = isoDate(end);
+
+  note.textContent = "Looking up what came out that week…";
+  let candidates = [];
+  let offset = 0, total = Infinity;
+  const seen = new Set();
+  try{
+    while(candidates.length < DISCOVER_POOL_CAP && offset < total && offset < 500){
+      const page = await fetchMBReleaseGroupsPage(startISO, endISO, offset);
+      total = page.total;
+      page.groups.forEach(g => {
+        const key = (g.artist + "|" + g.title).toLowerCase();
+        if(g.title && !seen.has(key)){
+          seen.add(key);
+          candidates.push(g);
+        }
+      });
+      offset += 100;
+      await sleep(350); // be polite to MusicBrainz
+    }
+  }catch(err){
+    note.textContent = "Couldn't reach MusicBrainz. Try again in a moment.";
+    btn.disabled = false;
+    return;
+  }
+  candidates = candidates.slice(0, DISCOVER_POOL_CAP);
+
+  if(candidates.length === 0){
+    discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, albums: []};
+    note.textContent = "No albums found for that week yet.";
+    btn.disabled = false;
+    renderDiscoverResultsArea();
+    return;
+  }
+
+  const scored = [];
+  for(let i = 0; i < candidates.length; i++){
+    note.textContent = "Scoring " + (i + 1) + " of " + candidates.length + " releases…";
+    const listeners = await fetchLastfmListeners(candidates[i].artist, candidates[i].title);
+    scored.push(Object.assign({}, candidates[i], {listeners}));
+    await sleep(160);
+  }
+  scored.sort((a, b) => b.listeners - a.listeners);
+
+  const n = Math.min(discoverCount, scored.length);
+  const topCut = Math.ceil(n * 0.7);
+  let picks = scored.slice(0, topCut);
+  const remainder = scored.slice(topCut);
+  const undergroundPool = shuffleArray(remainder.slice(Math.floor(remainder.length * 0.2)));
+  const undergroundPicks = undergroundPool.slice(0, n - topCut);
+  const undergroundKeys = new Set(undergroundPicks.map(p => p.artist + "|" + p.title));
+  picks = picks.concat(undergroundPicks);
+
+  if(picks.length < n){
+    const already = new Set(picks.map(p => p.artist + "|" + p.title));
+    for(const c of scored){
+      if(picks.length >= n) break;
+      const key = c.artist + "|" + c.title;
+      if(!already.has(key)){ picks.push(c); already.add(key); }
+    }
+  }
+  picks = picks.map(p => Object.assign({}, p, {underground: undergroundKeys.has(p.artist + "|" + p.title)}));
+  picks.sort((a, b) => b.listeners - a.listeners);
+
+  discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, totalFound: total, poolScored: scored.length, albums: picks};
+  btn.disabled = false;
+  note.textContent = "Found " + picks.length + " of " + discoverCount + " requested"
+    + (scored.length >= DISCOVER_POOL_CAP ? " (drawn from the first " + scored.length + " cataloged so far)." : ".");
+  renderDiscoverResultsArea();
+}
+
+function renderDiscoverResultsArea(){
+  const content = document.getElementById("content");
+  if(section !== "discover") return;
+  if(!discoverResults || !discoverResults.albums || discoverResults.albums.length === 0){
+    content.innerHTML = '<div class="empty-hint">Pick a week and tap "Find albums" to see what came out.</div>';
+    return;
+  }
+  const wrap = document.createElement("div");
+  discoverResults.albums.forEach((al, i) => {
+    const row = document.createElement("div");
+    row.className = "discover-card";
+    row.innerHTML =
+      '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
+      '<div class="discover-main">' +
+        '<div class="discover-artist">' + al.artist + '</div>' +
+        '<div class="discover-title">' + al.title + (al.underground ? ' <span class="underground-badge">Under the radar</span>' : '') + '</div>' +
+        '<div class="discover-meta">' +
+          '<span>' + (al.date || "") + '</span>' +
+          '<span>' + (al.listeners > 0 ? formatListeners(al.listeners) + ' listeners' : 'no scrobbles yet') + '</span>' +
+        '</div>' +
+      '</div>';
+    wrap.appendChild(row);
+  });
+  content.innerHTML = "";
+  content.appendChild(wrap);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "sync-btn save-discover-btn";
+  saveBtn.textContent = "Save as a list";
+  saveBtn.onclick = saveDiscoverAsList;
+  content.appendChild(saveBtn);
+}
+
+function saveDiscoverAsList(){
+  if(!discoverResults || discoverResults.albums.length === 0) return;
+  const {start, end} = releaseWeekRange(discoverResults.weekOffset);
+  const label = "New Releases — " + formatRange(start, end);
+  const albums = discoverResults.albums.map(al => ({a: al.artist, t: al.title, y: (al.date || "").slice(0, 4), g: ""}));
+  let id = slugify(label);
+  const existingIds = new Set(getAllLists().map(l => l.id));
+  if(existingIds.has(id)) id = id + "-" + Date.now();
+  customLists.push({id, title: label, albums});
+  saveCustomLists(customLists);
+  goList(id);
 }
 
 /* ---------- INIT ---------- */
