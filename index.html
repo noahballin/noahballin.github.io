@@ -20,9 +20,9 @@
     --line:#3A3327;
     --ink:#EDE6D8;
     --ink-dim:#9C9384;
-    --gold:#e591ff;
-    --gold-dim:#8A7020;
-    --teal:#4F8F86;
+    --gold:#7327c9;
+    --gold-dim:#3d2757;
+    --teal:#d1df58;
     --radius:10px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -130,10 +130,30 @@
   .dash-add{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; border-style:dashed; color:var(--ink-dim);}
   .dash-add-plus{font-size:22px; color:var(--gold);}
   .dash-add .dash-title{color:var(--ink-dim);}
+  .dash-card.has-kebab .dash-card-top{padding-right:26px;}
   .dash-delete{
     position:absolute; top:10px; right:10px; background:none; border:none; color:var(--ink-dim);
     font-size:16px; cursor:pointer; line-height:1; padding:2px 6px;
   }
+  .dash-kebab{
+    position:absolute; top:8px; right:6px; background:none; border:none; color:var(--ink-dim);
+    font-size:16px; cursor:pointer; line-height:1; padding:6px 10px; letter-spacing:1px;
+  }
+  .dash-kebab:active{color:var(--gold);}
+  .folder-header{
+    display:flex; align-items:center; justify-content:space-between; padding:10px 4px 2px;
+    margin-top:4px;
+  }
+  .folder-header .folder-name{
+    font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--gold-dim); font-weight:600;
+  }
+  .folder-header .folder-menu{
+    background:none; border:none; color:var(--ink-dim); font-size:15px; cursor:pointer; padding:2px 8px;
+  }
+  .dash-actions{display:flex; gap:10px;}
+  .dash-actions .dash-card{flex:1; padding:14px 10px;}
+  .dash-actions .dash-add-plus{font-size:18px;}
+  .dash-actions .dash-title{font-size:13px;}
 
   .album{
     display:flex; gap:12px; align-items:flex-start;
@@ -334,6 +354,44 @@
   <div class="modal-actions">
     <button class="btn-close" onclick="closeAllModals()">Cancel</button>
     <button class="btn-save" onclick="createNewList()">Create list</button>
+  </div>
+</div>
+
+<div class="modal" id="listOptionsModal">
+  <h2>List options</h2>
+  <div class="field">
+    <label>Name</label>
+    <input id="listOptionsName" type="text">
+  </div>
+  <div class="field">
+    <label>Folder</label>
+    <select id="listOptionsFolder"></select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn-close" onclick="moveListInOrder(-1)">&uarr; Move up</button>
+    <button class="btn-close" onclick="moveListInOrder(1)">&darr; Move down</button>
+  </div>
+  <div class="modal-actions">
+    <button class="btn-close" onclick="closeAllModals()">Cancel</button>
+    <button class="btn-save" onclick="saveListOptions()">Save</button>
+  </div>
+  <div class="modal-actions hidden" id="listOptionsDeleteRow">
+    <button class="btn-close" style="color:#B5654F;" onclick="deleteListFromOptions()">Delete this list</button>
+  </div>
+</div>
+
+<div class="modal" id="folderModal">
+  <h2 id="folderModalTitle">New folder</h2>
+  <div class="field">
+    <label>Name</label>
+    <input id="folderModalName" type="text" placeholder="e.g. Favorites">
+  </div>
+  <div class="modal-actions">
+    <button class="btn-close" onclick="closeAllModals()">Cancel</button>
+    <button class="btn-save" onclick="saveFolderModal()">Save</button>
+  </div>
+  <div class="modal-actions hidden" id="folderDeleteRow">
+    <button class="btn-close" style="color:#B5654F;" onclick="deleteFolderFromModal()">Delete folder</button>
   </div>
 </div>
 
@@ -897,13 +955,52 @@ function loadLibraryArtists(){
 }
 function saveLibraryArtists(obj){ localStorage.setItem("ll_library_artists", JSON.stringify(obj)); }
 
+function loadFolders(){
+  try{ return JSON.parse(localStorage.getItem("ll_folders")) || []; }
+  catch(e){ return []; }
+}
+function saveFoldersObj(f){ localStorage.setItem("ll_folders", JSON.stringify(f)); }
+
+function loadListMeta(){
+  try{ return JSON.parse(localStorage.getItem("ll_list_meta")) || {}; }
+  catch(e){ return {}; }
+}
+function saveListMeta(m){ localStorage.setItem("ll_list_meta", JSON.stringify(m)); }
+
 let settings = loadSettings();
 let customLists = loadCustomLists();
 let artistCountries = loadArtistCountries();
 let libraryArtists = loadLibraryArtists();
+let folders = loadFolders();
+let listMeta = loadListMeta();
 
 function getAllLists(){ return BUILTIN_LISTS.concat(customLists); }
 function isCustomListId(id){ return customLists.some(l => l.id === id); }
+
+/* meta[id] = {title: overrideOrNull, folderId: idOrNull, order: number} */
+function ensureListMeta(id){
+  if(!listMeta[id]) listMeta[id] = {title: null, folderId: null, order: Object.keys(listMeta).length};
+  return listMeta[id];
+}
+function getListTitle(list){
+  const m = listMeta[list.id];
+  return (m && m.title) || list.title;
+}
+function getListFolder(list){
+  const m = listMeta[list.id];
+  return m ? m.folderId : null;
+}
+function getListOrder(list){
+  return ensureListMeta(list.id).order;
+}
+function renameList(id, title){
+  ensureListMeta(id).title = title;
+  saveListMeta(listMeta);
+}
+function setListFolder(id, folderId){
+  ensureListMeta(id).folderId = folderId;
+  saveListMeta(listMeta);
+}
 
 /* ---------- PROGRESS HELPERS (list-agnostic) ---------- */
 const DEFAULT_TRACK_COUNT_GUESS = 10; // used only when Last.fm doesn't return a tracklist for an album
@@ -1001,7 +1098,7 @@ function populateListSelector(){
   getAllLists().forEach(l => {
     const opt = document.createElement("option");
     opt.value = l.id;
-    opt.textContent = l.title;
+    opt.textContent = getListTitle(l);
     if(l.id === activeList.id) opt.selected = true;
     sel.appendChild(opt);
   });
@@ -1021,22 +1118,48 @@ function renderDashboard(){
     '<div class="dash-bar"><div class="dash-bar-fill" style="width:' + worldPct + '%"></div></div>' +
   '</div>';
 
-  getAllLists().forEach(list => {
-    const prog = getProgressFor(list.id);
-    let heard = 0;
-    list.albums.forEach((al, i) => { if(isListenedIn(prog, i)) heard++; });
-    const pct = list.albums.length ? Math.round((heard / list.albums.length) * 100) : 0;
-    html += '<div class="dash-card" onclick="goList(\'' + list.id + '\')">' +
-      (isCustomListId(list.id) ? '<button class="dash-delete" onclick="event.stopPropagation(); deleteList(\'' + list.id + '\')">✕</button>' : '') +
-      '<div class="dash-card-top"><span class="dash-count">' + heard + ' / ' + list.albums.length + '</span></div>' +
-      '<div class="dash-title">' + list.title + '</div>' +
-      '<div class="dash-bar"><div class="dash-bar-fill" style="width:' + pct + '%"></div></div>' +
+  const lists = getAllLists();
+  const byFolder = {};
+  lists.forEach(l => {
+    const fid = getListFolder(l) || "none";
+    if(!byFolder[fid]) byFolder[fid] = [];
+    byFolder[fid].push(l);
+  });
+  Object.values(byFolder).forEach(arr => arr.sort((a, b) => getListOrder(a) - getListOrder(b)));
+
+  folders.forEach(f => {
+    html += '<div class="folder-header">' +
+      '<span class="folder-name">' + f.name + '</span>' +
+      '<button class="folder-menu" onclick="event.stopPropagation(); openFolderMenu(\'' + f.id + '\')">⋮</button>' +
     '</div>';
+    (byFolder[f.id] || []).forEach(list => html += renderListCardHtml(list));
   });
 
-  html += '<div class="dash-card dash-add" onclick="openNewListModal()"><div class="dash-add-plus">+</div><div class="dash-title">New list</div></div>';
+  const unfiled = byFolder["none"] || [];
+  if(unfiled.length){
+    if(folders.length) html += '<div class="folder-header"><span class="folder-name">Unfiled</span></div>';
+    unfiled.forEach(list => html += renderListCardHtml(list));
+  }
+
+  html += '<div class="dash-actions">' +
+    '<div class="dash-card dash-add" onclick="openNewListModal()"><div class="dash-add-plus">+</div><div class="dash-title">New list</div></div>' +
+    '<div class="dash-card dash-add" onclick="openNewFolderPrompt()"><div class="dash-add-plus">📁</div><div class="dash-title">New folder</div></div>' +
+  '</div>';
   html += '</div>';
   content.innerHTML = html;
+}
+
+function renderListCardHtml(list){
+  const prog = getProgressFor(list.id);
+  let heard = 0;
+  list.albums.forEach((al, i) => { if(isListenedIn(prog, i)) heard++; });
+  const pct = list.albums.length ? Math.round((heard / list.albums.length) * 100) : 0;
+  return '<div class="dash-card has-kebab" onclick="goList(\'' + list.id + '\')">' +
+    '<button class="dash-kebab" onclick="event.stopPropagation(); openListOptions(\'' + list.id + '\')">⋮</button>' +
+    '<div class="dash-card-top"><span class="dash-count">' + heard + ' / ' + list.albums.length + '</span></div>' +
+    '<div class="dash-title">' + getListTitle(list) + '</div>' +
+    '<div class="dash-bar"><div class="dash-bar-fill" style="width:' + pct + '%"></div></div>' +
+  '</div>';
 }
 
 /* ---------- ALBUM VIEW ---------- */
@@ -1159,6 +1282,8 @@ function closeAllModals(){
   document.getElementById("backdrop").classList.remove("open");
   document.getElementById("settingsModal").classList.remove("open");
   document.getElementById("newListModal").classList.remove("open");
+  document.getElementById("listOptionsModal").classList.remove("open");
+  document.getElementById("folderModal").classList.remove("open");
 }
 function openSettings(){
   document.getElementById("inputUsername").value = settings.username || "";
@@ -1242,6 +1367,109 @@ function deleteList(id){
   customLists = customLists.filter(l => l.id !== id);
   saveCustomLists(customLists);
   localStorage.removeItem("ll_progress_" + id);
+  delete listMeta[id];
+  saveListMeta(listMeta);
+  render();
+}
+
+/* ---------- FOLDERS ---------- */
+let folderModalTargetId = null; // null = creating a new folder, otherwise editing this folder id
+
+function openNewFolderPrompt(){
+  folderModalTargetId = null;
+  document.getElementById("folderModalTitle").textContent = "New folder";
+  document.getElementById("folderModalName").value = "";
+  document.getElementById("folderDeleteRow").classList.add("hidden");
+  document.getElementById("backdrop").classList.add("open");
+  document.getElementById("folderModal").classList.add("open");
+}
+function openFolderMenu(id){
+  const folder = folders.find(f => f.id === id);
+  if(!folder) return;
+  folderModalTargetId = id;
+  document.getElementById("folderModalTitle").textContent = "Folder options";
+  document.getElementById("folderModalName").value = folder.name;
+  document.getElementById("folderDeleteRow").classList.remove("hidden");
+  document.getElementById("backdrop").classList.add("open");
+  document.getElementById("folderModal").classList.add("open");
+}
+function saveFolderModal(){
+  const name = document.getElementById("folderModalName").value.trim();
+  if(!name){ alert("Give the folder a name first."); return; }
+  if(folderModalTargetId){
+    const folder = folders.find(f => f.id === folderModalTargetId);
+    if(folder) folder.name = name;
+  } else {
+    folders.push({id: "folder-" + Date.now(), name});
+  }
+  saveFoldersObj(folders);
+  closeAllModals();
+  render();
+}
+function deleteFolderFromModal(){
+  const id = folderModalTargetId;
+  const folder = folders.find(f => f.id === id);
+  if(!folder) return;
+  if(!confirm('Delete folder "' + folder.name + '"? Its lists will become unfiled, not deleted.')) return;
+  folders = folders.filter(f => f.id !== id);
+  saveFoldersObj(folders);
+  Object.keys(listMeta).forEach(lid => { if(listMeta[lid].folderId === id) listMeta[lid].folderId = null; });
+  saveListMeta(listMeta);
+  closeAllModals();
+  render();
+}
+
+/* ---------- LIST OPTIONS (rename / move / reorder / delete) ---------- */
+let listOptionsTargetId = null;
+
+function openListOptions(id){
+  listOptionsTargetId = id;
+  const list = getAllLists().find(l => l.id === id);
+  if(!list) return;
+  document.getElementById("listOptionsName").value = getListTitle(list);
+  const sel = document.getElementById("listOptionsFolder");
+  sel.innerHTML = '<option value="">No folder</option>';
+  folders.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f.id;
+    opt.textContent = f.name;
+    if(getListFolder(list) === f.id) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  document.getElementById("listOptionsDeleteRow").classList.toggle("hidden", !isCustomListId(id));
+  document.getElementById("backdrop").classList.add("open");
+  document.getElementById("listOptionsModal").classList.add("open");
+}
+function saveListOptions(){
+  if(!listOptionsTargetId) return;
+  const name = document.getElementById("listOptionsName").value.trim();
+  const folderId = document.getElementById("listOptionsFolder").value || null;
+  if(name) renameList(listOptionsTargetId, name);
+  setListFolder(listOptionsTargetId, folderId);
+  closeAllModals();
+  render();
+}
+function deleteListFromOptions(){
+  const id = listOptionsTargetId;
+  closeAllModals();
+  deleteList(id);
+}
+function moveListInOrder(direction){
+  const id = listOptionsTargetId;
+  const list = getAllLists().find(l => l.id === id);
+  if(!list) return;
+  const folderId = getListFolder(list) || "none";
+  const siblings = getAllLists()
+    .filter(l => (getListFolder(l) || "none") === folderId)
+    .sort((a, b) => getListOrder(a) - getListOrder(b));
+  const idx = siblings.findIndex(l => l.id === id);
+  const swapIdx = idx + direction;
+  if(swapIdx < 0 || swapIdx >= siblings.length) return;
+  const a = siblings[idx], b = siblings[swapIdx];
+  const oa = getListOrder(a), ob = getListOrder(b);
+  ensureListMeta(a.id).order = ob;
+  ensureListMeta(b.id).order = oa;
+  saveListMeta(listMeta);
   render();
 }
 
@@ -1349,7 +1577,7 @@ function computeCountryMatches(){
       const name = lookupArtistIn(list, prog, i);
       const info = artistCountries[name];
       if(info && info.iso2 && isListenedIn(prog, i) && !matches[info.iso2]){
-        matches[info.iso2] = {artist: name, album: lookupAlbumIn(list, prog, i), listTitle: list.title, source: "list"};
+        matches[info.iso2] = {artist: name, album: lookupAlbumIn(list, prog, i), listTitle: getListTitle(list), source: "list"};
       }
     });
   });
