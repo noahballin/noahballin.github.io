@@ -1255,7 +1255,32 @@ function selectDiscoverCount(n){
 }
 
 function discoverQuery(startISO, endISO){
-  return 'firstreleasedate:[' + startISO + ' TO ' + endISO + '] AND primarytype:Album AND NOT secondarytype:*';
+  // Deliberately simple: a bare "NOT secondarytype:*" wildcard clause is fragile against
+  // MusicBrainz's Lucene parser and was the likely cause of failed requests. Secondary types
+  // (Live, Compilation, Remix, Soundtrack, etc.) are filtered out client-side instead, below.
+  return 'firstreleasedate:[' + startISO + ' TO ' + endISO + '] AND primarytype:Album';
+}
+async function mbFetch(url){
+  let res;
+  try{
+    res = await fetch(url);
+  }catch(networkErr){
+    throw {type: "network", detail: networkErr.message || "Failed to fetch"};
+  }
+  let text;
+  try{
+    text = await res.text();
+  }catch(err){
+    throw {type: "network", detail: "Couldn't read response (HTTP " + res.status + ")"};
+  }
+  if(!res.ok){
+    throw {type: "http", detail: "HTTP " + res.status + ": " + text.slice(0, 200)};
+  }
+  try{
+    return JSON.parse(text);
+  }catch(err){
+    throw {type: "parse", detail: "Bad JSON (HTTP " + res.status + "): " + text.slice(0, 200)};
+  }
 }
 
 async function checkDiscoverPoolSize(){
@@ -1264,11 +1289,10 @@ async function checkDiscoverPoolSize(){
   const {start, end} = releaseWeekRange(discoverWeekOffset);
   const q = discoverQuery(isoDate(start), isoDate(end));
   try{
-    const res = await fetch("https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=1");
-    const data = await res.json();
+    const data = await mbFetch("https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=1");
     const count = data.count || 0;
     note.textContent = count > 0
-      ? ("~" + count + " albums cataloged for this week so far — coverage can lag a few days behind release day.")
+      ? ("~" + count + " albums cataloged for this week so far — coverage can lag a few days behind release day, and this raw count includes some live/comp/remix albums that get filtered out when generating.")
       : "No albums cataloged for this week yet — try again in a day or two, MusicBrainz coverage can lag.";
     document.querySelectorAll(".count-btn").forEach(b => {
       const n = parseInt(b.dataset.count, 10);
@@ -1280,20 +1304,21 @@ async function checkDiscoverPoolSize(){
       }
     });
   }catch(err){
-    note.textContent = "Couldn't check MusicBrainz right now — you can still try generating.";
+    note.textContent = "Couldn't check MusicBrainz (" + (err.detail || err.message || "unknown error") + ") — you can still try generating.";
   }
 }
 
 async function fetchMBReleaseGroupsPage(startISO, endISO, offset){
   const q = discoverQuery(startISO, endISO);
   const url = "https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=100&offset=" + offset;
-  const res = await fetch(url);
-  const data = await res.json();
-  const groups = (data["release-groups"] || []).map(rg => ({
-    artist: (rg["artist-credit"] && rg["artist-credit"][0] && rg["artist-credit"][0].name) || rg["artist-credit-phrase"] || "Unknown Artist",
-    title: rg.title,
-    date: rg["first-release-date"] || ""
-  }));
+  const data = await mbFetch(url);
+  const groups = (data["release-groups"] || [])
+    .filter(rg => !rg["secondary-types"] || rg["secondary-types"].length === 0)
+    .map(rg => ({
+      artist: (rg["artist-credit"] && rg["artist-credit"][0] && rg["artist-credit"][0].name) || rg["artist-credit-phrase"] || "Unknown Artist",
+      title: rg.title,
+      date: rg["first-release-date"] || ""
+    }));
   return {groups, total: data.count || 0};
 }
 async function fetchLastfmListeners(artist, title){
@@ -1350,7 +1375,7 @@ async function generateDiscoverList(){
       await sleep(350); // be polite to MusicBrainz
     }
   }catch(err){
-    note.textContent = "Couldn't reach MusicBrainz. Try again in a moment.";
+    note.textContent = "Couldn't reach MusicBrainz (" + (err.detail || err.message || "unknown error") + "). Try again in a moment.";
     btn.disabled = false;
     return;
   }
