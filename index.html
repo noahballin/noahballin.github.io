@@ -193,6 +193,12 @@
   }
   .folder-header .folder-name{
     font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--gold-dim); font-weight:600;
+    display:flex; align-items:center; gap:6px; cursor:pointer; padding:6px 4px; margin:-6px 0;
+  }
+  .folder-header .folder-chevron{font-size:9px; width:8px; display:inline-block;}
+  .folder-header .folder-count{
+    color:var(--ink-dim); font-weight:400; letter-spacing:0; font-size:10px;
+    background:var(--card-hi); border-radius:8px; padding:1px 6px;
   }
   .folder-header .folder-menu{
     background:none; border:none; color:var(--ink-dim); font-size:15px; cursor:pointer; padding:2px 8px;
@@ -249,12 +255,13 @@
 
   /* modals */
   .modal-backdrop{
-    position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10; display:none;
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:30; display:none;
   }
   .modal-backdrop.open{display:block;}
   .modal{
-    position:fixed; left:0; right:0; bottom:0; z-index:11; background:var(--card);
-    border-top:1px solid var(--line); border-radius:16px 16px 0 0; padding:20px 20px 32px;
+    position:fixed; left:0; right:0; bottom:0; z-index:31; background:var(--card);
+    border-top:1px solid var(--line); border-radius:16px 16px 0 0;
+    padding:20px 20px calc(32px + env(safe-area-inset-bottom));
     transform:translateY(100%); transition:transform .25s ease; max-height:82vh; overflow-y:auto;
   }
   .modal.open{transform:translateY(0);}
@@ -433,6 +440,10 @@
   <div class="field">
     <label>Name</label>
     <input id="folderModalName" type="text" placeholder="e.g. Favorites">
+  </div>
+  <div class="modal-actions hidden" id="folderMoveRow">
+    <button class="btn-close" onclick="moveFolderInOrder(-1)">&uarr; Move up</button>
+    <button class="btn-close" onclick="moveFolderInOrder(1)">&darr; Move down</button>
   </div>
   <div class="modal-actions">
     <button class="btn-close" onclick="closeAllModals()">Cancel</button>
@@ -662,11 +673,16 @@ function renderDashboard(){
   Object.values(byFolder).forEach(arr => arr.sort((a, b) => getListOrder(a) - getListOrder(b)));
 
   folders.forEach(f => {
+    const flists = byFolder[f.id] || [];
+    const collapsed = !!f.collapsed;
     html += '<div class="folder-header">' +
-      '<span class="folder-name">' + f.name + '</span>' +
+      '<span class="folder-name" onclick="event.stopPropagation(); toggleFolderCollapse(\'' + f.id + '\')">' +
+        '<span class="folder-chevron">' + (collapsed ? '▸' : '▾') + '</span>' + f.name +
+        '<span class="folder-count">' + flists.length + '</span>' +
+      '</span>' +
       '<button class="folder-menu" onclick="event.stopPropagation(); openFolderMenu(\'' + f.id + '\')">⋮</button>' +
     '</div>';
-    (byFolder[f.id] || []).forEach(list => html += renderListCardHtml(list));
+    if(!collapsed) flists.forEach(list => html += renderListCardHtml(list));
   });
 
   const unfiled = byFolder["none"] || [];
