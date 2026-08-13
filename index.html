@@ -188,12 +188,13 @@
   }
   .dash-kebab:active{color:var(--gold);}
   .folder-header{
-    display:flex; align-items:center; justify-content:space-between; padding:10px 4px 2px;
-    margin-top:4px;
+    display:flex; align-items:center; justify-content:space-between; padding:14px 4px 10px;
+    margin-top:4px; cursor:pointer;
   }
+  .folder-header:active{background:var(--card-hi); border-radius:8px;}
   .folder-header .folder-name{
     font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--gold-dim); font-weight:600;
-    display:flex; align-items:center; gap:6px; cursor:pointer; padding:6px 4px; margin:-6px 0;
+    display:flex; align-items:center; gap:6px; flex:1;
   }
   .folder-header .folder-chevron{font-size:9px; width:8px; display:inline-block;}
   .folder-header .folder-count{
@@ -509,6 +510,14 @@ let customLists = loadCustomLists();
 let folders = loadFolders();
 let listMeta = loadListMeta();
 
+function escapeHtml(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function getAllLists(){ return BUILTIN_LISTS.concat(customLists); }
 function isCustomListId(id){ return customLists.some(l => l.id === id); }
 
@@ -675,9 +684,9 @@ function renderDashboard(){
   folders.forEach(f => {
     const flists = byFolder[f.id] || [];
     const collapsed = !!f.collapsed;
-    html += '<div class="folder-header">' +
-      '<span class="folder-name" onclick="event.stopPropagation(); toggleFolderCollapse(\'' + f.id + '\')">' +
-        '<span class="folder-chevron">' + (collapsed ? '▸' : '▾') + '</span>' + f.name +
+    html += '<div class="folder-header" onclick="toggleFolderCollapse(\'' + f.id + '\')">' +
+      '<span class="folder-name">' +
+        '<span class="folder-chevron">' + (collapsed ? '▸' : '▾') + '</span>' + escapeHtml(f.name) +
         '<span class="folder-count">' + flists.length + '</span>' +
       '</span>' +
       '<button class="folder-menu" onclick="event.stopPropagation(); openFolderMenu(\'' + f.id + '\')">⋮</button>' +
@@ -707,7 +716,7 @@ function renderListCardHtml(list){
   return '<div class="dash-card has-kebab" onclick="goList(\'' + list.id + '\')">' +
     '<button class="dash-kebab" onclick="event.stopPropagation(); openListOptions(\'' + list.id + '\')">⋮</button>' +
     '<div class="dash-card-top"><span class="dash-count">' + heard + ' / ' + list.albums.length + '</span></div>' +
-    '<div class="dash-title">' + getListTitle(list) + '</div>' +
+    '<div class="dash-title">' + escapeHtml(getListTitle(list)) + '</div>' +
     '<div class="dash-bar"><div class="dash-bar-fill" style="width:' + pct + '%"></div></div>' +
   '</div>';
 }
@@ -931,6 +940,7 @@ function openNewFolderPrompt(){
   document.getElementById("folderModalTitle").textContent = "New folder";
   document.getElementById("folderModalName").value = "";
   document.getElementById("folderDeleteRow").classList.add("hidden");
+  document.getElementById("folderMoveRow").classList.add("hidden");
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("folderModal").classList.add("open");
 }
@@ -941,6 +951,7 @@ function openFolderMenu(id){
   document.getElementById("folderModalTitle").textContent = "Folder options";
   document.getElementById("folderModalName").value = folder.name;
   document.getElementById("folderDeleteRow").classList.remove("hidden");
+  document.getElementById("folderMoveRow").classList.remove("hidden");
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("folderModal").classList.add("open");
 }
@@ -951,7 +962,7 @@ function saveFolderModal(){
     const folder = folders.find(f => f.id === folderModalTargetId);
     if(folder) folder.name = name;
   } else {
-    folders.push({id: "folder-" + Date.now(), name});
+    folders.push({id: "folder-" + Date.now(), name, collapsed: false});
   }
   saveFoldersObj(folders);
   closeAllModals();
@@ -967,6 +978,25 @@ function deleteFolderFromModal(){
   Object.keys(listMeta).forEach(lid => { if(listMeta[lid].folderId === id) listMeta[lid].folderId = null; });
   saveListMeta(listMeta);
   closeAllModals();
+  render();
+}
+function toggleFolderCollapse(id){
+  const folder = folders.find(f => f.id === id);
+  if(!folder) return;
+  folder.collapsed = !folder.collapsed;
+  saveFoldersObj(folders);
+  render();
+}
+function moveFolderInOrder(direction){
+  const id = folderModalTargetId;
+  const idx = folders.findIndex(f => f.id === id);
+  if(idx === -1) return;
+  const swapIdx = idx + direction;
+  if(swapIdx < 0 || swapIdx >= folders.length) return;
+  const tmp = folders[idx];
+  folders[idx] = folders[swapIdx];
+  folders[swapIdx] = tmp;
+  saveFoldersObj(folders);
   render();
 }
 
