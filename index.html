@@ -1207,27 +1207,40 @@ async function syncAll(){
   btn.disabled = true;
   const total = activeList.albums.length;
   let networkErrors = 0, lastNetworkError = "", noMatch = 0, authError = null;
+  const BATCH_SIZE = 6;
 
-  for(let i = 0; i < total; i++){
-    note.textContent = "Syncing " + (i + 1) + " of " + total + "…";
-    try{
-      const result = await fetchAlbumStats(lookupArtist(i), lookupAlbum(i));
-      const e = entryFor(i);
-      e.playcount = result.playcount;
-      e.trackCount = result.trackCount;
-      e.syncedAt = Date.now();
-      if(result.notFound) noMatch++;
-      saveProgressFor(activeList.id, progress);
-      render();
-    }catch(err){
-      if(err.type === "auth"){
-        authError = err.detail;
-        break;
+  for(let start = 0; start < total && !authError; start += BATCH_SIZE){
+    const end = Math.min(start + BATCH_SIZE, total);
+    note.textContent = "Syncing " + end + " of " + total + "…";
+
+    const indices = [];
+    for(let i = start; i < end; i++) indices.push(i);
+
+    const results = await Promise.all(indices.map(async i => {
+      try{
+        const result = await fetchAlbumStats(lookupArtist(i), lookupAlbum(i));
+        return {i, result, error: null};
+      }catch(err){
+        return {i, result: null, error: err};
       }
-      networkErrors++;
-      lastNetworkError = err.detail;
-    }
-    await sleep(200);
+    }));
+
+    results.forEach(r => {
+      if(r.error){
+        if(r.error.type === "auth") authError = r.error.detail;
+        else { networkErrors++; lastNetworkError = r.error.detail; }
+        return;
+      }
+      const e = entryFor(r.i);
+      e.playcount = r.result.playcount;
+      e.trackCount = r.result.trackCount;
+      e.syncedAt = Date.now();
+      if(r.result.notFound) noMatch++;
+    });
+
+    saveProgressFor(activeList.id, progress);
+    render();
+    await sleep(150);
   }
 
   btn.disabled = false;
