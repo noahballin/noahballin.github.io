@@ -1199,7 +1199,7 @@ async function syncAll(){
 }
 
 /* ---------- DISCOVER (weekly new releases) ---------- */
-const DISCOVER_POOL_CAP = 250; // max raw MusicBrainz candidates fetched & scored per generation
+const DISCOVER_POOL_CAP = 2000; // safety ceiling; realistic weekly volumes stay well under this, so coverage is effectively comprehensive
 
 let discoverWeekOffset = 0;
 let discoverCount = 10;
@@ -1361,7 +1361,8 @@ async function generateDiscoverList(){
   let offset = 0, total = Infinity;
   const seen = new Set();
   try{
-    while(candidates.length < DISCOVER_POOL_CAP && offset < total && offset < 500){
+    while(candidates.length < DISCOVER_POOL_CAP && offset < total && offset < 3000){
+      note.textContent = "Looking up releases… " + Math.min(offset + 100, total === Infinity ? offset + 100 : total) + (total !== Infinity ? " of " + total : "");
       const page = await fetchMBReleaseGroupsPage(startISO, endISO, offset);
       total = page.total;
       page.groups.forEach(g => {
@@ -1372,7 +1373,7 @@ async function generateDiscoverList(){
         }
       });
       offset += 100;
-      await sleep(350); // be polite to MusicBrainz
+      await sleep(350); // MusicBrainz asks for ~1 req/sec; this paces well under that
     }
   }catch(err){
     note.textContent = "Couldn't reach MusicBrainz (" + (err.detail || err.message || "unknown error") + "). Try again in a moment.";
@@ -1389,13 +1390,7 @@ async function generateDiscoverList(){
     return;
   }
 
-  const scored = [];
-  for(let i = 0; i < candidates.length; i++){
-    note.textContent = "Scoring " + (i + 1) + " of " + candidates.length + " releases…";
-    const listeners = await fetchLastfmListeners(candidates[i].artist, candidates[i].title);
-    scored.push(Object.assign({}, candidates[i], {listeners}));
-    await sleep(160);
-  }
+  const scored = await scoreCandidatesWithLastfm(candidates, note);
   scored.sort((a, b) => b.listeners - a.listeners);
 
   const n = Math.min(discoverCount, scored.length);
@@ -1420,9 +1415,25 @@ async function generateDiscoverList(){
 
   discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, totalFound: total, poolScored: scored.length, albums: picks};
   btn.disabled = false;
-  note.textContent = "Found " + picks.length + " of " + discoverCount + " requested"
-    + (scored.length >= DISCOVER_POOL_CAP ? " (drawn from the first " + scored.length + " cataloged so far)." : ".");
+  note.textContent = "Found " + picks.length + " of " + discoverCount + " requested, ranked across "
+    + scored.length + (total !== Infinity && scored.length < total ? " of " + total : "") + " real releases that week.";
   renderDiscoverResultsArea();
+}
+
+async function scoreCandidatesWithLastfm(candidates, note){
+  const BATCH_SIZE = 6;
+  const scored = [];
+  for(let i = 0; i < candidates.length; i += BATCH_SIZE){
+    const batch = candidates.slice(i, i + BATCH_SIZE);
+    note.textContent = "Scoring " + Math.min(i + BATCH_SIZE, candidates.length) + " of " + candidates.length + " releases against Last.fm…";
+    const results = await Promise.all(batch.map(async c => {
+      const listeners = await fetchLastfmListeners(c.artist, c.title);
+      return Object.assign({}, c, {listeners});
+    }));
+    scored.push(...results);
+    await sleep(150); // brief pause between batches
+  }
+  return scored;
 }
 
 function renderDiscoverResultsArea(){
