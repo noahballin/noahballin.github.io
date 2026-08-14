@@ -1009,8 +1009,17 @@ function escapeHtml(s){
     .replace(/"/g, "&quot;");
 }
 function openSpotifySearch(artist, title){
-  const url = "https://open.spotify.com/search/" + encodeURIComponent(artist + " " + title);
-  window.open(url, "_blank", "noopener");
+  // artist:"..." album:"..." is Spotify's own search-grammar field-filter syntax (same one
+  // their search box uses internally) — narrows results to just that album instead of a
+  // generic mixed search across tracks/artists/playlists too.
+  const query = 'artist:"' + artist + '" album:"' + title + '"';
+  const url = "https://open.spotify.com/search/" + encodeURIComponent(query);
+  // Deliberately no "noopener" here — we need to keep this reference to auto-close the tab
+  // below once it's handed off to the Spotify app, so you don't have to close it by hand.
+  const win = window.open(url, "_blank");
+  if(win){
+    setTimeout(() => { try{ win.close(); }catch(e){} }, 1200);
+  }
 }
 
 function getAllLists(){ return BUILTIN_LISTS.concat(customLists); }
