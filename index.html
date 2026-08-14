@@ -1528,6 +1528,14 @@ async function fetchMBReleaseGroupsPage(startISO, endISO, offset){
   const data = await mbFetch(url);
   const groups = (data["release-groups"] || [])
     .filter(rg => !rg["secondary-types"] || rg["secondary-types"].length === 0)
+    // MusicBrainz's firstreleasedate range query isn't a strict filter: release-groups whose
+    // date only has year (or year-month) precision — common for reissues and for upcoming
+    // albums that don't have a confirmed exact date yet — can slip through and match any week
+    // in that year. Require a full YYYY-MM-DD date that's actually inside the requested week.
+    .filter(rg => {
+      const d = rg["first-release-date"] || "";
+      return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= startISO && d <= endISO;
+    })
     .map(rg => ({
       artist: (rg["artist-credit"] && rg["artist-credit"][0] && rg["artist-credit"][0].name) || rg["artist-credit-phrase"] || "Unknown Artist",
       title: rg.title,
