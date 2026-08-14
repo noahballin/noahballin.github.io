@@ -162,6 +162,23 @@
   }
   .save-discover-btn{margin:16px 14px 4px; width:calc(100% - 28px);}
   .recent-sub{font-size:12px; color:var(--ink-dim); margin-top:8px; line-height:1.5;}
+  .divider-line{height:1px; background:var(--line); margin:20px 0;}
+  .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
+  .review-axis{margin-top:16px;}
+  .review-axis label{font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em;}
+  .review-opts{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
+  .review-opt{
+    text-align:left; background:var(--card); border:1px solid var(--line); color:var(--ink);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 12px; border-radius:8px; cursor:pointer;
+  }
+  .review-opt.active{border-color:var(--teal); background:var(--card-hi); color:var(--teal);}
+  .review-vibe-opts{display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;}
+  .review-vibe-opt{
+    background:var(--card); border:2px solid var(--line); border-radius:10px; padding:6px; cursor:pointer;
+    width:56px; height:56px; display:flex; align-items:center; justify-content:center;
+  }
+  .review-vibe-opt img{width:100%; height:100%; object-fit:contain;}
+  .review-vibe-opt.active{border-color:var(--teal);}
 
   /* dashboard */
   .dash-grid{display:flex; flex-direction:column; gap:10px;}
@@ -479,8 +496,48 @@
     <input type="file" id="restoreFileInput" accept="application/json" onchange="importBackupFile(this.files[0])">
   </div>
   <div class="sync-note" id="backupNote"></div>
+  <div class="divider-line"></div>
+  <p>
+    Your album reviews (Rotation / Distinctiveness / Pull / vibe), as a spreadsheet-friendly CSV — separate
+    from the full app backup above, meant for reading and sorting rather than restoring into the app.
+  </p>
+  <div class="modal-actions">
+    <button class="btn-save" onclick="exportReviewsCSV()">Export reviews (CSV)</button>
+  </div>
+  <div class="sync-note" id="reviewsExportNote"></div>
   <div class="modal-actions" style="margin-top:10px;">
     <button class="btn-close" onclick="closeAllModals()">Close</button>
+  </div>
+</div>
+
+<div class="modal" id="reviewModal">
+  <h2 id="reviewModalTitle">Review album</h2>
+  <input type="hidden" id="reviewModalArtist">
+  <input type="hidden" id="reviewModalAlbum">
+
+  <div class="review-axis">
+    <label>Rotation</label>
+    <div class="review-opts" id="reviewRotation"></div>
+  </div>
+  <div class="review-axis">
+    <label>Distinctiveness</label>
+    <div class="review-opts" id="reviewDistinctiveness"></div>
+  </div>
+  <div class="review-axis">
+    <label>Pull</label>
+    <div class="review-opts" id="reviewPull"></div>
+  </div>
+  <div class="review-axis">
+    <label>Vibe</label>
+    <div class="review-vibe-opts" id="reviewVibe"></div>
+  </div>
+
+  <div class="modal-actions">
+    <button class="btn-close" onclick="closeAllModals()">Cancel</button>
+    <button class="btn-save" onclick="saveReviewModal()">Save review</button>
+  </div>
+  <div class="modal-actions hidden" id="reviewDeleteRow">
+    <button class="btn-close" style="color:#B5654F;" onclick="deleteReviewFromModal()">Clear review</button>
   </div>
 </div>
 
@@ -514,7 +571,168 @@
 <script src="lists-data.js"></script>
 <script>
 
-/* ---------- SETTINGS / CUSTOM LISTS ---------- */
+/* ---------- ALBUM REVIEWS ---------- */
+const ROTATION_OPTIONS = [
+  "In rotation",
+  "Will come back to it",
+  "Wouldn't mind hearing it again",
+  "Maybe someday",
+  "One and done"
+];
+const DISTINCTIVENESS_OPTIONS = [
+  "Sounds like nothing else",
+  "Clear point of view",
+  "Confident spin on a familiar sound",
+  "Solid but familiar",
+  "Comfortable in familiar territory"
+];
+const PULL_OPTIONS = [
+  "Couldn't stop thinking about it",
+  "Really moved me",
+  "Enjoyed the ride",
+  "Kept me at a distance",
+  "Didn't connect"
+];
+// Add more {id, url} entries here any time — the picker and CSV export both pick up new ones automatically.
+const VIBE_EMOTES = [
+  {id: "01FR2PKT5G0000H9H6YCZX1V12", url: "https://cdn.7tv.app/emote/01FR2PKT5G0000H9H6YCZX1V12/2x.gif"},
+  {id: "01GAJBNT780004XAVG6P7AZAK2", url: "https://cdn.7tv.app/emote/01GAJBNT780004XAVG6P7AZAK2/2x.gif"},
+  {id: "01FX5XD2WG000FG2VJF724907Z", url: "https://cdn.7tv.app/emote/01FX5XD2WG000FG2VJF724907Z/2x.gif"},
+  {id: "01GYHY4CKR000DPDZS2FQDVQB7", url: "https://cdn.7tv.app/emote/01GYHY4CKR000DPDZS2FQDVQB7/2x.gif"},
+  {id: "01FGHEX1SG00021TQRJX35N04C", url: "https://cdn.7tv.app/emote/01FGHEX1SG00021TQRJX35N04C/2x.gif"},
+  {id: "01HV5N2ME00007838DQ0AM89KP", url: "https://cdn.7tv.app/emote/01HV5N2ME00007838DQ0AM89KP/2x.gif"}
+];
+
+function loadReviews(){
+  try{ return JSON.parse(localStorage.getItem("ll_album_reviews")) || {}; }
+  catch(e){ return {}; }
+}
+function saveReviewsStore(obj){ localStorage.setItem("ll_album_reviews", JSON.stringify(obj)); }
+function reviewKey(artist, title){ return (artist + "|||" + title).toLowerCase().trim(); }
+
+let reviewingKey = null;
+let reviewDraft = {rotation: null, distinctiveness: null, pull: null, vibe: null};
+
+function openReviewModal(artist, title){
+  reviewingKey = reviewKey(artist, title);
+  const reviews = loadReviews();
+  const existing = reviews[reviewingKey];
+  reviewDraft = existing
+    ? {rotation: existing.rotation, distinctiveness: existing.distinctiveness, pull: existing.pull, vibe: existing.vibe}
+    : {rotation: null, distinctiveness: null, pull: null, vibe: null};
+
+  document.getElementById("reviewModalTitle").textContent = artist + " — " + title;
+  document.getElementById("reviewModalArtist").value = artist;
+  document.getElementById("reviewModalAlbum").value = title;
+  document.getElementById("reviewDeleteRow").classList.toggle("hidden", !existing);
+  renderReviewOptions();
+  openModal("reviewModal");
+}
+function renderReviewOptions(){
+  renderReviewOptionGroup("reviewRotation", ROTATION_OPTIONS, "rotation");
+  renderReviewOptionGroup("reviewDistinctiveness", DISTINCTIVENESS_OPTIONS, "distinctiveness");
+  renderReviewOptionGroup("reviewPull", PULL_OPTIONS, "pull");
+  renderReviewVibeOptions();
+}
+function renderReviewOptionGroup(containerId, options, axisKey){
+  const el = document.getElementById(containerId);
+  el.innerHTML = options.map((opt, idx) =>
+    '<button class="review-opt' + (opt === reviewDraft[axisKey] ? ' active' : '') + '" onclick="selectReviewOption(\'' + axisKey + '\', ' + idx + ')">' + escapeHtml(opt) + '</button>'
+  ).join("");
+}
+function selectReviewOption(axisKey, idx){
+  const optionsMap = {rotation: ROTATION_OPTIONS, distinctiveness: DISTINCTIVENESS_OPTIONS, pull: PULL_OPTIONS};
+  reviewDraft[axisKey] = optionsMap[axisKey][idx];
+  renderReviewOptions();
+}
+function renderReviewVibeOptions(){
+  const el = document.getElementById("reviewVibe");
+  el.innerHTML = VIBE_EMOTES.map((v, idx) =>
+    '<button class="review-vibe-opt' + (v.id === reviewDraft.vibe ? ' active' : '') + '" onclick="selectReviewVibe(' + idx + ')">' +
+      '<img src="' + v.url + '" alt="vibe option ' + (idx + 1) + '">' +
+    '</button>'
+  ).join("");
+}
+function selectReviewVibe(idx){
+  reviewDraft.vibe = VIBE_EMOTES[idx].id;
+  renderReviewVibeOptions();
+}
+function saveReviewModal(){
+  // Overwrites any previous review for this album — only the most recent answer is kept.
+  const reviews = loadReviews();
+  reviews[reviewingKey] = {
+    artist: document.getElementById("reviewModalArtist").value,
+    title: document.getElementById("reviewModalAlbum").value,
+    rotation: reviewDraft.rotation,
+    distinctiveness: reviewDraft.distinctiveness,
+    pull: reviewDraft.pull,
+    vibe: reviewDraft.vibe,
+    reviewedAt: Date.now()
+  };
+  saveReviewsStore(reviews);
+  closeAllModals();
+  render();
+}
+function deleteReviewFromModal(){
+  if(!reviewingKey) return;
+  const reviews = loadReviews();
+  delete reviews[reviewingKey];
+  saveReviewsStore(reviews);
+  closeAllModals();
+  render();
+}
+function csvEscape(s){
+  if(s === null || s === undefined) return "";
+  s = String(s);
+  if(/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+async function exportReviewsCSV(){
+  const reviews = loadReviews();
+  const rows = Object.values(reviews).sort((a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0));
+  const note = document.getElementById("reviewsExportNote");
+  if(rows.length === 0){
+    note.textContent = "No reviews saved yet.";
+    return;
+  }
+  const header = ["Artist", "Album", "Rotation", "Distinctiveness", "Pull", "Vibe Emote URL", "Reviewed At"];
+  const lines = [header.map(csvEscape).join(",")];
+  rows.forEach(r => {
+    const vibe = VIBE_EMOTES.find(v => v.id === r.vibe);
+    lines.push([
+      r.artist, r.title, r.rotation, r.distinctiveness, r.pull,
+      vibe ? vibe.url : "",
+      r.reviewedAt ? new Date(r.reviewedAt).toISOString() : ""
+    ].map(csvEscape).join(","));
+  });
+  const csv = lines.join("\n");
+  const filename = "album-reviews-" + new Date().toISOString().slice(0, 10) + ".csv";
+
+  if(navigator.canShare){
+    try{
+      const file = new File([csv], filename, {type: "text/csv"});
+      if(navigator.canShare({files: [file]})){
+        await navigator.share({files: [file], title: "Album reviews"});
+        note.textContent = "Shared.";
+        return;
+      }
+    }catch(err){
+      // cancelled or unsupported — fall through to a plain download
+    }
+  }
+  const blob = new Blob([csv], {type: "text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  note.textContent = "Downloaded " + filename + ".";
+}
+
+
 function loadSettings(){
   try{
     const s = JSON.parse(localStorage.getItem("ll_settings"));
@@ -985,6 +1203,7 @@ function closeAllModals(){
   document.getElementById("folderModal").classList.remove("open");
   document.getElementById("backupModal").classList.remove("open");
   document.getElementById("albumModal").classList.remove("open");
+  document.getElementById("reviewModal").classList.remove("open");
 }
 function openModal(id){
   document.getElementById("backdrop").classList.add("open");
@@ -1884,14 +2103,18 @@ function renderRecentResultsArea(){
     return;
   }
   const wrap = document.createElement("div");
+  const reviews = loadReviews();
   recentResults.albums.forEach((al, i) => {
+    const reviewed = !!reviews[reviewKey(al.artist, al.album)];
     const row = document.createElement("div");
     row.className = "discover-card";
+    row.style.cursor = "pointer";
+    row.onclick = () => openReviewModal(al.artist, al.album);
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
         '<div class="discover-artist">' + escapeHtml(al.artist) + '</div>' +
-        '<div class="discover-title">' + escapeHtml(al.album) + '</div>' +
+        '<div class="discover-title">' + escapeHtml(al.album) + (reviewed ? ' <span class="reviewed-badge">✓ reviewed</span>' : '') + '</div>' +
         '<div class="discover-meta">' +
           '<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>' +
           '<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>' +
