@@ -2217,6 +2217,31 @@ async function fetchRecentTracksPage(fromUnix, toUnix, page){
   return {tracks: Array.isArray(tracks) ? tracks : [tracks], totalPages: isNaN(totalPages) ? 1 : totalPages};
 }
 
+// Fallback for when Last.fm doesn't have release date / genre data for an album (common —
+// Last.fm's releasedate field is often blank). MusicBrainz is a much more reliable source for
+// this, and we're already talking to it elsewhere (Discover tab), so reuse the same approach.
+async function fetchMBReleaseInfo(artist, album){
+  const q = 'artist:"' + artist.replace(/"/g, '\\"') + '" AND releasegroup:"' + album.replace(/"/g, '\\"') + '"';
+  const url = "https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=1";
+  try{
+    const data = await mbFetch(url);
+    const rg = data["release-groups"] && data["release-groups"][0];
+    if(!rg) return {year: "", genres: []};
+    let year = "";
+    if(rg["first-release-date"]){
+      const m = rg["first-release-date"].match(/^\d{4}/);
+      if(m) year = m[0];
+    }
+    let genres = [];
+    if(rg.genres && rg.genres.length){
+      genres = rg.genres.slice(0, 2).map(g => g.name).filter(Boolean);
+    }
+    return {year, genres};
+  }catch(err){
+    return {year: "", genres: []};
+  }
+}
+
 async function fetchAlbumMeta(artist, album){
   const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
     + "&api_key=" + encodeURIComponent(settings.apiKey)
@@ -2319,6 +2344,19 @@ async function generateRecentListens(){
     }));
     scored.push(...results);
     await sleep(150);
+  }
+
+  // Fill in year/genre from MusicBrainz for anything Last.fm didn't have data for.
+  // Done sequentially with a pause between requests — MusicBrainz's anonymous rate limit
+  // is much stricter than Last.fm's, so this deliberately isn't batched/parallel.
+  const needsFallback = scored.filter(g => !g.year || !g.genres || g.genres.length === 0);
+  for(let i = 0; i < needsFallback.length; i++){
+    const g = needsFallback[i];
+    note.textContent = "Filling in missing years/genres… " + (i + 1) + " of " + needsFallback.length;
+    const mb = await fetchMBReleaseInfo(g.artist, g.album);
+    if(!g.year && mb.year) g.year = mb.year;
+    if((!g.genres || g.genres.length === 0) && mb.genres.length > 0) g.genres = mb.genres;
+    await sleep(400);
   }
 
   const MIN_TRACKS_FOR_ALBUM = 4; // filters out singles/EPs (2-3 track releases) — a couple scrobbles shouldn't count as a "full listen"
