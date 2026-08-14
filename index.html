@@ -531,7 +531,8 @@
 <div class="modal" id="backupModal">
   <h2>Backup &amp; restore</h2>
   <p>
-    Exports everything — lists, folders, progress, and settings — as one file. Save it to Files or iCloud Drive,
+    Exports your lists and folders — including any album edits, additions, and deletions — as one file.
+    Doesn't include settings, reviews, or listening progress/sync state. Save it to Files or iCloud Drive,
     or send it to yourself, so you don't lose anything if you ever clear Safari data or switch devices.
   </p>
   <div class="modal-actions">
@@ -1698,11 +1699,45 @@ function openBackupModal(){
   document.getElementById("backupModal").classList.add("open");
 }
 function gatherBackupData(){
+  // "Lists & folders" backup: list definitions, folder structure, albums added via
+  // "+ Add album", and any album edits/deletions — but not settings, reviews, or
+  // listening progress/sync state (manual checks, scrobble counts, Last.fm match status).
   const data = {};
+
+  ["ll_custom_lists", "ll_list_meta", "ll_folders"].forEach(key => {
+    const val = localStorage.getItem(key);
+    if(val !== null) data[key] = val;
+  });
+
   for(let i = 0; i < localStorage.length; i++){
     const key = localStorage.key(i);
-    if(key && key.indexOf("ll_") === 0) data[key] = localStorage.getItem(key);
+    if(!key) continue;
+
+    if(key.indexOf("ll_added_") === 0){
+      data[key] = localStorage.getItem(key);
+      continue;
+    }
+
+    // Progress entries mix list-content edits (ov_a/ov_t/ov_y/ov_g/hidden) with pure listening
+    // activity (manual/playcount/trackCount/syncedAt/notFound) — keep only the former.
+    if(key.indexOf("ll_progress_") === 0){
+      let parsed;
+      try{ parsed = JSON.parse(localStorage.getItem(key)); }catch(e){ continue; }
+      const trimmed = {};
+      Object.keys(parsed).forEach(idx => {
+        const e = parsed[idx] || {};
+        const contentOnly = {};
+        if(e.ov_a) contentOnly.ov_a = e.ov_a;
+        if(e.ov_t) contentOnly.ov_t = e.ov_t;
+        if(e.ov_y) contentOnly.ov_y = e.ov_y;
+        if(e.ov_g) contentOnly.ov_g = e.ov_g;
+        if(e.hidden) contentOnly.hidden = true;
+        if(Object.keys(contentOnly).length > 0) trimmed[idx] = contentOnly;
+      });
+      if(Object.keys(trimmed).length > 0) data[key] = JSON.stringify(trimmed);
+    }
   }
+
   return {app: "listening-log", exportedAt: Date.now(), data: data};
 }
 async function exportBackup(){
@@ -1751,7 +1786,7 @@ function importBackupFile(file){
       note.textContent = "That file doesn't look like a Listening Log backup.";
       return;
     }
-    if(!confirm("This replaces your current lists, folders, and progress with the backup's contents. Continue?")) return;
+    if(!confirm("This replaces your current lists, folders, and album edits/additions with the backup's contents. Continue?")) return;
     Object.keys(data).forEach(key => {
       if(key.indexOf("ll_") === 0) localStorage.setItem(key, data[key]);
     });
@@ -2196,7 +2231,16 @@ function saveDiscoverAsList(){
 
 /* ---------- THIS WEEK (fully-listened albums from recent scrobbles) ---------- */
 const RECENT_TRACK_COUNT_GUESS = 8; // used only when Last.fm doesn't return a tracklist for an album
-let recentResults = null;
+function loadRecentResultsFromStorage(){
+  try{ return JSON.parse(localStorage.getItem("ll_recent_results")); }
+  catch(e){ return null; }
+}
+function saveRecentResultsToStorage(){
+  localStorage.setItem("ll_recent_results", JSON.stringify(recentResults));
+}
+// Persisted so it survives a full page reload (iOS often reloads a backgrounded home-screen
+// PWA), not just a tab switch — stays populated until you explicitly re-check.
+let recentResults = loadRecentResultsFromStorage();
 
 async function fetchRecentTracksPage(fromUnix, toUnix, page){
   const url = "https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks"
@@ -2319,6 +2363,7 @@ async function generateRecentListens(){
 
   if(groupList.length === 0){
     recentResults = {fromUnix, toUnix, albums: []};
+    saveRecentResultsToStorage();
     note.textContent = "No scrobbles found in the last 7 days.";
     btn.disabled = false;
     renderRecentResultsArea();
@@ -2351,6 +2396,7 @@ async function generateRecentListens(){
     .sort((a, b) => b.lastUts - a.lastUts);
 
   recentResults = {fromUnix, toUnix, albums: fullyListened};
+  saveRecentResultsToStorage();
   btn.disabled = false;
   note.textContent = fullyListened.length > 0
     ? "Found " + fullyListened.length + " album" + (fullyListened.length === 1 ? "" : "s") + " listened to in full this week."
@@ -2382,6 +2428,7 @@ async function checkMissingYears(){
   note.textContent = filled > 0
     ? "Filled in " + filled + " of " + missing.length + " missing year" + (missing.length === 1 ? "" : "s") + "."
     : "Couldn't find a year for any of the " + missing.length + " missing album" + (missing.length === 1 ? "" : "s") + " on MusicBrainz either.";
+  saveRecentResultsToStorage();
   renderRecentResultsArea();
 }
 
