@@ -171,6 +171,9 @@
     margin-top:14px; background:var(--card); border:1px solid var(--line); color:var(--ink-dim);
     font-family:'IBM Plex Mono',monospace; font-size:12px; padding:8px 14px; border-radius:8px; cursor:pointer;
   }
+  .recent-title-row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .recent-title-row h1{margin:0;}
+  .recent-title-row .filters-toggle-btn{margin-top:0; flex:none;}
   .reviews-filter-row label{display:block; font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;}
   .reviews-filter-row select{
     width:100%; background:var(--card); border:1px solid var(--line); color:var(--ink);
@@ -389,11 +392,16 @@
     <div class="sync-note" id="discoverNote"></div>
   </div>
   <div id="recentHeader" class="hidden">
-    <h1>Past Week</h1>
-    <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
-    <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
-    <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
+    <div class="recent-title-row">
+      <h1>Past Week</h1>
+      <button class="filters-toggle-btn" id="recentToggleBtn" onclick="toggleRecentControls()">Controls ▾</button>
+    </div>
     <div class="sync-note" id="recentNote"></div>
+    <div id="recentControlsPanel" class="hidden">
+      <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
+      <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
+      <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
+    </div>
   </div>
   <div id="reviewsHeader" class="hidden">
     <h1>Reviews</h1>
@@ -811,6 +819,12 @@ function toggleReviewsFilters(){
   reviewsFiltersOpen = !reviewsFiltersOpen;
   document.getElementById("reviewsFiltersPanel").classList.toggle("hidden", !reviewsFiltersOpen);
   updateFiltersToggleLabel();
+}
+let recentControlsOpen = false;
+function toggleRecentControls(){
+  recentControlsOpen = !recentControlsOpen;
+  document.getElementById("recentControlsPanel").classList.toggle("hidden", !recentControlsOpen);
+  document.getElementById("recentToggleBtn").textContent = "Controls" + (recentControlsOpen ? " ▴" : " ▾");
 }
 function updateFiltersToggleLabel(){
   const activeCount = ["rotation", "distinctiveness", "pull", "vibe", "decade"].filter(k => reviewsFilter[k]).length;
@@ -1986,6 +2000,7 @@ function selectDiscoverCount(n){
   if(btn && btn.disabled) return;
   discoverCount = n;
   document.querySelectorAll(".count-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.count, 10) === n));
+  renderDiscoverResultsArea();
 }
 
 function discoverQuery(startISO, endISO){
@@ -2219,8 +2234,16 @@ function renderDiscoverResultsArea(){
     content.innerHTML = '<div class="empty-hint">Pick a week and tap "Find albums" to see what came out.</div>';
     return;
   }
+  if(discoverResults.albums.length < discoverCount){
+    content.innerHTML = '<div class="empty-hint">Only generated ' + discoverResults.albums.length + ' for this week so far — regenerate to get '
+      + discoverCount + '.</div>';
+    return;
+  }
+  // Reuse the existing (larger) result set when the count picker goes smaller — just show
+  // the top N of what's already cached instead of requiring a fresh generation.
+  const displayAlbums = discoverResults.albums.slice(0, discoverCount);
   const wrap = document.createElement("div");
-  discoverResults.albums.forEach((al, i) => {
+  displayAlbums.forEach((al, i) => {
     const row = document.createElement("div");
     row.className = "discover-card";
     row.innerHTML =
@@ -2258,7 +2281,8 @@ function saveDiscoverAsList(){
   const start = parseISODateLocal(discoverResults.startISO);
   const end = parseISODateLocal(discoverResults.endISO);
   const label = "New Releases — " + formatRange(start, end);
-  const albums = discoverResults.albums.map(al => ({a: al.artist, t: al.title, y: (al.date || "").slice(0, 4), g: ""}));
+  // Match whatever's actually on screen (respects the count picker), not the full cached set.
+  const albums = discoverResults.albums.slice(0, discoverCount).map(al => ({a: al.artist, t: al.title, y: (al.date || "").slice(0, 4), g: ""}));
   let id = slugify(label);
   const existingIds = new Set(getAllLists().map(l => l.id));
   if(existingIds.has(id)) id = id + "-" + Date.now();
