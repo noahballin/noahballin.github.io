@@ -166,6 +166,10 @@
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
   .reviews-filters{margin-top:16px; display:flex; flex-direction:column; gap:14px;}
+  .filters-toggle-btn{
+    margin-top:14px; background:var(--card); border:1px solid var(--line); color:var(--ink-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:8px 14px; border-radius:8px; cursor:pointer;
+  }
   .reviews-filter-row label{display:block; font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;}
   .reviews-filter-row select{
     width:100%; background:var(--card); border:1px solid var(--line); color:var(--ink);
@@ -391,7 +395,12 @@
   <div id="reviewsHeader" class="hidden">
     <h1>Reviews</h1>
     <p class="recent-sub" id="reviewsCount"></p>
-    <div class="reviews-filters">
+    <button class="filters-toggle-btn" id="filtersToggleBtn" onclick="toggleReviewsFilters()">Filters ▾</button>
+    <div class="reviews-filters hidden" id="reviewsFiltersPanel">
+      <div class="reviews-filter-row">
+        <label>Year / Decade</label>
+        <select id="reviewsFilterDecade" onchange="setReviewsTextFilter('decade', this.value)"></select>
+      </div>
       <div class="reviews-filter-row">
         <label>Rotation</label>
         <select id="reviewsFilterRotation" onchange="setReviewsTextFilter('rotation', this.value)"></select>
@@ -549,6 +558,11 @@
   <input type="hidden" id="reviewModalArtist">
   <input type="hidden" id="reviewModalAlbum">
 
+  <div class="field">
+    <label>Year (optional — powers the Decade filter)</label>
+    <input id="reviewModalYear" type="text" placeholder="e.g. 1998" inputmode="numeric" maxlength="4">
+  </div>
+
   <div class="review-axis">
     <label>Rotation</label>
     <div class="review-opts" id="reviewRotation"></div>
@@ -650,7 +664,7 @@ function reviewKey(artist, title){ return (artist + "|||" + title).toLowerCase()
 let reviewingKey = null;
 let reviewDraft = {rotation: null, distinctiveness: null, pull: null, vibe: null};
 
-function openReviewModal(artist, title){
+function openReviewModal(artist, title, suggestedYear){
   reviewingKey = reviewKey(artist, title);
   const reviews = loadReviews();
   const existing = reviews[reviewingKey];
@@ -661,6 +675,7 @@ function openReviewModal(artist, title){
   document.getElementById("reviewModalTitle").textContent = artist + " — " + title;
   document.getElementById("reviewModalArtist").value = artist;
   document.getElementById("reviewModalAlbum").value = title;
+  document.getElementById("reviewModalYear").value = (existing && existing.year) || suggestedYear || "";
   document.getElementById("reviewDeleteRow").classList.toggle("hidden", !existing);
   renderReviewOptions();
   openModal("reviewModal");
@@ -697,9 +712,12 @@ function selectReviewVibe(idx){
 function saveReviewModal(){
   // Overwrites any previous review for this album — only the most recent answer is kept.
   const reviews = loadReviews();
+  const yearRaw = document.getElementById("reviewModalYear").value.trim();
+  const year = /^\d{4}$/.test(yearRaw) ? yearRaw : "";
   reviews[reviewingKey] = {
     artist: document.getElementById("reviewModalArtist").value,
     title: document.getElementById("reviewModalAlbum").value,
+    year: year,
     rotation: reviewDraft.rotation,
     distinctiveness: reviewDraft.distinctiveness,
     pull: reviewDraft.pull,
@@ -770,13 +788,51 @@ async function exportReviewsCSV(){
 }
 
 /* ---------- REVIEWS TAB (browse + filter all reviewed albums) ---------- */
-let reviewsFilter = {rotation: "", distinctiveness: "", pull: "", vibe: ""};
+let reviewsFilter = {rotation: "", distinctiveness: "", pull: "", vibe: "", decade: ""};
+let reviewsFiltersOpen = false;
 
 function initReviewsHeader(){
   populateFilterSelect("reviewsFilterRotation", ROTATION_OPTIONS);
   populateFilterSelect("reviewsFilterDistinctiveness", DISTINCTIVENESS_OPTIONS);
   populateFilterSelect("reviewsFilterPull", PULL_OPTIONS);
   renderReviewsVibeFilter();
+  updateFiltersToggleLabel();
+}
+function toggleReviewsFilters(){
+  reviewsFiltersOpen = !reviewsFiltersOpen;
+  document.getElementById("reviewsFiltersPanel").classList.toggle("hidden", !reviewsFiltersOpen);
+  updateFiltersToggleLabel();
+}
+function updateFiltersToggleLabel(){
+  const activeCount = ["rotation", "distinctiveness", "pull", "vibe", "decade"].filter(k => reviewsFilter[k]).length;
+  const btn = document.getElementById("filtersToggleBtn");
+  if(!btn) return;
+  btn.textContent = "Filters" + (activeCount > 0 ? " (" + activeCount + ")" : "") + (reviewsFiltersOpen ? " ▴" : " ▾");
+}
+function populateDecadeFilter(){
+  const reviews = loadReviews();
+  const decades = new Set();
+  let hasUnknown = false;
+  Object.values(reviews).forEach(r => {
+    if(r.year && /^\d{4}$/.test(r.year)) decades.add(Math.floor(parseInt(r.year, 10) / 10) * 10);
+    else hasUnknown = true;
+  });
+  const sorted = Array.from(decades).sort((a, b) => b - a);
+  const el = document.getElementById("reviewsFilterDecade");
+  let html = '<option value="">All</option>' +
+    '<option value="2026">2026</option>' +
+    '<option value="2025">2025</option>';
+  sorted.forEach(d => { html += '<option value="' + d + 's">' + d + 's</option>'; });
+  if(hasUnknown) html += '<option value="unknown">No year set</option>';
+  el.innerHTML = html;
+  el.value = reviewsFilter.decade || "";
+}
+function reviewDecadeMatches(r, decadeFilter){
+  if(!decadeFilter) return true;
+  if(decadeFilter === "unknown") return !r.year;
+  if(!r.year) return false;
+  if(decadeFilter === "2026" || decadeFilter === "2025") return r.year === decadeFilter;
+  return (Math.floor(parseInt(r.year, 10) / 10) * 10 + "s") === decadeFilter;
 }
 function populateFilterSelect(id, options){
   const el = document.getElementById(id);
@@ -784,6 +840,7 @@ function populateFilterSelect(id, options){
 }
 function setReviewsTextFilter(axisKey, value){
   reviewsFilter[axisKey] = value;
+  updateFiltersToggleLabel();
   renderReviewsResultsArea();
 }
 function renderReviewsVibeFilter(){
@@ -799,6 +856,7 @@ function renderReviewsVibeFilter(){
 function setReviewsVibeFilter(id){
   reviewsFilter.vibe = id;
   renderReviewsVibeFilter();
+  updateFiltersToggleLabel();
   renderReviewsResultsArea();
 }
 function getFilteredReviews(){
@@ -807,12 +865,14 @@ function getFilteredReviews(){
     (!reviewsFilter.rotation || r.rotation === reviewsFilter.rotation) &&
     (!reviewsFilter.distinctiveness || r.distinctiveness === reviewsFilter.distinctiveness) &&
     (!reviewsFilter.pull || r.pull === reviewsFilter.pull) &&
-    (!reviewsFilter.vibe || r.vibe === reviewsFilter.vibe)
+    (!reviewsFilter.vibe || r.vibe === reviewsFilter.vibe) &&
+    reviewDecadeMatches(r, reviewsFilter.decade)
   ).sort((a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0));
 }
 function renderReviewsResultsArea(){
   const content = document.getElementById("content");
   if(section !== "reviews") return;
+  populateDecadeFilter();
   const filtered = getFilteredReviews();
   const total = Object.keys(loadReviews()).length;
   document.getElementById("reviewsCount").textContent =
@@ -828,13 +888,14 @@ function renderReviewsResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(r.artist, r.title);
+    row.onclick = () => openReviewModal(r.artist, r.title, r.year);
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
         '<div class="discover-artist">' + escapeHtml(r.artist) + '</div>' +
         '<div class="discover-title">' + escapeHtml(r.title) + '</div>' +
         '<div class="discover-meta">' +
+          (r.year ? '<span>' + escapeHtml(r.year) + '</span>' : '') +
           '<span>' + escapeHtml(r.rotation || "—") + '</span>' +
           '<span>' + escapeHtml(r.distinctiveness || "—") + '</span>' +
           '<span>' + escapeHtml(r.pull || "—") + '</span>' +
@@ -854,6 +915,7 @@ function renderReviewsResultsArea(){
 }
 function reviewsFilterLabel(){
   const parts = [];
+  if(reviewsFilter.decade) parts.push(reviewsFilter.decade === "unknown" ? "no year set" : reviewsFilter.decade);
   if(reviewsFilter.rotation) parts.push(reviewsFilter.rotation);
   if(reviewsFilter.distinctiveness) parts.push(reviewsFilter.distinctiveness);
   if(reviewsFilter.pull) parts.push(reviewsFilter.pull);
@@ -864,7 +926,7 @@ function saveReviewsFilterAsList(){
   const filtered = getFilteredReviews();
   if(filtered.length === 0) return;
   let label = reviewsFilterLabel();
-  const albums = filtered.map(r => ({a: r.artist, t: r.title, y: "", g: ""}));
+  const albums = filtered.map(r => ({a: r.artist, t: r.title, y: r.year || "", g: ""}));
   let id = slugify(label);
   const existingIds = new Set(getAllLists().map(l => l.id));
   if(existingIds.has(id)) id = id + "-" + Date.now();
@@ -2292,7 +2354,7 @@ function renderRecentResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(al.artist, al.album);
+    row.onclick = () => openReviewModal(al.artist, al.album, al.year);
     const metaBits = (al.genres || []).map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>');
     if(al.year) metaBits.push('<span>' + escapeHtml(al.year) + '</span>');
     metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
