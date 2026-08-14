@@ -557,7 +557,7 @@ function saveProgressFor(listId, prog){
   localStorage.setItem("ll_progress_" + listId, JSON.stringify(prog));
 }
 function entryForIn(prog, i){
-  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null};
+  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, notFound:null};
   return prog[i];
 }
 function lookupArtistIn(list, prog, i){
@@ -770,7 +770,11 @@ function renderAlbums(){
         metaBits.push('<span class="no-match">below full-album threshold' + (est.guessed ? ' (guessed track count)' : '') + '</span>');
       }
     }
-    if(e.syncedAt && e.playcount === 0) metaBits.push('<span class="no-match">no scrobbles found</span>');
+    if(e.notFound){
+      metaBits.push('<span class="no-match">no Last.fm match — check title via "fix artist/title match"</span>');
+    } else if(e.syncedAt && e.playcount === 0){
+      metaBits.push('<span class="no-match">no scrobbles found</span>');
+    }
 
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
@@ -827,6 +831,7 @@ function saveOverride(i){
   e.playcount = null;
   e.trackCount = null;
   e.syncedAt = null;
+  e.notFound = null;
   saveProgressFor(activeList.id, progress);
   render();
 }
@@ -1232,10 +1237,19 @@ async function syncAll(){
         return;
       }
       const e = entryFor(r.i);
-      e.playcount = r.result.playcount;
-      e.trackCount = r.result.trackCount;
+      e.notFound = r.result.notFound;
       e.syncedAt = Date.now();
-      if(r.result.notFound) noMatch++;
+      if(r.result.notFound){
+        // No match on Last.fm at all — don't record a fake "0 plays".
+        // Clear any stale playcount/trackCount and leave manual untouched,
+        // so it stays blank for you to check yourself.
+        e.playcount = null;
+        e.trackCount = null;
+        noMatch++;
+      } else {
+        e.playcount = r.result.playcount;
+        e.trackCount = r.result.trackCount;
+      }
     });
 
     saveProgressFor(activeList.id, progress);
@@ -1251,7 +1265,7 @@ async function syncAll(){
     note.textContent = networkErrors + " of " + total + " requests couldn't reach Last.fm (e.g. \"" + lastNetworkError
       + "\"). If this keeps happening, try hosting the file at a real https:// address instead of opening it locally.";
   } else if(noMatch > 0){
-    note.textContent = "Synced. " + noMatch + " album(s) had no scrobbles found — check spelling via \"fix artist/title match\" if you know you've heard them.";
+    note.textContent = "Synced. " + noMatch + " album(s) had no match on Last.fm at all (left blank) — check spelling via \"fix artist/title match\" and re-sync.";
   } else {
     note.textContent = "Synced just now.";
   }
