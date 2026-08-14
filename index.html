@@ -26,8 +26,8 @@
     --radius:10px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0; padding:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Mono',monospace;}
-  body{padding-bottom:calc(80px + env(safe-area-inset-bottom));}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Mono',monospace; min-height:100%;}
+  body{padding-bottom:calc(80px + env(safe-area-inset-bottom)); min-height:100vh; min-height:100dvh;}
   .display{font-family:'Fraunces',serif;}
   ::selection{background:var(--gold); color:#17140F;}
   .hidden{display:none !important;}
@@ -1135,6 +1135,7 @@ function render(){
 }
 function switchSection(s){
   section = s;
+  window.scrollTo(0, 0);
   document.getElementById("tabLists").classList.toggle("active", s === "lists");
   document.getElementById("tabDiscover").classList.toggle("active", s === "discover");
   document.getElementById("tabRecent").classList.toggle("active", s === "recent");
