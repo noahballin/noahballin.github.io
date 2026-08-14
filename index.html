@@ -229,10 +229,6 @@
   .playcount{color:var(--teal);}
   .no-match{color:#B5654F;}
   .edit-link{color:var(--ink-dim); text-decoration:underline; cursor:pointer; font-size:10px; margin-top:5px;}
-  .suggestion{font-size:11px; color:var(--ink-dim); margin-top:6px; padding:6px 8px; background:var(--card-hi); border-radius:6px; border:1px solid var(--line);}
-  .suggestion strong{color:var(--teal); font-weight:600;}
-  .suggestion button{background:none; border:1px solid var(--line); color:var(--ink); font-family:inherit; font-size:10px; padding:2px 8px; border-radius:4px; margin-top:4px; margin-right:6px; cursor:pointer;}
-  .suggestion button:hover{border-color:var(--teal); color:var(--teal);}
 
   .check{
     flex:none; width:30px; height:30px; border-radius:50%; border:1.5px solid var(--line);
@@ -242,17 +238,16 @@
   .album.listened .check{background:var(--teal); border-color:var(--teal); color:#17140F;}
   .album.auto-only .check{box-shadow:0 0 0 3px rgba(79,143,134,0.18);}
 
-  .edit-row{display:none; margin-top:8px; gap:6px; flex-direction:column;}
-  .edit-row.open{display:flex;}
-  .edit-row input{
-    background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:6px 8px;
-    font-family:'IBM Plex Mono',monospace; font-size:12px; border-radius:6px;
+  .row-actions{display:flex; gap:12px; margin-top:6px;}
+  .del-link{color:var(--ink-dim);}
+  .del-link.confirming{color:#B5654F; font-weight:600;}
+
+  .add-album-row{padding:14px 16px 24px;}
+  .add-album-btn{
+    width:100%; background:var(--card); border:1px dashed var(--line); color:var(--ink-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:12px; border-radius:8px; cursor:pointer;
   }
-  .edit-row .edit-actions{display:flex; gap:8px; margin-top:2px;}
-  .edit-row .edit-actions button{
-    font-size:10px; padding:5px 10px; border-radius:6px; border:1px solid var(--line);
-    background:var(--card-hi); color:var(--ink-dim); font-family:'IBM Plex Mono',monospace; cursor:pointer;
-  }
+  .add-album-btn:hover{border-color:var(--teal); color:var(--teal);}
 
   .empty-hint{
     text-align:center; color:var(--ink-dim); font-size:12px; padding:40px 20px; line-height:1.6;
@@ -478,6 +473,33 @@
   </div>
 </div>
 
+<div class="modal" id="albumModal">
+  <h2 id="albumModalTitle">Edit album</h2>
+  <div class="field">
+    <label>Artist</label>
+    <input id="albumModalArtist" type="text" placeholder="e.g. Miles Davis">
+  </div>
+  <div class="field">
+    <label>Album title</label>
+    <input id="albumModalTitleField" type="text" placeholder="e.g. Kind of Blue">
+  </div>
+  <div class="field">
+    <label>Year</label>
+    <input id="albumModalYear" type="text" placeholder="e.g. 1959">
+  </div>
+  <div class="field">
+    <label>Genre</label>
+    <input id="albumModalGenre" type="text" placeholder="e.g. Jazz">
+  </div>
+  <div class="modal-actions">
+    <button class="btn-close" onclick="closeAllModals()">Cancel</button>
+    <button class="btn-save" onclick="saveAlbumModal()">Save</button>
+  </div>
+  <div class="modal-actions hidden" id="albumModalDeleteRow">
+    <button class="btn-close" style="color:#B5654F;" onclick="deleteAlbumFromModal()">Delete this album</button>
+  </div>
+</div>
+
 <script src="lists-data.js"></script>
 <script>
 
@@ -496,6 +518,15 @@ function loadCustomLists(){
   catch(e){ return []; }
 }
 function saveCustomLists(l){ localStorage.setItem("ll_custom_lists", JSON.stringify(l)); }
+
+/* Albums a user has added on top of a list's original data (works for built-in AND custom lists,
+   without ever mutating the original array — keeps progress indices stable). */
+function loadAddedAlbums(listId){
+  try{ return JSON.parse(localStorage.getItem("ll_added_" + listId)) || []; }
+  catch(e){ return []; }
+}
+function saveAddedAlbums(listId, arr){ localStorage.setItem("ll_added_" + listId, JSON.stringify(arr)); }
+function effectiveAlbums(list){ return list.albums.concat(loadAddedAlbums(list.id)); }
 
 function loadFolders(){
   try{ return JSON.parse(localStorage.getItem("ll_folders")) || []; }
@@ -561,16 +592,24 @@ function saveProgressFor(listId, prog){
   localStorage.setItem("ll_progress_" + listId, JSON.stringify(prog));
 }
 function entryForIn(prog, i){
-  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, notFound:null, suggestion:null};
+  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, ov_y:null, ov_g:null, notFound:null, hidden:false};
   return prog[i];
 }
 function lookupArtistIn(list, prog, i){
   const e = entryForIn(prog, i);
-  return e.ov_a || list.albums[i].a;
+  return e.ov_a || effectiveAlbums(list)[i].a;
 }
 function lookupAlbumIn(list, prog, i){
   const e = entryForIn(prog, i);
-  return e.ov_t || list.albums[i].t;
+  return e.ov_t || effectiveAlbums(list)[i].t;
+}
+function lookupYearIn(list, prog, i){
+  const e = entryForIn(prog, i);
+  return e.ov_y || effectiveAlbums(list)[i].y;
+}
+function lookupGenreIn(list, prog, i){
+  const e = entryForIn(prog, i);
+  return e.ov_g || effectiveAlbums(list)[i].g;
 }
 /* Returns {value, guessed} where value = estimated number of full-album listens, or null if never synced. */
 function estFullListensIn(e){
@@ -603,6 +642,8 @@ function entryFor(i){ return entryForIn(progress, i); }
 function isListened(i){ return isListenedIn(progress, i); }
 function lookupArtist(i){ return lookupArtistIn(activeList, progress, i); }
 function lookupAlbum(i){ return lookupAlbumIn(activeList, progress, i); }
+function lookupYear(i){ return lookupYearIn(activeList, progress, i); }
+function lookupGenre(i){ return lookupGenreIn(activeList, progress, i); }
 function estFullListens(e){ return estFullListensIn(e); }
 
 /* ---------- NAVIGATION ---------- */
@@ -714,12 +755,17 @@ function renderDashboard(){
 
 function renderListCardHtml(list){
   const prog = getProgressFor(list.id);
-  let heard = 0;
-  list.albums.forEach((al, i) => { if(isListenedIn(prog, i)) heard++; });
-  const pct = list.albums.length ? Math.round((heard / list.albums.length) * 100) : 0;
+  const albums = effectiveAlbums(list);
+  let heard = 0, visibleTotal = 0;
+  albums.forEach((al, i) => {
+    if(entryForIn(prog, i).hidden) return;
+    visibleTotal++;
+    if(isListenedIn(prog, i)) heard++;
+  });
+  const pct = visibleTotal ? Math.round((heard / visibleTotal) * 100) : 0;
   return '<div class="dash-card has-kebab" onclick="goList(\'' + list.id + '\')">' +
     '<button class="dash-kebab" onclick="event.stopPropagation(); openListOptions(\'' + list.id + '\')">⋮</button>' +
-    '<div class="dash-card-top"><span class="dash-count">' + heard + ' / ' + list.albums.length + '</span></div>' +
+    '<div class="dash-card-top"><span class="dash-count">' + heard + ' / ' + visibleTotal + '</span></div>' +
     '<div class="dash-title">' + escapeHtml(getListTitle(list)) + '</div>' +
     '<div class="dash-bar"><div class="dash-bar-fill" style="width:' + pct + '%"></div></div>' +
   '</div>';
@@ -727,9 +773,12 @@ function renderListCardHtml(list){
 
 /* ---------- ALBUM VIEW ---------- */
 function renderAlbums(){
-  const total = activeList.albums.length;
+  const albums = effectiveAlbums(activeList);
+  const visibleIndices = [];
+  albums.forEach((al, i) => { if(!entryFor(i).hidden) visibleIndices.push(i); });
+  const total = visibleIndices.length;
   let heard = 0;
-  activeList.albums.forEach((al, i) => { if(isListened(i)) heard++; });
+  visibleIndices.forEach(i => { if(isListened(i)) heard++; });
 
   document.getElementById("progressCount").textContent = heard + " of " + total + " listened";
   const pct = total ? Math.round((heard / total) * 100) : 0;
@@ -742,7 +791,7 @@ function renderAlbums(){
     : "Manual check-off — connect Last.fm to auto-sync";
 
   let tripleCount = 0;
-  activeList.albums.forEach((al, i) => {
+  visibleIndices.forEach(i => {
     const est = estFullListens(entryFor(i));
     if(est !== null && est.value >= 3) tripleCount++;
   });
@@ -752,7 +801,8 @@ function renderAlbums(){
 
   const content = document.getElementById("content");
   const wrap = document.createElement("div");
-  activeList.albums.forEach((al, i) => {
+  visibleIndices.forEach(i => {
+    const al = albums[i];
     const heardNow = isListened(i);
     if(filter === "heard" && !heardNow) return;
     if(filter === "unheard" && heardNow) return;
@@ -764,8 +814,8 @@ function renderAlbums(){
     row.className = "album" + (heardNow ? " listened" : "") + (e.manual === null && e.playcount !== null ? " auto-only" : "") + (isTriple ? " triple" : "");
 
     const metaBits = [];
-    metaBits.push('<span class="genre-tag">' + al.g + '</span>');
-    metaBits.push('<span>' + al.y + '</span>');
+    metaBits.push('<span class="genre-tag">' + escapeHtml(lookupGenre(i)) + '</span>');
+    metaBits.push('<span>' + escapeHtml(lookupYear(i)) + '</span>');
     if(e.playcount !== null && e.playcount > 0){
       metaBits.push('<span class="playcount">' + e.playcount + ' scrobble' + (e.playcount === 1 ? "" : "s") + '</span>');
       if(est !== null && est.value >= 1){
@@ -775,35 +825,20 @@ function renderAlbums(){
       }
     }
     if(e.notFound){
-      metaBits.push('<span class="no-match">no Last.fm match — check title via "fix artist/title match"</span>');
+      metaBits.push('<span class="no-match">no Last.fm match — try editing the title</span>');
     } else if(e.syncedAt && e.playcount === 0){
       metaBits.push('<span class="no-match">no scrobbles found</span>');
-    }
-
-    let suggestionHtml = "";
-    if(e.suggestion){
-      suggestionHtml = '<div class="suggestion">' +
-        'Last.fm matched this as <strong>' + e.suggestion.artist + ' — ' + e.suggestion.title + '</strong>. ' +
-        '<button onclick="applySuggestion(' + i + ')">Use this</button> ' +
-        '<button onclick="dismissSuggestion(' + i + ')">Dismiss</button>' +
-      '</div>';
     }
 
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="album-main">' +
-        '<div class="album-artist">' + lookupArtist(i) + '</div>' +
-        '<div class="album-title">' + lookupAlbum(i) + (isTriple ? ' <span class="badge-triple">★ 3+</span>' : '') + '</div>' +
+        '<div class="album-artist">' + escapeHtml(lookupArtist(i)) + '</div>' +
+        '<div class="album-title">' + escapeHtml(lookupAlbum(i)) + (isTriple ? ' <span class="badge-triple">★ 3+</span>' : '') + '</div>' +
         '<div class="album-meta">' + metaBits.join("") + '</div>' +
-        suggestionHtml +
-        '<div class="edit-link" onclick="toggleEdit(' + i + ')">fix artist/title match</div>' +
-        '<div class="edit-row" id="edit-' + i + '">' +
-          '<input id="ov_a_' + i + '" placeholder="Artist as on Last.fm" value="' + lookupArtist(i).replace(/"/g, "&quot;") + '">' +
-          '<input id="ov_t_' + i + '" placeholder="Album as on Last.fm" value="' + lookupAlbum(i).replace(/"/g, "&quot;") + '">' +
-          '<div class="edit-actions">' +
-            '<button onclick="saveOverride(' + i + ')">Save</button>' +
-            '<button onclick="toggleEdit(' + i + ')">Cancel</button>' +
-          '</div>' +
+        '<div class="row-actions">' +
+          '<span class="edit-link" onclick="openEditAlbum(' + i + ')">edit</span>' +
+          '<span class="edit-link del-link" id="del-link-' + i + '" onclick="confirmDelete(' + i + ')">delete</span>' +
         '</div>' +
       '</div>' +
       '<div class="check" onclick="toggleManual(' + i + ')">✓</div>';
@@ -812,10 +847,15 @@ function renderAlbums(){
   });
 
   if(wrap.children.length === 0){
-    wrap.innerHTML = '<div class="empty-hint">Nothing here yet — try a different filter, or sync with Last.fm.</div>';
+    wrap.innerHTML = '<div class="empty-hint">Nothing here yet — try a different filter, add an album below, or sync with Last.fm.</div>';
   }
   content.innerHTML = "";
   content.appendChild(wrap);
+
+  const addRow = document.createElement("div");
+  addRow.className = "add-album-row";
+  addRow.innerHTML = '<button class="add-album-btn" onclick="openAddAlbum()">+ Add album</button>';
+  content.appendChild(addRow);
 
   const syncBtn = document.getElementById("syncBtn");
   if(!settings.username || !settings.apiKey){
@@ -833,39 +873,78 @@ function toggleManual(i){
   saveProgressFor(activeList.id, progress);
   render();
 }
-function toggleEdit(i){
-  document.getElementById("edit-" + i).classList.toggle("open");
+
+/* ---------- EDIT / ADD / DELETE ALBUM ---------- */
+let editingIndex = null; // null = adding a new album; number = editing existing index i
+
+function openEditAlbum(i){
+  editingIndex = i;
+  document.getElementById("albumModalTitle").textContent = "Edit album";
+  document.getElementById("albumModalArtist").value = lookupArtist(i);
+  document.getElementById("albumModalTitleField").value = lookupAlbum(i);
+  document.getElementById("albumModalYear").value = lookupYear(i) || "";
+  document.getElementById("albumModalGenre").value = lookupGenre(i) || "";
+  document.getElementById("albumModalDeleteRow").classList.remove("hidden");
+  openModal("albumModal");
 }
-function applySuggestion(i){
-  const e = entryFor(i);
-  if(!e.suggestion) return;
-  // Store as an override so the original list data (and your titles) stay untouched,
-  // but Last.fm lookups use the corrected name from now on.
-  e.ov_a = e.suggestion.artist;
-  e.ov_t = e.suggestion.title;
-  e.suggestion = null;
+function openAddAlbum(){
+  editingIndex = null;
+  document.getElementById("albumModalTitle").textContent = "Add album";
+  document.getElementById("albumModalArtist").value = "";
+  document.getElementById("albumModalTitleField").value = "";
+  document.getElementById("albumModalYear").value = "";
+  document.getElementById("albumModalGenre").value = "";
+  document.getElementById("albumModalDeleteRow").classList.add("hidden");
+  openModal("albumModal");
+}
+function saveAlbumModal(){
+  const a = document.getElementById("albumModalArtist").value.trim();
+  const t = document.getElementById("albumModalTitleField").value.trim();
+  const y = document.getElementById("albumModalYear").value.trim();
+  const g = document.getElementById("albumModalGenre").value.trim();
+  if(!a || !t){ return; }
+
+  if(editingIndex === null){
+    // Adding a brand-new album: append to this list's "added" store, give it a fresh progress entry.
+    const added = loadAddedAlbums(activeList.id);
+    added.push({a, t, y, g});
+    saveAddedAlbums(activeList.id, added);
+    const newIndex = activeList.albums.length + added.length - 1;
+    entryFor(newIndex); // materializes a default progress entry
+  } else {
+    const e = entryFor(editingIndex);
+    const orig = effectiveAlbums(activeList)[editingIndex];
+    e.ov_a = (a === orig.a) ? null : a;
+    e.ov_t = (t === orig.t) ? null : t;
+    e.ov_y = (y === orig.y) ? null : y;
+    e.ov_g = (g === orig.g) ? null : g;
+    // Artist/title changed — clear any stale Last.fm sync state so it gets a fresh lookup.
+    e.playcount = null;
+    e.trackCount = null;
+    e.syncedAt = null;
+    e.notFound = null;
+  }
   saveProgressFor(activeList.id, progress);
+  closeAllModals();
   render();
 }
-function dismissSuggestion(i){
-  const e = entryFor(i);
-  e.suggestion = null;
+function deleteAlbumFromModal(){
+  if(editingIndex === null) return;
+  entryFor(editingIndex).hidden = true;
   saveProgressFor(activeList.id, progress);
+  closeAllModals();
   render();
 }
-function saveOverride(i){
-  const e = entryFor(i);
-  const a = document.getElementById("ov_a_" + i).value.trim();
-  const t = document.getElementById("ov_t_" + i).value.trim();
-  e.ov_a = a || null;
-  e.ov_t = t || null;
-  e.playcount = null;
-  e.trackCount = null;
-  e.syncedAt = null;
-  e.notFound = null;
-  e.suggestion = null;
-  saveProgressFor(activeList.id, progress);
-  render();
+function confirmDelete(i){
+  const link = document.getElementById("del-link-" + i);
+  if(!link) return;
+  link.textContent = "sure?";
+  link.classList.add("confirming");
+  link.onclick = function(){
+    entryFor(i).hidden = true;
+    saveProgressFor(activeList.id, progress);
+    render();
+  };
 }
 function setFilter(f){
   filter = f;
@@ -881,6 +960,11 @@ function closeAllModals(){
   document.getElementById("listOptionsModal").classList.remove("open");
   document.getElementById("folderModal").classList.remove("open");
   document.getElementById("backupModal").classList.remove("open");
+  document.getElementById("albumModal").classList.remove("open");
+}
+function openModal(id){
+  document.getElementById("backdrop").classList.add("open");
+  document.getElementById(id).classList.add("open");
 }
 function openSettings(){
   document.getElementById("inputUsername").value = settings.username || "";
@@ -1233,19 +1317,7 @@ async function fetchAlbumStats(artist, album){
   if(data.album && data.album.tracks && data.album.tracks.track){
     trackCount = Array.isArray(data.album.tracks.track) ? data.album.tracks.track.length : 1;
   }
-  // Last.fm's autocorrect=1 returns the canonical artist/album name it actually matched against,
-  // which can differ from what we sent (typos, alternate spellings, etc). Surface that as a suggestion.
-  const canonicalArtist = data.album && data.album.artist ? data.album.artist : null;
-  const canonicalTitle = data.album && data.album.name ? data.album.name : null;
-  let suggestion = null;
-  if(canonicalArtist && canonicalTitle){
-    const artistDiffers = canonicalArtist.trim().toLowerCase() !== artist.trim().toLowerCase();
-    const titleDiffers = canonicalTitle.trim().toLowerCase() !== album.trim().toLowerCase();
-    if(artistDiffers || titleDiffers){
-      suggestion = {artist: canonicalArtist, title: canonicalTitle};
-    }
-  }
-  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false, suggestion};
+  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false};
 }
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
@@ -1254,16 +1326,17 @@ async function syncAll(){
   const btn = document.getElementById("syncBtn");
   const note = document.getElementById("syncNote");
   btn.disabled = true;
-  const total = activeList.albums.length;
-  let networkErrors = 0, lastNetworkError = "", noMatch = 0, suggestions = 0, authError = null;
+  const allIndices = [];
+  effectiveAlbums(activeList).forEach((al, i) => { if(!entryFor(i).hidden) allIndices.push(i); });
+  const total = allIndices.length;
+  let networkErrors = 0, lastNetworkError = "", noMatch = 0, authError = null;
   const BATCH_SIZE = 6;
 
   for(let start = 0; start < total && !authError; start += BATCH_SIZE){
     const end = Math.min(start + BATCH_SIZE, total);
     note.textContent = "Syncing " + end + " of " + total + "…";
 
-    const indices = [];
-    for(let i = start; i < end; i++) indices.push(i);
+    const indices = allIndices.slice(start, end);
 
     const results = await Promise.all(indices.map(async i => {
       try{
@@ -1293,8 +1366,6 @@ async function syncAll(){
       } else {
         e.playcount = r.result.playcount;
         e.trackCount = r.result.trackCount;
-        e.suggestion = r.result.suggestion;
-        if(r.result.suggestion) suggestions++;
       }
     });
 
@@ -1305,17 +1376,13 @@ async function syncAll(){
 
   btn.disabled = false;
 
-  const bits = [];
-  if(noMatch > 0) bits.push(noMatch + " with no Last.fm match (left blank)");
-  if(suggestions > 0) bits.push(suggestions + " with a suggested correction below");
-
   if(authError){
     note.textContent = 'Stopped — Last.fm says: "' + authError + '". Double-check the API key in Settings.';
   } else if(networkErrors > 0){
     note.textContent = networkErrors + " of " + total + " requests couldn't reach Last.fm (e.g. \"" + lastNetworkError
       + "\"). If this keeps happening, try hosting the file at a real https:// address instead of opening it locally.";
-  } else if(bits.length > 0){
-    note.textContent = "Synced. " + bits.join(", ") + ".";
+  } else if(noMatch > 0){
+    note.textContent = "Synced. " + noMatch + " album(s) had no match on Last.fm at all (left blank) — check spelling via \"fix artist/title match\" and re-sync.";
   } else {
     note.textContent = "Synced just now.";
   }
