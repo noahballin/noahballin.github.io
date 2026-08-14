@@ -1848,6 +1848,7 @@ async function generateRecentListens(){
     await sleep(150);
   }
 
+  const MIN_TRACKS_FOR_ALBUM = 4; // filters out singles/EPs (2-3 track releases) — a couple scrobbles shouldn't count as a "full listen"
   const fullyListened = scored
     .map(g => {
       const hasRealTrackCount = g.trackCount > 0;
@@ -1855,7 +1856,7 @@ async function generateRecentListens(){
       const estListens = Math.floor(g.count / divisor);
       return Object.assign({}, g, {estListens, guessed: !hasRealTrackCount});
     })
-    .filter(g => g.estListens >= 1)
+    .filter(g => g.estListens >= 1 && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM))
     .sort((a, b) => b.lastUts - a.lastUts);
 
   recentResults = {fromUnix, toUnix, albums: fullyListened};
