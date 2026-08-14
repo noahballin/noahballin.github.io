@@ -165,6 +165,14 @@
   .divider-line{height:1px; background:var(--line); margin:20px 0;}
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
   .vibe-still{width:20px; height:20px; margin-left:8px; vertical-align:middle; border-radius:5px;}
+  .reviews-filters{margin-top:16px; display:flex; flex-direction:column; gap:14px;}
+  .reviews-filter-row label{display:block; font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;}
+  .reviews-filter-row select{
+    width:100%; background:var(--card); border:1px solid var(--line); color:var(--ink);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 10px; border-radius:8px;
+  }
+  .review-vibe-opt.vibe-all{width:auto; padding:0 12px; font-size:11px; color:var(--ink-dim); font-family:'IBM Plex Mono',monospace;}
+  .review-vibe-opt.vibe-all.active{color:var(--teal);}
   .review-axis{margin-top:16px;}
   .review-axis label{font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em;}
   .review-opts{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
@@ -380,6 +388,28 @@
     <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
     <div class="sync-note" id="recentNote"></div>
   </div>
+  <div id="reviewsHeader" class="hidden">
+    <h1>Reviews</h1>
+    <p class="recent-sub" id="reviewsCount"></p>
+    <div class="reviews-filters">
+      <div class="reviews-filter-row">
+        <label>Rotation</label>
+        <select id="reviewsFilterRotation" onchange="setReviewsTextFilter('rotation', this.value)"></select>
+      </div>
+      <div class="reviews-filter-row">
+        <label>Distinctiveness</label>
+        <select id="reviewsFilterDistinctiveness" onchange="setReviewsTextFilter('distinctiveness', this.value)"></select>
+      </div>
+      <div class="reviews-filter-row">
+        <label>Pull</label>
+        <select id="reviewsFilterPull" onchange="setReviewsTextFilter('pull', this.value)"></select>
+      </div>
+      <div class="reviews-filter-row">
+        <label>Vibe</label>
+        <div class="review-vibe-opts" id="reviewsFilterVibe"></div>
+      </div>
+    </div>
+  </div>
 </header>
 
 <div class="tab-bar">
@@ -391,6 +421,9 @@
   </button>
   <button id="tabRecent" onclick="switchSection('recent')">
     <span class="tab-icon">🔁</span><span>This Week</span>
+  </button>
+  <button id="tabReviews" onclick="switchSection('reviews')">
+    <span class="tab-icon">📝</span><span>Reviews</span>
   </button>
 </div>
 
@@ -736,6 +769,111 @@ async function exportReviewsCSV(){
   note.textContent = "Downloaded " + filename + ".";
 }
 
+/* ---------- REVIEWS TAB (browse + filter all reviewed albums) ---------- */
+let reviewsFilter = {rotation: "", distinctiveness: "", pull: "", vibe: ""};
+
+function initReviewsHeader(){
+  populateFilterSelect("reviewsFilterRotation", ROTATION_OPTIONS);
+  populateFilterSelect("reviewsFilterDistinctiveness", DISTINCTIVENESS_OPTIONS);
+  populateFilterSelect("reviewsFilterPull", PULL_OPTIONS);
+  renderReviewsVibeFilter();
+}
+function populateFilterSelect(id, options){
+  const el = document.getElementById(id);
+  el.innerHTML = '<option value="">All</option>' + options.map(o => '<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>').join("");
+}
+function setReviewsTextFilter(axisKey, value){
+  reviewsFilter[axisKey] = value;
+  renderReviewsResultsArea();
+}
+function renderReviewsVibeFilter(){
+  const el = document.getElementById("reviewsFilterVibe");
+  let html = '<button class="review-vibe-opt vibe-all' + (!reviewsFilter.vibe ? ' active' : '') + '" onclick="setReviewsVibeFilter(\'\')">All</button>';
+  html += VIBE_EMOTES.map(v =>
+    '<button class="review-vibe-opt' + (reviewsFilter.vibe === v.id ? ' active' : '') + '" onclick="setReviewsVibeFilter(\'' + v.id + '\')">' +
+      '<img src="' + v.url + '" alt="">' +
+    '</button>'
+  ).join("");
+  el.innerHTML = html;
+}
+function setReviewsVibeFilter(id){
+  reviewsFilter.vibe = id;
+  renderReviewsVibeFilter();
+  renderReviewsResultsArea();
+}
+function getFilteredReviews(){
+  const reviews = loadReviews();
+  return Object.values(reviews).filter(r =>
+    (!reviewsFilter.rotation || r.rotation === reviewsFilter.rotation) &&
+    (!reviewsFilter.distinctiveness || r.distinctiveness === reviewsFilter.distinctiveness) &&
+    (!reviewsFilter.pull || r.pull === reviewsFilter.pull) &&
+    (!reviewsFilter.vibe || r.vibe === reviewsFilter.vibe)
+  ).sort((a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0));
+}
+function renderReviewsResultsArea(){
+  const content = document.getElementById("content");
+  if(section !== "reviews") return;
+  const filtered = getFilteredReviews();
+  const total = Object.keys(loadReviews()).length;
+  document.getElementById("reviewsCount").textContent =
+    filtered.length + " of " + total + " reviewed album" + (total === 1 ? "" : "s") + (filtered.length !== total ? " match these filters" : "");
+
+  if(filtered.length === 0){
+    content.innerHTML = '<div class="empty-hint">' + (total === 0 ? "Review an album from This Week to see it here." : "No reviews match these filters.") + '</div>';
+    return;
+  }
+  const wrap = document.createElement("div");
+  filtered.forEach((r, i) => {
+    const vibe = r.vibe ? VIBE_EMOTES.find(v => v.id === r.vibe) : null;
+    const row = document.createElement("div");
+    row.className = "discover-card";
+    row.style.cursor = "pointer";
+    row.onclick = () => openReviewModal(r.artist, r.title);
+    row.innerHTML =
+      '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
+      '<div class="discover-main">' +
+        '<div class="discover-artist">' + escapeHtml(r.artist) +
+          (vibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '') +
+        '</div>' +
+        '<div class="discover-title">' + escapeHtml(r.title) + '</div>' +
+        '<div class="discover-meta">' +
+          '<span>' + escapeHtml(r.rotation || "—") + '</span>' +
+          '<span>' + escapeHtml(r.distinctiveness || "—") + '</span>' +
+          '<span>' + escapeHtml(r.pull || "—") + '</span>' +
+        '</div>' +
+      '</div>';
+    wrap.appendChild(row);
+  });
+  content.innerHTML = "";
+  content.appendChild(wrap);
+  content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+
+  const saveRow = document.createElement("div");
+  saveRow.className = "add-album-row";
+  saveRow.innerHTML = '<button class="save-discover-btn" onclick="saveReviewsFilterAsList()">Make a list from these ' + filtered.length + ' albums</button>';
+  content.appendChild(saveRow);
+}
+function reviewsFilterLabel(){
+  const parts = [];
+  if(reviewsFilter.rotation) parts.push(reviewsFilter.rotation);
+  if(reviewsFilter.distinctiveness) parts.push(reviewsFilter.distinctiveness);
+  if(reviewsFilter.pull) parts.push(reviewsFilter.pull);
+  if(reviewsFilter.vibe) parts.push("chosen vibe");
+  return parts.length ? "Reviewed: " + parts.join(" / ") : "All Reviewed Albums";
+}
+function saveReviewsFilterAsList(){
+  const filtered = getFilteredReviews();
+  if(filtered.length === 0) return;
+  let label = reviewsFilterLabel();
+  const albums = filtered.map(r => ({a: r.artist, t: r.title, y: "", g: ""}));
+  let id = slugify(label);
+  const existingIds = new Set(getAllLists().map(l => l.id));
+  if(existingIds.has(id)) id = id + "-" + Date.now();
+  customLists.push({id, title: label, albums});
+  saveCustomLists(customLists);
+  goList(id);
+}
+
 
 function loadSettings(){
   try{
@@ -880,8 +1018,9 @@ function lookupGenre(i){ return lookupGenreIn(activeList, progress, i); }
 function estFullListens(e){ return estFullListensIn(e); }
 
 /* ---------- NAVIGATION ---------- */
-let section = "lists"; // "lists" | "discover" | "recent"
+let section = "lists"; // "lists" | "discover" | "recent" | "reviews"
 let discoverInitialized = false;
+let reviewsInitialized = false;
 
 function render(){
   if(section === "discover"){
@@ -889,6 +1028,7 @@ function render(){
     document.getElementById("dashboardHeader").classList.add("hidden");
     document.getElementById("listHeader").classList.add("hidden");
     document.getElementById("recentHeader").classList.add("hidden");
+    document.getElementById("reviewsHeader").classList.add("hidden");
     document.getElementById("discoverHeader").classList.remove("hidden");
     renderDiscoverResultsArea();
     return;
@@ -898,12 +1038,24 @@ function render(){
     document.getElementById("dashboardHeader").classList.add("hidden");
     document.getElementById("listHeader").classList.add("hidden");
     document.getElementById("discoverHeader").classList.add("hidden");
+    document.getElementById("reviewsHeader").classList.add("hidden");
     document.getElementById("recentHeader").classList.remove("hidden");
     renderRecentResultsArea();
     return;
   }
+  if(section === "reviews"){
+    document.getElementById("backBtn").classList.add("hidden");
+    document.getElementById("dashboardHeader").classList.add("hidden");
+    document.getElementById("listHeader").classList.add("hidden");
+    document.getElementById("discoverHeader").classList.add("hidden");
+    document.getElementById("recentHeader").classList.add("hidden");
+    document.getElementById("reviewsHeader").classList.remove("hidden");
+    renderReviewsResultsArea();
+    return;
+  }
   document.getElementById("discoverHeader").classList.add("hidden");
   document.getElementById("recentHeader").classList.add("hidden");
+  document.getElementById("reviewsHeader").classList.add("hidden");
   document.getElementById("backBtn").classList.toggle("hidden", mode === "dashboard");
   document.getElementById("dashboardHeader").classList.toggle("hidden", mode !== "dashboard");
   document.getElementById("listHeader").classList.toggle("hidden", mode !== "albums");
@@ -916,9 +1068,14 @@ function switchSection(s){
   document.getElementById("tabLists").classList.toggle("active", s === "lists");
   document.getElementById("tabDiscover").classList.toggle("active", s === "discover");
   document.getElementById("tabRecent").classList.toggle("active", s === "recent");
+  document.getElementById("tabReviews").classList.toggle("active", s === "reviews");
   if(s === "discover" && !discoverInitialized){
     discoverInitialized = true;
     initDiscoverHeader();
+  }
+  if(s === "reviews" && !reviewsInitialized){
+    reviewsInitialized = true;
+    initReviewsHeader();
   }
   render();
 }
@@ -935,6 +1092,7 @@ function goList(id){
   document.getElementById("tabLists").classList.add("active");
   document.getElementById("tabDiscover").classList.remove("active");
   document.getElementById("tabRecent").classList.remove("active");
+  document.getElementById("tabReviews").classList.remove("active");
   activeList = found;
   progress = getProgressFor(activeList.id);
   filter = "all";
@@ -1991,23 +2149,38 @@ async function fetchRecentTracksPage(fromUnix, toUnix, page){
   return {tracks: Array.isArray(tracks) ? tracks : [tracks], totalPages: isNaN(totalPages) ? 1 : totalPages};
 }
 
-async function fetchAlbumTrackCount(artist, album){
+async function fetchAlbumMeta(artist, album){
   const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
     + "&api_key=" + encodeURIComponent(settings.apiKey)
     + "&artist=" + encodeURIComponent(artist)
     + "&album=" + encodeURIComponent(album)
     + "&autocorrect=1&format=json";
+  const empty = {trackCount: 0, year: "", genre: ""};
   try{
     const res = await fetch(url);
     const data = await res.json();
-    if(data.error) return 0;
-    if(data.album && data.album.tracks && data.album.tracks.track){
+    if(data.error || !data.album) return empty;
+    let trackCount = 0;
+    if(data.album.tracks && data.album.tracks.track){
       const t = data.album.tracks.track;
-      return Array.isArray(t) ? t.length : 1;
+      trackCount = Array.isArray(t) ? t.length : 1;
     }
-    return 0;
+    // releasedate looks like "6 Apr 1999, 00:00" — often blank, so just grab the year if present.
+    let year = "";
+    if(data.album.releasedate){
+      const m = data.album.releasedate.match(/\d{4}/);
+      if(m) year = m[0];
+    }
+    // Top user-applied tag is a reasonable stand-in for genre (Last.fm has no dedicated genre field).
+    let genre = "";
+    if(data.album.toptags && data.album.toptags.tag){
+      const tags = data.album.toptags.tag;
+      const first = Array.isArray(tags) ? tags[0] : tags;
+      if(first && first.name) genre = first.name;
+    }
+    return {trackCount, year, genre};
   }catch(err){
-    return 0;
+    return empty;
   }
 }
 
@@ -2073,8 +2246,8 @@ async function generateRecentListens(){
     const batch = groupList.slice(i, i + BATCH_SIZE);
     note.textContent = "Checking track counts… " + Math.min(i + BATCH_SIZE, groupList.length) + " of " + groupList.length + " albums";
     const results = await Promise.all(batch.map(async g => {
-      const trackCount = await fetchAlbumTrackCount(g.artist, g.album);
-      return Object.assign({}, g, {trackCount});
+      const meta = await fetchAlbumMeta(g.artist, g.album);
+      return Object.assign({}, g, meta);
     }));
     scored.push(...results);
     await sleep(150);
@@ -2123,6 +2296,8 @@ function renderRecentResultsArea(){
         '</div>' +
         '<div class="discover-title">' + escapeHtml(al.album) + '</div>' +
         '<div class="discover-meta">' +
+          (al.year ? '<span class="genre-tag">' + escapeHtml(al.year) + '</span>' : '') +
+          (al.genre ? '<span class="genre-tag">' + escapeHtml(al.genre) + '</span>' : '') +
           '<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>' +
           '<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>' +
         '</div>' +
