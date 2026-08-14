@@ -161,6 +161,7 @@
     text-transform:uppercase; letter-spacing:0.03em; margin-left:2px; vertical-align:middle;
   }
   .save-discover-btn{margin:16px 14px 4px; width:calc(100% - 28px);}
+  .recent-sub{font-size:12px; color:var(--ink-dim); margin-top:8px; line-height:1.5;}
 
   /* dashboard */
   .dash-grid{display:flex; flex-direction:column; gap:10px;}
@@ -354,6 +355,12 @@
     <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscoverList()">Find albums</button>
     <div class="sync-note" id="discoverNote"></div>
   </div>
+  <div id="recentHeader" class="hidden">
+    <h1>Past Week</h1>
+    <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
+    <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
+    <div class="sync-note" id="recentNote"></div>
+  </div>
 </header>
 
 <div class="tab-bar">
@@ -362,6 +369,9 @@
   </button>
   <button id="tabDiscover" onclick="switchSection('discover')">
     <span class="tab-icon">🧭</span><span>Discover</span>
+  </button>
+  <button id="tabRecent" onclick="switchSection('recent')">
+    <span class="tab-icon">🔁</span><span>This Week</span>
   </button>
 </div>
 
@@ -647,7 +657,7 @@ function lookupGenre(i){ return lookupGenreIn(activeList, progress, i); }
 function estFullListens(e){ return estFullListensIn(e); }
 
 /* ---------- NAVIGATION ---------- */
-let section = "lists"; // "lists" | "discover"
+let section = "lists"; // "lists" | "discover" | "recent"
 let discoverInitialized = false;
 
 function render(){
@@ -655,11 +665,22 @@ function render(){
     document.getElementById("backBtn").classList.add("hidden");
     document.getElementById("dashboardHeader").classList.add("hidden");
     document.getElementById("listHeader").classList.add("hidden");
+    document.getElementById("recentHeader").classList.add("hidden");
     document.getElementById("discoverHeader").classList.remove("hidden");
     renderDiscoverResultsArea();
     return;
   }
+  if(section === "recent"){
+    document.getElementById("backBtn").classList.add("hidden");
+    document.getElementById("dashboardHeader").classList.add("hidden");
+    document.getElementById("listHeader").classList.add("hidden");
+    document.getElementById("discoverHeader").classList.add("hidden");
+    document.getElementById("recentHeader").classList.remove("hidden");
+    renderRecentResultsArea();
+    return;
+  }
   document.getElementById("discoverHeader").classList.add("hidden");
+  document.getElementById("recentHeader").classList.add("hidden");
   document.getElementById("backBtn").classList.toggle("hidden", mode === "dashboard");
   document.getElementById("dashboardHeader").classList.toggle("hidden", mode !== "dashboard");
   document.getElementById("listHeader").classList.toggle("hidden", mode !== "albums");
@@ -671,6 +692,7 @@ function switchSection(s){
   section = s;
   document.getElementById("tabLists").classList.toggle("active", s === "lists");
   document.getElementById("tabDiscover").classList.toggle("active", s === "discover");
+  document.getElementById("tabRecent").classList.toggle("active", s === "recent");
   if(s === "discover" && !discoverInitialized){
     discoverInitialized = true;
     initDiscoverHeader();
@@ -689,6 +711,7 @@ function goList(id){
   section = "lists";
   document.getElementById("tabLists").classList.add("active");
   document.getElementById("tabDiscover").classList.remove("active");
+  document.getElementById("tabRecent").classList.remove("active");
   activeList = found;
   progress = getProgressFor(activeList.id);
   filter = "all";
@@ -1703,6 +1726,171 @@ function saveDiscoverAsList(){
   customLists.push({id, title: label, albums});
   saveCustomLists(customLists);
   goList(id);
+}
+
+/* ---------- THIS WEEK (fully-listened albums from recent scrobbles) ---------- */
+const RECENT_TRACK_COUNT_GUESS = 8; // used only when Last.fm doesn't return a tracklist for an album
+let recentResults = null;
+
+async function fetchRecentTracksPage(fromUnix, toUnix, page){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks"
+    + "&user=" + encodeURIComponent(settings.username)
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&from=" + fromUnix + "&to=" + toUnix
+    + "&limit=200&page=" + page + "&format=json";
+  let res;
+  try{
+    res = await fetch(url);
+  }catch(networkErr){
+    throw {type: "network", detail: networkErr.message || "Failed to fetch"};
+  }
+  let data;
+  try{
+    data = await res.json();
+  }catch(parseErr){
+    throw {type: "network", detail: "Bad response (HTTP " + res.status + ")"};
+  }
+  if(data.error){
+    if(data.error === 10) throw {type: "auth", detail: data.message || "Invalid API key"};
+    throw {type: "network", detail: data.message || "Last.fm error"};
+  }
+  const tracks = (data.recenttracks && data.recenttracks.track) || [];
+  const totalPages = data.recenttracks && data.recenttracks["@attr"] ? parseInt(data.recenttracks["@attr"].totalPages, 10) : 1;
+  return {tracks: Array.isArray(tracks) ? tracks : [tracks], totalPages: isNaN(totalPages) ? 1 : totalPages};
+}
+
+async function fetchAlbumTrackCount(artist, album){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&album=" + encodeURIComponent(album)
+    + "&autocorrect=1&format=json";
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.error) return 0;
+    if(data.album && data.album.tracks && data.album.tracks.track){
+      const t = data.album.tracks.track;
+      return Array.isArray(t) ? t.length : 1;
+    }
+    return 0;
+  }catch(err){
+    return 0;
+  }
+}
+
+async function generateRecentListens(){
+  if(!settings.username || !settings.apiKey){
+    document.getElementById("recentNote").textContent = "Connect Last.fm in Settings first.";
+    openSettings();
+    return;
+  }
+  const btn = document.getElementById("recentGenerateBtn");
+  const note = document.getElementById("recentNote");
+  btn.disabled = true;
+  note.textContent = "Pulling your last 7 days of scrobbles…";
+
+  const toUnix = Math.floor(Date.now() / 1000);
+  const fromUnix = toUnix - 7 * 24 * 60 * 60;
+
+  let allTracks = [];
+  try{
+    let page = 1, totalPages = 1;
+    do{
+      const result = await fetchRecentTracksPage(fromUnix, toUnix, page);
+      totalPages = result.totalPages;
+      allTracks = allTracks.concat(result.tracks);
+      page++;
+      await sleep(150);
+    } while(page <= totalPages && page <= 20); // safety ceiling: 20 pages = up to 4000 scrobbles/week
+  }catch(err){
+    note.textContent = err.type === "auth"
+      ? 'Last.fm says: "' + err.detail + '". Double-check the API key in Settings.'
+      : "Couldn't reach Last.fm (" + (err.detail || "unknown error") + "). Try again in a moment.";
+    btn.disabled = false;
+    return;
+  }
+
+  // Group scrobbles by album, skipping the "now playing" entry (it has no timestamp) and anything without an album tag.
+  const groups = {};
+  allTracks.forEach(t => {
+    if(t["@attr"] && t["@attr"].nowplaying) return;
+    const artist = (t.artist && (t.artist["#text"] || t.artist.name)) || "";
+    const album = (t.album && t.album["#text"]) || "";
+    if(!artist || !album) return;
+    const key = artist.toLowerCase() + "|" + album.toLowerCase();
+    if(!groups[key]) groups[key] = {artist, album, count: 0, lastUts: 0};
+    groups[key].count++;
+    const uts = t.date && t.date.uts ? parseInt(t.date.uts, 10) : 0;
+    if(uts > groups[key].lastUts) groups[key].lastUts = uts;
+  });
+  const groupList = Object.values(groups);
+
+  if(groupList.length === 0){
+    recentResults = {fromUnix, toUnix, albums: []};
+    note.textContent = "No scrobbles found in the last 7 days.";
+    btn.disabled = false;
+    renderRecentResultsArea();
+    return;
+  }
+
+  // Fetch real track counts (batched), then estimate full listens.
+  const BATCH_SIZE = 6;
+  const scored = [];
+  for(let i = 0; i < groupList.length; i += BATCH_SIZE){
+    const batch = groupList.slice(i, i + BATCH_SIZE);
+    note.textContent = "Checking track counts… " + Math.min(i + BATCH_SIZE, groupList.length) + " of " + groupList.length + " albums";
+    const results = await Promise.all(batch.map(async g => {
+      const trackCount = await fetchAlbumTrackCount(g.artist, g.album);
+      return Object.assign({}, g, {trackCount});
+    }));
+    scored.push(...results);
+    await sleep(150);
+  }
+
+  const fullyListened = scored
+    .map(g => {
+      const hasRealTrackCount = g.trackCount > 0;
+      const divisor = hasRealTrackCount ? g.trackCount : RECENT_TRACK_COUNT_GUESS;
+      const estListens = Math.floor(g.count / divisor);
+      return Object.assign({}, g, {estListens, guessed: !hasRealTrackCount});
+    })
+    .filter(g => g.estListens >= 1)
+    .sort((a, b) => b.lastUts - a.lastUts);
+
+  recentResults = {fromUnix, toUnix, albums: fullyListened};
+  btn.disabled = false;
+  note.textContent = fullyListened.length > 0
+    ? "Found " + fullyListened.length + " album" + (fullyListened.length === 1 ? "" : "s") + " listened to in full this week."
+    : "Nothing hit a full-listen threshold this week — scrobbles were too spread out across albums.";
+  renderRecentResultsArea();
+}
+
+function renderRecentResultsArea(){
+  const content = document.getElementById("content");
+  if(section !== "recent") return;
+  if(!recentResults || !recentResults.albums || recentResults.albums.length === 0){
+    content.innerHTML = '<div class="empty-hint">Tap "Check this week" to see what you\'ve fully listened to.</div>';
+    return;
+  }
+  const wrap = document.createElement("div");
+  recentResults.albums.forEach((al, i) => {
+    const row = document.createElement("div");
+    row.className = "discover-card";
+    row.innerHTML =
+      '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
+      '<div class="discover-main">' +
+        '<div class="discover-artist">' + escapeHtml(al.artist) + '</div>' +
+        '<div class="discover-title">' + escapeHtml(al.album) + '</div>' +
+        '<div class="discover-meta">' +
+          '<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>' +
+          '<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>' +
+        '</div>' +
+      '</div>';
+    wrap.appendChild(row);
+  });
+  content.innerHTML = "";
+  content.appendChild(wrap);
 }
 
 /* ---------- INIT ---------- */
