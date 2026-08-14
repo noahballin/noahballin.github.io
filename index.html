@@ -164,6 +164,7 @@
   .recent-sub{font-size:12px; color:var(--ink-dim); margin-top:8px; line-height:1.5;}
   .divider-line{height:1px; background:var(--line); margin:20px 0;}
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
+  .vibe-still{width:20px; height:20px; margin-left:8px; vertical-align:middle; border-radius:5px;}
   .review-axis{margin-top:16px;}
   .review-axis label{font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em;}
   .review-opts{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
@@ -583,15 +584,15 @@ const DISTINCTIVENESS_OPTIONS = [
   "Sounds like nothing else",
   "Clear point of view",
   "Confident spin on a familiar sound",
-  "Solid but familiar",
-  "Comfortable in familiar territory"
+  "Mostly Familiar",
+  "Playing it very safe"
 ];
 const PULL_OPTIONS = [
-  "Couldn't stop thinking about it",
+  "Felt that with all my heart",
   "Really moved me",
   "Enjoyed the ride",
-  "Kept me at a distance",
-  "Didn't connect"
+  "Light pull",
+  "Didn't connect with me"
 ];
 // Add more {id, url} entries here any time — the picker and CSV export both pick up new ones automatically.
 const VIBE_EMOTES = [
@@ -600,7 +601,10 @@ const VIBE_EMOTES = [
   {id: "01FX5XD2WG000FG2VJF724907Z", url: "https://cdn.7tv.app/emote/01FX5XD2WG000FG2VJF724907Z/2x.gif"},
   {id: "01GYHY4CKR000DPDZS2FQDVQB7", url: "https://cdn.7tv.app/emote/01GYHY4CKR000DPDZS2FQDVQB7/2x.gif"},
   {id: "01FGHEX1SG00021TQRJX35N04C", url: "https://cdn.7tv.app/emote/01FGHEX1SG00021TQRJX35N04C/2x.gif"},
-  {id: "01HV5N2ME00007838DQ0AM89KP", url: "https://cdn.7tv.app/emote/01HV5N2ME00007838DQ0AM89KP/2x.gif"}
+  {id: "01HV5N2ME00007838DQ0AM89KP", url: "https://cdn.7tv.app/emote/01HV5N2ME00007838DQ0AM89KP/2x.gif"},
+  {id: "01KKS6K4V91V6NFBM1ZK1HR49P", url: "https://cdn.7tv.app/emote/01KKS6K4V91V6NFBM1ZK1HR49P/2x.gif"},
+  {id: "01J8QY5TA8000C93G7AYMMP1DA", url: "https://cdn.7tv.app/emote/01J8QY5TA8000C93G7AYMMP1DA/2x.gif"},
+  {id: "01F6Z1VCR0000210KYV8SVZV5M", url: "https://cdn.7tv.app/emote/01F6Z1VCR0000210KYV8SVZV5M/2x.gif"}
 ];
 
 function loadReviews(){
@@ -2105,7 +2109,8 @@ function renderRecentResultsArea(){
   const wrap = document.createElement("div");
   const reviews = loadReviews();
   recentResults.albums.forEach((al, i) => {
-    const reviewed = !!reviews[reviewKey(al.artist, al.album)];
+    const review = reviews[reviewKey(al.artist, al.album)];
+    const reviewVibe = review && review.vibe ? VIBE_EMOTES.find(v => v.id === review.vibe) : null;
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
@@ -2113,8 +2118,10 @@ function renderRecentResultsArea(){
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
-        '<div class="discover-artist">' + escapeHtml(al.artist) + '</div>' +
-        '<div class="discover-title">' + escapeHtml(al.album) + (reviewed ? ' <span class="reviewed-badge">✓ reviewed</span>' : '') + '</div>' +
+        '<div class="discover-artist">' + escapeHtml(al.artist) +
+          (reviewVibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + reviewVibe.url + '"></canvas>' : '') +
+        '</div>' +
+        '<div class="discover-title">' + escapeHtml(al.album) + '</div>' +
         '<div class="discover-meta">' +
           '<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>' +
           '<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>' +
@@ -2124,6 +2131,22 @@ function renderRecentResultsArea(){
   });
   content.innerHTML = "";
   content.appendChild(wrap);
+  content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+}
+
+// Draws just the first frame of a gif onto a canvas so it displays as a static image
+// rather than animating — canvas naturally freezes whatever frame was current on load.
+function drawStillFrame(canvas, url){
+  const ctx = canvas.getContext("2d");
+  const img = new Image();
+  img.onload = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+    const w = img.width * scale, h = img.height * scale;
+    ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+  };
+  img.onerror = () => {}; // leave blank if it fails to load
+  img.src = url;
 }
 
 /* ---------- INIT ---------- */
