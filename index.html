@@ -1527,6 +1527,25 @@ async function fetchLastfmListeners(artist, title){
     return 0;
   }
 }
+// A brand-new album's own listener count is nearly meaningless — scrobbles take days/weeks
+// to build up, so a huge release can look identical to random noise in its first week.
+// The artist's overall Last.fm listener count is a much steadier "does this act have a
+// real audience" signal, and doesn't depend on this specific release having caught on yet.
+async function fetchArtistListeners(artist){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=artist.getinfo"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&autocorrect=1&format=json";
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.error) return 0;
+    const l = data.artist && data.artist.stats && data.artist.stats.listeners ? parseInt(data.artist.stats.listeners, 10) : 0;
+    return isNaN(l) ? 0 : l;
+  }catch(err){
+    return 0;
+  }
+}
 function shuffleArray(arr){
   for(let i = arr.length - 1; i > 0; i--){
     const j = Math.floor(Math.random() * (i + 1));
@@ -1581,14 +1600,24 @@ async function generateDiscoverList(){
   }
 
   const scored = await scoreCandidatesWithLastfm(candidates, note);
-  scored.sort((a, b) => b.listeners - a.listeners);
+
+  // "Important" bucket: ranked by the ARTIST's overall Last.fm listener count, not the
+  // brand-new album's own count (which hasn't had time to accumulate scrobbles yet).
+  scored.sort((a, b) => b.artistListeners - a.artistListeners);
 
   const n = Math.min(discoverCount, scored.length);
   const topCut = Math.ceil(n * 0.7);
   let picks = scored.slice(0, topCut);
-  const remainder = scored.slice(topCut);
-  const undergroundPool = shuffleArray(remainder.slice(Math.floor(remainder.length * 0.2)));
-  const undergroundPicks = undergroundPool.slice(0, n - topCut);
+
+  // "Fun to try": artists with a real but modest following — genuinely findable/emerging
+  // acts, not zero-listener MusicBrainz noise and not already-huge names duplicating the top bucket.
+  const pickedKeys = new Set(picks.map(p => p.artist + "|" + p.title));
+  const FUN_MIN = 1000, FUN_MAX = 50000;
+  let funPool = scored.filter(c =>
+    !pickedKeys.has(c.artist + "|" + c.title) && c.artistListeners >= FUN_MIN && c.artistListeners <= FUN_MAX
+  );
+  funPool = shuffleArray(funPool);
+  let undergroundPicks = funPool.slice(0, n - topCut);
   const undergroundKeys = new Set(undergroundPicks.map(p => p.artist + "|" + p.title));
   picks = picks.concat(undergroundPicks);
 
@@ -1601,11 +1630,11 @@ async function generateDiscoverList(){
     }
   }
   picks = picks.map(p => Object.assign({}, p, {underground: undergroundKeys.has(p.artist + "|" + p.title)}));
-  picks.sort((a, b) => b.listeners - a.listeners);
+  picks.sort((a, b) => b.artistListeners - a.artistListeners);
 
   discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, totalFound: total, poolScored: scored.length, albums: picks};
   btn.disabled = false;
-  note.textContent = "Found " + picks.length + " of " + discoverCount + " requested, ranked across "
+  note.textContent = "Found " + picks.length + " of " + discoverCount + " requested, ranked by artist popularity across "
     + scored.length + (total !== Infinity && scored.length < total ? " of " + total : "") + " real releases that week.";
   renderDiscoverResultsArea();
 }
@@ -1617,8 +1646,11 @@ async function scoreCandidatesWithLastfm(candidates, note){
     const batch = candidates.slice(i, i + BATCH_SIZE);
     note.textContent = "Scoring " + Math.min(i + BATCH_SIZE, candidates.length) + " of " + candidates.length + " releases against Last.fm…";
     const results = await Promise.all(batch.map(async c => {
-      const listeners = await fetchLastfmListeners(c.artist, c.title);
-      return Object.assign({}, c, {listeners});
+      const [listeners, artistListeners] = await Promise.all([
+        fetchLastfmListeners(c.artist, c.title),
+        fetchArtistListeners(c.artist)
+      ]);
+      return Object.assign({}, c, {listeners, artistListeners});
     }));
     scored.push(...results);
     await sleep(150); // brief pause between batches
@@ -1641,10 +1673,11 @@ function renderDiscoverResultsArea(){
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
         '<div class="discover-artist">' + al.artist + '</div>' +
-        '<div class="discover-title">' + al.title + (al.underground ? ' <span class="underground-badge">Under the radar</span>' : '') + '</div>' +
+        '<div class="discover-title">' + al.title + (al.underground ? ' <span class="underground-badge">Fun to try</span>' : '') + '</div>' +
         '<div class="discover-meta">' +
           '<span>' + (al.date || "") + '</span>' +
-          '<span>' + (al.listeners > 0 ? formatListeners(al.listeners) + ' listeners' : 'no scrobbles yet') + '</span>' +
+          '<span>' + formatListeners(al.artistListeners) + ' listeners on ' + al.artist + '</span>' +
+          (al.listeners > 0 ? '<span>' + formatListeners(al.listeners) + ' on this album so far</span>' : '') +
         '</div>' +
       '</div>';
     wrap.appendChild(row);
