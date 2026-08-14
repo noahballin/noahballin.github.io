@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#17140F">
 <title>Listening Log</title>
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%2317140F'/%3E%3Ccircle cx='50' cy='50' r='40' fill='%23211D17' stroke='%233A3327' stroke-width='1.5'/%3E%3Ccircle cx='50' cy='50' r='31' fill='none' stroke='%233A3327' stroke-width='1'/%3E%3Ccircle cx='50' cy='50' r='23' fill='none' stroke='%233A3327' stroke-width='1'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23C9A227'/%3E%3Ccircle cx='50' cy='50' r='3' fill='%2317140F'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -270,6 +270,7 @@
   }
   .album.listened .check{background:var(--teal); border-color:var(--teal); color:#17140F;}
   .album.auto-only .check{box-shadow:0 0 0 3px rgba(79,143,134,0.18);}
+  .vibe-check{width:30px; height:30px; border-radius:50%; margin-top:2px;}
 
   .row-actions{display:flex; gap:12px; margin-top:6px;}
   .del-link{color:var(--ink-dim);}
@@ -649,7 +650,7 @@ const VIBE_EMOTES = [
   {id: "01GAJBNT780004XAVG6P7AZAK2", url: "https://cdn.7tv.app/emote/01GAJBNT780004XAVG6P7AZAK2/2x.gif"},
   {id: "01FX5XD2WG000FG2VJF724907Z", url: "https://cdn.7tv.app/emote/01FX5XD2WG000FG2VJF724907Z/2x.gif"},
   {id: "01GQ815E5G000ERT2YB38Q59SX", url: "https://cdn.7tv.app/emote/01GQ815E5G000ERT2YB38Q59SX/2x.gif"},
-  {id: "01FGHEX1SG00021TQRJX35N04C", url: "https://cdn.7tv.app/emote/01FGHEX1SG00021TQRJX35N04C/2x.gif"},
+  {id: "01GYHY4CKR000DPDZS2FQDVQB7", url: "https://cdn.7tv.app/emote/01GYHY4CKR000DPDZS2FQDVQB7/2x.gif"},
   {id: "01HV5N2ME00007838DQ0AM89KP", url: "https://cdn.7tv.app/emote/01HV5N2ME00007838DQ0AM89KP/2x.gif"},
   {id: "01KKS6K4V91V6NFBM1ZK1HR49P", url: "https://cdn.7tv.app/emote/01KKS6K4V91V6NFBM1ZK1HR49P/2x.gif"},
   {id: "01J8QY5TA8000C93G7AYMMP1DA", url: "https://cdn.7tv.app/emote/01J8QY5TA8000C93G7AYMMP1DA/2x.gif"},
@@ -667,7 +668,7 @@ function reviewKey(artist, title){ return (artist + "|||" + title).toLowerCase()
 let reviewingKey = null;
 let reviewDraft = {rotation: null, distinctiveness: null, pull: null, vibe: null};
 
-function openReviewModal(artist, title, suggestedYear, allowYearEdit){
+function openReviewModal(artist, title, suggestedYear){
   reviewingKey = reviewKey(artist, title);
   const reviews = loadReviews();
   const existing = reviews[reviewingKey];
@@ -675,13 +676,14 @@ function openReviewModal(artist, title, suggestedYear, allowYearEdit){
     ? {rotation: existing.rotation, distinctiveness: existing.distinctiveness, pull: existing.pull, vibe: existing.vibe}
     : {rotation: null, distinctiveness: null, pull: null, vibe: null};
 
+  const knownYear = (existing && existing.year) || suggestedYear || "";
   document.getElementById("reviewModalTitle").textContent = artist + " — " + title;
   document.getElementById("reviewModalArtist").value = artist;
   document.getElementById("reviewModalAlbum").value = title;
-  document.getElementById("reviewModalYear").value = (existing && existing.year) || suggestedYear || "";
-  // This Week already pulls the year automatically (Last.fm, then MusicBrainz on request),
-  // so manual entry is only offered from the Reviews tab where you're editing after the fact.
-  document.getElementById("reviewYearField").classList.toggle("hidden", allowYearEdit === false);
+  document.getElementById("reviewModalYear").value = knownYear;
+  // Only ask for a year if we genuinely don't have one from anywhere yet (a saved review,
+  // or auto-pulled from Last.fm/MusicBrainz on This Week) — no need to show it otherwise.
+  document.getElementById("reviewYearField").classList.toggle("hidden", !!knownYear);
   document.getElementById("reviewDeleteRow").classList.toggle("hidden", !existing);
   renderReviewOptions();
   openModal("reviewModal");
@@ -894,7 +896,7 @@ function renderReviewsResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(r.artist, r.title, r.year, true);
+    row.onclick = () => openReviewModal(r.artist, r.title, r.year);
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
@@ -1316,8 +1318,9 @@ function renderAlbums(){
           '<span class="edit-link del-link" id="del-link-' + i + '" onclick="confirmDelete(' + i + ')">delete</span>' +
         '</div>' +
       '</div>' +
-      (reviewVibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + reviewVibe.url + '"></canvas>' : '') +
-      '<div class="check" onclick="toggleManual(' + i + ')">✓</div>';
+      (reviewVibe
+        ? '<canvas class="vibe-still vibe-check" width="44" height="44" data-vibe-url="' + reviewVibe.url + '"></canvas>'
+        : '<div class="check" onclick="toggleManual(' + i + ')">✓</div>');
 
     wrap.appendChild(row);
   });
@@ -2397,7 +2400,7 @@ function renderRecentResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(al.artist, al.album, al.year, false);
+    row.onclick = () => openReviewModal(al.artist, al.album, al.year);
     const metaBits = [];
     if(al.year) metaBits.push('<span>' + escapeHtml(al.year) + '</span>');
     metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
