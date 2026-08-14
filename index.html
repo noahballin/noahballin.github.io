@@ -2331,7 +2331,9 @@ async function fetchAlbumMeta(artist, album){
       if(!tagsData.error && tagsData.toptags && tagsData.toptags.tag){
         const tags = tagsData.toptags.tag;
         const arr = Array.isArray(tags) ? tags : [tags];
-        genres = arr.slice(0, 2).map(t => t.name).filter(Boolean);
+        // Skip year/decade-style tags ("2022", "90s", "2000s") — not useful as a genre.
+        const isNumericTag = n => /^\d+s?$/i.test(n.trim());
+        genres = arr.map(t => t.name).filter(n => n && !isNumericTag(n)).slice(0, 2);
       }
     }catch(tagsErr){
       // leave genres empty if this call fails — don't let it break the rest of the result
@@ -2477,7 +2479,9 @@ function renderRecentResultsArea(){
     row.className = "discover-card";
     row.style.cursor = "pointer";
     row.onclick = () => openReviewModal(al.artist, al.album, al.year);
-    const metaBits = (al.genres || []).map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>');
+    const metaBits = al.genres && al.genres.length
+      ? ['<span class="genre-tag">' + escapeHtml(al.genres.join(" / ")) + '</span>']
+      : [];
     if(al.year) metaBits.push('<span>' + escapeHtml(al.year) + '</span>');
     metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
     metaBits.push('<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>');
