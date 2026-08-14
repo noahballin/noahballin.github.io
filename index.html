@@ -164,7 +164,7 @@
   .recent-sub{font-size:12px; color:var(--ink-dim); margin-top:8px; line-height:1.5;}
   .divider-line{height:1px; background:var(--line); margin:20px 0;}
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
-  .vibe-still{width:20px; height:20px; margin-left:8px; vertical-align:middle; border-radius:5px;}
+  .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
   .reviews-filters{margin-top:16px; display:flex; flex-direction:column; gap:14px;}
   .reviews-filter-row label{display:block; font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;}
   .reviews-filter-row select{
@@ -832,16 +832,15 @@ function renderReviewsResultsArea(){
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
-        '<div class="discover-artist">' + escapeHtml(r.artist) +
-          (vibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '') +
-        '</div>' +
+        '<div class="discover-artist">' + escapeHtml(r.artist) + '</div>' +
         '<div class="discover-title">' + escapeHtml(r.title) + '</div>' +
         '<div class="discover-meta">' +
           '<span>' + escapeHtml(r.rotation || "—") + '</span>' +
           '<span>' + escapeHtml(r.distinctiveness || "—") + '</span>' +
           '<span>' + escapeHtml(r.pull || "—") + '</span>' +
         '</div>' +
-      '</div>';
+      '</div>' +
+      (vibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '');
     wrap.appendChild(row);
   });
   content.innerHTML = "";
@@ -850,7 +849,7 @@ function renderReviewsResultsArea(){
 
   const saveRow = document.createElement("div");
   saveRow.className = "add-album-row";
-  saveRow.innerHTML = '<button class="save-discover-btn" onclick="saveReviewsFilterAsList()">Make a list from these ' + filtered.length + ' albums</button>';
+  saveRow.innerHTML = '<button class="sync-btn save-discover-btn" onclick="saveReviewsFilterAsList()">Make a list from these ' + filtered.length + ' albums</button>';
   content.appendChild(saveRow);
 }
 function reviewsFilterLabel(){
@@ -1205,6 +1204,7 @@ function renderAlbums(){
 
   const content = document.getElementById("content");
   const wrap = document.createElement("div");
+  const reviewsCache = loadReviews();
   visibleIndices.forEach(i => {
     const al = albums[i];
     const heardNow = isListened(i);
@@ -1234,6 +1234,9 @@ function renderAlbums(){
       metaBits.push('<span class="no-scrobbles">no scrobbles found</span>');
     }
 
+    const review = reviewsCache[reviewKey(lookupArtist(i), lookupAlbum(i))];
+    const reviewVibe = review && review.vibe ? VIBE_EMOTES.find(v => v.id === review.vibe) : null;
+
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="album-main">' +
@@ -1245,6 +1248,7 @@ function renderAlbums(){
           '<span class="edit-link del-link" id="del-link-' + i + '" onclick="confirmDelete(' + i + ')">delete</span>' +
         '</div>' +
       '</div>' +
+      (reviewVibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + reviewVibe.url + '"></canvas>' : '') +
       '<div class="check" onclick="toggleManual(' + i + ')">✓</div>';
 
     wrap.appendChild(row);
@@ -1255,6 +1259,7 @@ function renderAlbums(){
   }
   content.innerHTML = "";
   content.appendChild(wrap);
+  content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
 
   const addRow = document.createElement("div");
   addRow.className = "add-album-row";
@@ -2155,7 +2160,7 @@ async function fetchAlbumMeta(artist, album){
     + "&artist=" + encodeURIComponent(artist)
     + "&album=" + encodeURIComponent(album)
     + "&autocorrect=1&format=json";
-  const empty = {trackCount: 0, year: "", genre: ""};
+  const empty = {trackCount: 0, year: "", genres: []};
   try{
     const res = await fetch(url);
     const data = await res.json();
@@ -2171,14 +2176,14 @@ async function fetchAlbumMeta(artist, album){
       const m = data.album.releasedate.match(/\d{4}/);
       if(m) year = m[0];
     }
-    // Top user-applied tag is a reasonable stand-in for genre (Last.fm has no dedicated genre field).
-    let genre = "";
+    // Top user-applied tags are a reasonable stand-in for genre (Last.fm has no dedicated genre field).
+    let genres = [];
     if(data.album.toptags && data.album.toptags.tag){
       const tags = data.album.toptags.tag;
-      const first = Array.isArray(tags) ? tags[0] : tags;
-      if(first && first.name) genre = first.name;
+      const arr = Array.isArray(tags) ? tags : [tags];
+      genres = arr.slice(0, 2).map(t => t.name).filter(Boolean);
     }
-    return {trackCount, year, genre};
+    return {trackCount, year, genres};
   }catch(err){
     return empty;
   }
@@ -2288,20 +2293,18 @@ function renderRecentResultsArea(){
     row.className = "discover-card";
     row.style.cursor = "pointer";
     row.onclick = () => openReviewModal(al.artist, al.album);
+    const metaBits = (al.genres || []).map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>');
+    if(al.year) metaBits.push('<span>' + escapeHtml(al.year) + '</span>');
+    metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
+    metaBits.push('<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>');
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
-        '<div class="discover-artist">' + escapeHtml(al.artist) +
-          (reviewVibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + reviewVibe.url + '"></canvas>' : '') +
-        '</div>' +
+        '<div class="discover-artist">' + escapeHtml(al.artist) + '</div>' +
         '<div class="discover-title">' + escapeHtml(al.album) + '</div>' +
-        '<div class="discover-meta">' +
-          (al.year ? '<span class="genre-tag">' + escapeHtml(al.year) + '</span>' : '') +
-          (al.genre ? '<span class="genre-tag">' + escapeHtml(al.genre) + '</span>' : '') +
-          '<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>' +
-          '<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>' +
-        '</div>' +
-      '</div>';
+        '<div class="discover-meta">' + metaBits.join("") + '</div>' +
+      '</div>' +
+      (reviewVibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + reviewVibe.url + '"></canvas>' : '');
     wrap.appendChild(row);
   });
   content.innerHTML = "";
