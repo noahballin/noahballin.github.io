@@ -21,7 +21,7 @@
     --ink:#EDE6D8;
     --ink-dim:#9C9384;
     --gold:#5636a0;
-    --gold-dim:#d383c8;
+    --gold-dim:#5d4f7e;
     --teal:#94d83b;
     --radius:10px;
   }
@@ -2287,16 +2287,32 @@ async function fetchMBYear(artist, album){
   }
 }
 
+// Strips common edition suffixes ("Deluxe", "Ultra", "Extended", etc.) so scrobbles from
+// different editions of the same album merge into one count instead of splitting, and so
+// the track-count lookup is more likely to land on the same release used elsewhere in the app.
+function stripEditionSuffix(album){
+  return album.replace(/\s*[\(\[](deluxe|ultra|extended|expanded|special|anniversary|remaster(ed)?|bonus\s*track(s)?|complete|super\s*deluxe)[^)\]]*[\)\]]\s*$/i, "").trim();
+}
+
 async function fetchAlbumMeta(artist, album){
-  const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
+  const queryAlbum = stripEditionSuffix(album);
+  const infoUrl = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
     + "&api_key=" + encodeURIComponent(settings.apiKey)
     + "&artist=" + encodeURIComponent(artist)
-    + "&album=" + encodeURIComponent(album)
+    + "&album=" + encodeURIComponent(queryAlbum)
     + "&autocorrect=1&format=json";
-  const empty = {trackCount: 0, year: ""};
+  // album.getInfo's bundled toptags field is known to be unreliable/often empty even when
+  // the album's actual Last.fm page shows tags — the dedicated album.getTopTags endpoint
+  // is built specifically for this and returns real data much more consistently.
+  const tagsUrl = "https://ws.audioscrobbler.com/2.0/?method=album.gettoptags"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&album=" + encodeURIComponent(queryAlbum)
+    + "&autocorrect=1&format=json";
+  const empty = {trackCount: 0, year: "", genres: []};
   try{
-    const res = await fetch(url);
-    const data = await res.json();
+    const [infoRes, tagsRes] = await Promise.all([fetch(infoUrl), fetch(tagsUrl)]);
+    const data = await infoRes.json();
     if(data.error || !data.album) return empty;
     let trackCount = 0;
     if(data.album.tracks && data.album.tracks.track){
@@ -2309,7 +2325,18 @@ async function fetchAlbumMeta(artist, album){
       const m = data.album.releasedate.match(/\d{4}/);
       if(m) year = m[0];
     }
-    return {trackCount, year};
+    let genres = [];
+    try{
+      const tagsData = await tagsRes.json();
+      if(!tagsData.error && tagsData.toptags && tagsData.toptags.tag){
+        const tags = tagsData.toptags.tag;
+        const arr = Array.isArray(tags) ? tags : [tags];
+        genres = arr.slice(0, 2).map(t => t.name).filter(Boolean);
+      }
+    }catch(tagsErr){
+      // leave genres empty if this call fails — don't let it break the rest of the result
+    }
+    return {trackCount, year, genres};
   }catch(err){
     return empty;
   }
@@ -2352,8 +2379,9 @@ async function generateRecentListens(){
   allTracks.forEach(t => {
     if(t["@attr"] && t["@attr"].nowplaying) return;
     const artist = (t.artist && (t.artist["#text"] || t.artist.name)) || "";
-    const album = (t.album && t.album["#text"]) || "";
-    if(!artist || !album) return;
+    const rawAlbum = (t.album && t.album["#text"]) || "";
+    if(!artist || !rawAlbum) return;
+    const album = stripEditionSuffix(rawAlbum);
     const key = artist.toLowerCase() + "|" + album.toLowerCase();
     if(!groups[key]) groups[key] = {artist, album, count: 0, lastUts: 0};
     groups[key].count++;
@@ -2449,7 +2477,7 @@ function renderRecentResultsArea(){
     row.className = "discover-card";
     row.style.cursor = "pointer";
     row.onclick = () => openReviewModal(al.artist, al.album, al.year);
-    const metaBits = [];
+    const metaBits = (al.genres || []).map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>');
     if(al.year) metaBits.push('<span>' + escapeHtml(al.year) + '</span>');
     metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
     metaBits.push('<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>');
