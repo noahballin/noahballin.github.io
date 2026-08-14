@@ -229,6 +229,7 @@
   .genre-tag{color:var(--gold-dim);}
   .playcount{color:var(--teal);}
   .no-match{color:#B5654F;}
+  .no-scrobbles{color:var(--ink-dim); opacity:0.7;}
   .edit-link{color:var(--ink-dim); text-decoration:underline; cursor:pointer; font-size:10px; margin-top:5px;}
 
   .check{
@@ -850,7 +851,7 @@ function renderAlbums(){
     if(e.notFound){
       metaBits.push('<span class="no-match">no Last.fm match — try editing the title</span>');
     } else if(e.syncedAt && e.playcount === 0){
-      metaBits.push('<span class="no-match">no scrobbles found</span>');
+      metaBits.push('<span class="no-scrobbles">no scrobbles found</span>');
     }
 
     row.innerHTML =
