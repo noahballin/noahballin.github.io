@@ -1912,6 +1912,30 @@ let discoverWeekOffset = 0;
 let discoverCount = 10;
 let discoverResults = null;
 
+// Cached per week (keyed by that week's start date), so switching between the three week
+// options or navigating away and back shows whatever was already generated — only cleared
+// by explicitly regenerating, or once a cached week ages out of the 3-week rolling range.
+function loadDiscoverResultsMap(){
+  try{ return JSON.parse(localStorage.getItem("ll_discover_results")) || {}; }
+  catch(e){ return {}; }
+}
+function saveDiscoverResultsMap(map){
+  localStorage.setItem("ll_discover_results", JSON.stringify(map));
+}
+function pruneStaleDiscoverResults(){
+  const map = loadDiscoverResultsMap();
+  const validStartISOs = new Set();
+  for(let i = 0; i < 3; i++){
+    validStartISOs.add(isoDate(releaseWeekRange(i).start));
+  }
+  let changed = false;
+  Object.keys(map).forEach(key => {
+    if(!validStartISOs.has(key)){ delete map[key]; changed = true; }
+  });
+  if(changed) saveDiscoverResultsMap(map);
+  return map;
+}
+
 function releaseWeekRange(offsetWeeks){
   // A "release week" runs Friday through Thursday. offsetWeeks: 0 = current week, 1 = last week, 2 = two weeks ago.
   const now = new Date();
@@ -1944,12 +1968,15 @@ function initDiscoverHeader(){
     const el = document.getElementById("weekRange" + i);
     if(el) el.textContent = formatRange(start, end);
   }
+  const map = pruneStaleDiscoverResults();
+  discoverResults = map[isoDate(releaseWeekRange(discoverWeekOffset).start)] || null;
   checkDiscoverPoolSize();
 }
 function selectDiscoverWeek(offset){
   discoverWeekOffset = offset;
   document.querySelectorAll(".week-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.week, 10) === offset));
-  discoverResults = null;
+  const map = pruneStaleDiscoverResults();
+  discoverResults = map[isoDate(releaseWeekRange(offset).start)] || null;
   document.getElementById("discoverNote").textContent = "";
   checkDiscoverPoolSize();
   renderDiscoverResultsArea();
@@ -2118,6 +2145,7 @@ async function generateDiscoverList(){
 
   if(candidates.length === 0){
     discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, albums: []};
+    saveDiscoverResultsMap(Object.assign(loadDiscoverResultsMap(), {[startISO]: discoverResults}));
     note.textContent = "No albums found for that week yet.";
     btn.disabled = false;
     renderDiscoverResultsArea();
@@ -2158,6 +2186,7 @@ async function generateDiscoverList(){
   picks.sort((a, b) => b.artistListeners - a.artistListeners);
 
   discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, totalFound: total, poolScored: scored.length, albums: picks};
+  saveDiscoverResultsMap(Object.assign(loadDiscoverResultsMap(), {[startISO]: discoverResults}));
   btn.disabled = false;
   note.textContent = "Found " + picks.length + " of " + discoverCount + " requested, ranked by artist popularity across "
     + scored.length + (total !== Infinity && scored.length < total ? " of " + total : "") + " real releases that week.";
@@ -2217,9 +2246,17 @@ function renderDiscoverResultsArea(){
   content.appendChild(saveBtn);
 }
 
+function parseISODateLocal(isoStr){
+  const [y, m, d] = isoStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
 function saveDiscoverAsList(){
   if(!discoverResults || discoverResults.albums.length === 0) return;
-  const {start, end} = releaseWeekRange(discoverResults.weekOffset);
+  // Use the actual saved dates rather than recomputing from weekOffset — offset meaning
+  // drifts once real time has passed since generation (e.g. "1 week ago" today isn't the
+  // same calendar week it was when this was first generated).
+  const start = parseISODateLocal(discoverResults.startISO);
+  const end = parseISODateLocal(discoverResults.endISO);
   const label = "New Releases — " + formatRange(start, end);
   const albums = discoverResults.albums.map(al => ({a: al.artist, t: al.title, y: (al.date || "").slice(0, 4), g: ""}));
   let id = slugify(label);
@@ -2355,8 +2392,19 @@ async function generateRecentListens(){
   btn.disabled = true;
   note.textContent = "Pulling your last 7 days of scrobbles…";
 
-  const toUnix = Math.floor(Date.now() / 1000);
-  const fromUnix = toUnix - 7 * 24 * 60 * 60;
+  const nowUnix = Math.floor(Date.now() / 1000);
+  // Reuse the same 7-day window across repeated checks instead of recalculating "now" every
+  // time — otherwise the window quietly slides forward on every tap, which can drop albums
+  // near the boundary in and out for no reason other than which moment you happened to check.
+  // Only roll forward to a genuinely new window once a full week has actually passed.
+  let toUnix, fromUnix;
+  if(recentResults && recentResults.toUnix && (nowUnix - recentResults.toUnix) < 7 * 24 * 60 * 60){
+    toUnix = recentResults.toUnix;
+    fromUnix = recentResults.fromUnix;
+  } else {
+    toUnix = nowUnix;
+    fromUnix = toUnix - 7 * 24 * 60 * 60;
+  }
 
   let allTracks = [];
   try{
