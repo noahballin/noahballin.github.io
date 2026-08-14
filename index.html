@@ -2483,8 +2483,8 @@ function renderRecentResultsArea(){
       ? ['<span class="genre-tag">' + escapeHtml(al.genres.join(" / ")) + '</span>']
       : [];
     if(al.year) metaBits.push('<span>' + escapeHtml(al.year) + '</span>');
-    metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
-    metaBits.push('<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>');
+    metaBits.push('<span class="playcount">' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
+    metaBits.push('<span class="playcount">~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>');
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
