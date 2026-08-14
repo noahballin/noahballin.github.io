@@ -229,6 +229,10 @@
   .playcount{color:var(--teal);}
   .no-match{color:#B5654F;}
   .edit-link{color:var(--ink-dim); text-decoration:underline; cursor:pointer; font-size:10px; margin-top:5px;}
+  .suggestion{font-size:11px; color:var(--ink-dim); margin-top:6px; padding:6px 8px; background:var(--card-hi); border-radius:6px; border:1px solid var(--line);}
+  .suggestion strong{color:var(--teal); font-weight:600;}
+  .suggestion button{background:none; border:1px solid var(--line); color:var(--ink); font-family:inherit; font-size:10px; padding:2px 8px; border-radius:4px; margin-top:4px; margin-right:6px; cursor:pointer;}
+  .suggestion button:hover{border-color:var(--teal); color:var(--teal);}
 
   .check{
     flex:none; width:30px; height:30px; border-radius:50%; border:1.5px solid var(--line);
@@ -557,7 +561,7 @@ function saveProgressFor(listId, prog){
   localStorage.setItem("ll_progress_" + listId, JSON.stringify(prog));
 }
 function entryForIn(prog, i){
-  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, notFound:null};
+  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, notFound:null, suggestion:null};
   return prog[i];
 }
 function lookupArtistIn(list, prog, i){
@@ -776,12 +780,22 @@ function renderAlbums(){
       metaBits.push('<span class="no-match">no scrobbles found</span>');
     }
 
+    let suggestionHtml = "";
+    if(e.suggestion){
+      suggestionHtml = '<div class="suggestion">' +
+        'Last.fm matched this as <strong>' + e.suggestion.artist + ' — ' + e.suggestion.title + '</strong>. ' +
+        '<button onclick="applySuggestion(' + i + ')">Use this</button> ' +
+        '<button onclick="dismissSuggestion(' + i + ')">Dismiss</button>' +
+      '</div>';
+    }
+
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="album-main">' +
         '<div class="album-artist">' + lookupArtist(i) + '</div>' +
         '<div class="album-title">' + lookupAlbum(i) + (isTriple ? ' <span class="badge-triple">★ 3+</span>' : '') + '</div>' +
         '<div class="album-meta">' + metaBits.join("") + '</div>' +
+        suggestionHtml +
         '<div class="edit-link" onclick="toggleEdit(' + i + ')">fix artist/title match</div>' +
         '<div class="edit-row" id="edit-' + i + '">' +
           '<input id="ov_a_' + i + '" placeholder="Artist as on Last.fm" value="' + lookupArtist(i).replace(/"/g, "&quot;") + '">' +
@@ -822,6 +836,23 @@ function toggleManual(i){
 function toggleEdit(i){
   document.getElementById("edit-" + i).classList.toggle("open");
 }
+function applySuggestion(i){
+  const e = entryFor(i);
+  if(!e.suggestion) return;
+  // Store as an override so the original list data (and your titles) stay untouched,
+  // but Last.fm lookups use the corrected name from now on.
+  e.ov_a = e.suggestion.artist;
+  e.ov_t = e.suggestion.title;
+  e.suggestion = null;
+  saveProgressFor(activeList.id, progress);
+  render();
+}
+function dismissSuggestion(i){
+  const e = entryFor(i);
+  e.suggestion = null;
+  saveProgressFor(activeList.id, progress);
+  render();
+}
 function saveOverride(i){
   const e = entryFor(i);
   const a = document.getElementById("ov_a_" + i).value.trim();
@@ -832,6 +863,7 @@ function saveOverride(i){
   e.trackCount = null;
   e.syncedAt = null;
   e.notFound = null;
+  e.suggestion = null;
   saveProgressFor(activeList.id, progress);
   render();
 }
@@ -1201,7 +1233,19 @@ async function fetchAlbumStats(artist, album){
   if(data.album && data.album.tracks && data.album.tracks.track){
     trackCount = Array.isArray(data.album.tracks.track) ? data.album.tracks.track.length : 1;
   }
-  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false};
+  // Last.fm's autocorrect=1 returns the canonical artist/album name it actually matched against,
+  // which can differ from what we sent (typos, alternate spellings, etc). Surface that as a suggestion.
+  const canonicalArtist = data.album && data.album.artist ? data.album.artist : null;
+  const canonicalTitle = data.album && data.album.name ? data.album.name : null;
+  let suggestion = null;
+  if(canonicalArtist && canonicalTitle){
+    const artistDiffers = canonicalArtist.trim().toLowerCase() !== artist.trim().toLowerCase();
+    const titleDiffers = canonicalTitle.trim().toLowerCase() !== album.trim().toLowerCase();
+    if(artistDiffers || titleDiffers){
+      suggestion = {artist: canonicalArtist, title: canonicalTitle};
+    }
+  }
+  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false, suggestion};
 }
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
@@ -1211,7 +1255,7 @@ async function syncAll(){
   const note = document.getElementById("syncNote");
   btn.disabled = true;
   const total = activeList.albums.length;
-  let networkErrors = 0, lastNetworkError = "", noMatch = 0, authError = null;
+  let networkErrors = 0, lastNetworkError = "", noMatch = 0, suggestions = 0, authError = null;
   const BATCH_SIZE = 6;
 
   for(let start = 0; start < total && !authError; start += BATCH_SIZE){
@@ -1249,6 +1293,8 @@ async function syncAll(){
       } else {
         e.playcount = r.result.playcount;
         e.trackCount = r.result.trackCount;
+        e.suggestion = r.result.suggestion;
+        if(r.result.suggestion) suggestions++;
       }
     });
 
@@ -1259,13 +1305,17 @@ async function syncAll(){
 
   btn.disabled = false;
 
+  const bits = [];
+  if(noMatch > 0) bits.push(noMatch + " with no Last.fm match (left blank)");
+  if(suggestions > 0) bits.push(suggestions + " with a suggested correction below");
+
   if(authError){
     note.textContent = 'Stopped — Last.fm says: "' + authError + '". Double-check the API key in Settings.';
   } else if(networkErrors > 0){
     note.textContent = networkErrors + " of " + total + " requests couldn't reach Last.fm (e.g. \"" + lastNetworkError
       + "\"). If this keeps happening, try hosting the file at a real https:// address instead of opening it locally.";
-  } else if(noMatch > 0){
-    note.textContent = "Synced. " + noMatch + " album(s) had no match on Last.fm at all (left blank) — check spelling via \"fix artist/title match\" and re-sync.";
+  } else if(bits.length > 0){
+    note.textContent = "Synced. " + bits.join(", ") + ".";
   } else {
     note.textContent = "Synced just now.";
   }
