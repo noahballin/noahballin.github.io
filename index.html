@@ -96,6 +96,7 @@
   .sync-btn:active{background:var(--gold-dim);}
   .sync-btn:disabled{opacity:0.55;}
   .sync-btn.needs-setup{background:var(--card-hi); color:var(--ink-dim); border:1px solid var(--line);}
+  .sync-btn.secondary-btn{background:var(--card-hi); color:var(--ink); border:1px solid var(--line); margin-top:10px;}
 
   .sync-note{font-size:11px; color:var(--ink-dim); margin-top:8px; min-height:14px; line-height:1.5;}
 
@@ -390,6 +391,7 @@
     <h1>Past Week</h1>
     <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
     <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
+    <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
     <div class="sync-note" id="recentNote"></div>
   </div>
   <div id="reviewsHeader" class="hidden">
@@ -558,7 +560,7 @@
   <input type="hidden" id="reviewModalArtist">
   <input type="hidden" id="reviewModalAlbum">
 
-  <div class="field">
+  <div class="field" id="reviewYearField">
     <label>Year (optional — powers the Decade filter)</label>
     <input id="reviewModalYear" type="text" placeholder="e.g. 1998" inputmode="numeric" maxlength="4">
   </div>
@@ -665,7 +667,7 @@ function reviewKey(artist, title){ return (artist + "|||" + title).toLowerCase()
 let reviewingKey = null;
 let reviewDraft = {rotation: null, distinctiveness: null, pull: null, vibe: null};
 
-function openReviewModal(artist, title, suggestedYear){
+function openReviewModal(artist, title, suggestedYear, allowYearEdit){
   reviewingKey = reviewKey(artist, title);
   const reviews = loadReviews();
   const existing = reviews[reviewingKey];
@@ -677,6 +679,9 @@ function openReviewModal(artist, title, suggestedYear){
   document.getElementById("reviewModalArtist").value = artist;
   document.getElementById("reviewModalAlbum").value = title;
   document.getElementById("reviewModalYear").value = (existing && existing.year) || suggestedYear || "";
+  // This Week already pulls the year automatically (Last.fm, then MusicBrainz on request),
+  // so manual entry is only offered from the Reviews tab where you're editing after the fact.
+  document.getElementById("reviewYearField").classList.toggle("hidden", allowYearEdit === false);
   document.getElementById("reviewDeleteRow").classList.toggle("hidden", !existing);
   renderReviewOptions();
   openModal("reviewModal");
@@ -889,7 +894,7 @@ function renderReviewsResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(r.artist, r.title, r.year);
+    row.onclick = () => openReviewModal(r.artist, r.title, r.year, true);
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
@@ -2220,25 +2225,17 @@ async function fetchRecentTracksPage(fromUnix, toUnix, page){
 // Fallback for when Last.fm doesn't have release date / genre data for an album (common —
 // Last.fm's releasedate field is often blank). MusicBrainz is a much more reliable source for
 // this, and we're already talking to it elsewhere (Discover tab), so reuse the same approach.
-async function fetchMBReleaseInfo(artist, album){
+async function fetchMBYear(artist, album){
   const q = 'artist:"' + artist.replace(/"/g, '\\"') + '" AND releasegroup:"' + album.replace(/"/g, '\\"') + '"';
   const url = "https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=1";
   try{
     const data = await mbFetch(url);
     const rg = data["release-groups"] && data["release-groups"][0];
-    if(!rg) return {year: "", genres: []};
-    let year = "";
-    if(rg["first-release-date"]){
-      const m = rg["first-release-date"].match(/^\d{4}/);
-      if(m) year = m[0];
-    }
-    let genres = [];
-    if(rg.genres && rg.genres.length){
-      genres = rg.genres.slice(0, 2).map(g => g.name).filter(Boolean);
-    }
-    return {year, genres};
+    if(!rg || !rg["first-release-date"]) return "";
+    const m = rg["first-release-date"].match(/^\d{4}/);
+    return m ? m[0] : "";
   }catch(err){
-    return {year: "", genres: []};
+    return "";
   }
 }
 
@@ -2248,7 +2245,7 @@ async function fetchAlbumMeta(artist, album){
     + "&artist=" + encodeURIComponent(artist)
     + "&album=" + encodeURIComponent(album)
     + "&autocorrect=1&format=json";
-  const empty = {trackCount: 0, year: "", genres: []};
+  const empty = {trackCount: 0, year: ""};
   try{
     const res = await fetch(url);
     const data = await res.json();
@@ -2264,14 +2261,7 @@ async function fetchAlbumMeta(artist, album){
       const m = data.album.releasedate.match(/\d{4}/);
       if(m) year = m[0];
     }
-    // Top user-applied tags are a reasonable stand-in for genre (Last.fm has no dedicated genre field).
-    let genres = [];
-    if(data.album.toptags && data.album.toptags.tag){
-      const tags = data.album.toptags.tag;
-      const arr = Array.isArray(tags) ? tags : [tags];
-      genres = arr.slice(0, 2).map(t => t.name).filter(Boolean);
-    }
-    return {trackCount, year, genres};
+    return {trackCount, year};
   }catch(err){
     return empty;
   }
@@ -2346,19 +2336,6 @@ async function generateRecentListens(){
     await sleep(150);
   }
 
-  // Fill in year/genre from MusicBrainz for anything Last.fm didn't have data for.
-  // Done sequentially with a pause between requests — MusicBrainz's anonymous rate limit
-  // is much stricter than Last.fm's, so this deliberately isn't batched/parallel.
-  const needsFallback = scored.filter(g => !g.year || !g.genres || g.genres.length === 0);
-  for(let i = 0; i < needsFallback.length; i++){
-    const g = needsFallback[i];
-    note.textContent = "Filling in missing years/genres… " + (i + 1) + " of " + needsFallback.length;
-    const mb = await fetchMBReleaseInfo(g.artist, g.album);
-    if(!g.year && mb.year) g.year = mb.year;
-    if((!g.genres || g.genres.length === 0) && mb.genres.length > 0) g.genres = mb.genres;
-    await sleep(400);
-  }
-
   const MIN_TRACKS_FOR_ALBUM = 4; // filters out singles/EPs (2-3 track releases) — a couple scrobbles shouldn't count as a "full listen"
   const fullyListened = scored
     .map(g => {
@@ -2378,6 +2355,33 @@ async function generateRecentListens(){
   renderRecentResultsArea();
 }
 
+// Separate, on-demand step: fills in missing years via MusicBrainz for whatever's
+// currently showing. Kept apart from the main check above so that step stays fast —
+// MusicBrainz's anonymous rate limit needs a real pause between requests (unbatched).
+async function checkMissingYears(){
+  if(!recentResults || !recentResults.albums || recentResults.albums.length === 0) return;
+  const btn = document.getElementById("checkYearsBtn");
+  const note = document.getElementById("recentNote");
+  const missing = recentResults.albums.filter(g => !g.year);
+  if(missing.length === 0){
+    note.textContent = "Every album already has a year.";
+    return;
+  }
+  btn.disabled = true;
+  for(let i = 0; i < missing.length; i++){
+    note.textContent = "Checking missing years… " + (i + 1) + " of " + missing.length;
+    const year = await fetchMBYear(missing[i].artist, missing[i].album);
+    if(year) missing[i].year = year;
+    await sleep(400);
+  }
+  btn.disabled = false;
+  const filled = missing.filter(g => g.year).length;
+  note.textContent = filled > 0
+    ? "Filled in " + filled + " of " + missing.length + " missing year" + (missing.length === 1 ? "" : "s") + "."
+    : "Couldn't find a year for any of the " + missing.length + " missing album" + (missing.length === 1 ? "" : "s") + " on MusicBrainz either.";
+  renderRecentResultsArea();
+}
+
 function renderRecentResultsArea(){
   const content = document.getElementById("content");
   if(section !== "recent") return;
@@ -2393,8 +2397,8 @@ function renderRecentResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(al.artist, al.album, al.year);
-    const metaBits = (al.genres || []).map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>');
+    row.onclick = () => openReviewModal(al.artist, al.album, al.year, false);
+    const metaBits = [];
     if(al.year) metaBits.push('<span>' + escapeHtml(al.year) + '</span>');
     metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
     metaBits.push('<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>');
