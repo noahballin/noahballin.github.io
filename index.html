@@ -366,10 +366,8 @@
   </div>
 
   <div id="discoverHeader" class="hidden">
-    <div class="recent-title-row">
-      <h1>New This Week</h1>
-      <button class="filters-toggle-btn" id="discoverToggleBtn" onclick="toggleDiscoverControls()">Options ▾</button>
-    </div>
+    <h1>New This Week</h1>
+    <button class="sync-btn secondary-btn" id="discoverToggleBtn" onclick="toggleDiscoverControls()"></button>
     <div class="sync-note" id="discoverNote"></div>
     <div id="discoverControlsPanel" class="hidden">
       <div class="week-picker">
@@ -822,10 +820,16 @@ function toggleReviewsFilters(){
   updateFiltersToggleLabel();
 }
 let discoverControlsOpen = false;
+const DISCOVER_WEEK_LABELS = ["This Week", "Last Week", "2 Weeks Ago"];
+function updateDiscoverToggleLabel(){
+  const btn = document.getElementById("discoverToggleBtn");
+  if(!btn) return;
+  btn.textContent = DISCOVER_WEEK_LABELS[discoverWeekOffset] + " · " + discoverCount + " albums" + (discoverControlsOpen ? " ▴" : " ▾");
+}
 function toggleDiscoverControls(){
   discoverControlsOpen = !discoverControlsOpen;
   document.getElementById("discoverControlsPanel").classList.toggle("hidden", !discoverControlsOpen);
-  document.getElementById("discoverToggleBtn").textContent = "Options" + (discoverControlsOpen ? " ▴" : " ▾");
+  updateDiscoverToggleLabel();
 }
 
 function updateFiltersToggleLabel(){
@@ -2006,6 +2010,7 @@ function initDiscoverHeader(){
   }
   const map = pruneStaleDiscoverResults();
   discoverResults = map[isoDate(releaseWeekRange(discoverWeekOffset).start)] || null;
+  updateDiscoverToggleLabel();
   checkDiscoverPoolSize();
 }
 function selectDiscoverWeek(offset){
@@ -2014,6 +2019,7 @@ function selectDiscoverWeek(offset){
   const map = pruneStaleDiscoverResults();
   discoverResults = map[isoDate(releaseWeekRange(offset).start)] || null;
   document.getElementById("discoverNote").textContent = "";
+  updateDiscoverToggleLabel();
   checkDiscoverPoolSize();
   renderDiscoverResultsArea();
 }
@@ -2022,6 +2028,7 @@ function selectDiscoverCount(n){
   if(btn && btn.disabled) return;
   discoverCount = n;
   document.querySelectorAll(".count-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.count, 10) === n));
+  updateDiscoverToggleLabel();
   renderDiscoverResultsArea();
 }
 
