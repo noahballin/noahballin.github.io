@@ -2278,14 +2278,18 @@ function renderDiscoverResultsArea(){
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
-        '<div class="discover-artist">' + al.artist + '</div>' +
-        '<div class="discover-title">' + al.title + (al.underground ? ' <span class="underground-badge">Fun to try</span>' : '') + '</div>' +
+        '<div class="album-link">' +
+          '<div class="discover-artist">' + al.artist + '</div>' +
+          '<div class="discover-title">' + al.title + (al.underground ? ' <span class="underground-badge">Fun to try</span>' : '') + '</div>' +
+        '</div>' +
         '<div class="discover-meta">' +
           '<span>' + (al.date || "") + '</span>' +
           '<span>' + formatListeners(al.artistListeners) + ' listeners on ' + al.artist + '</span>' +
           (al.listeners > 0 ? '<span>' + formatListeners(al.listeners) + ' on this album so far</span>' : '') +
         '</div>' +
       '</div>';
+    const linkEl = row.querySelector(".album-link");
+    if(linkEl) linkEl.onclick = () => openSpotifySearch(al.artist, al.title);
     wrap.appendChild(row);
   });
   content.innerHTML = "";
