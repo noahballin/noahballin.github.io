@@ -2527,6 +2527,23 @@ async function generateRecentListens(){
     return;
   }
 
+  // TEMPORARY debug log — remove once the missing-album issue is resolved.
+  const upstreamDebug = ["RAW FETCH: " + allTracks.length + " tracks total, window " + fromUnix + " to " + toUnix];
+  const matchingRaw = allTracks.filter(t => {
+    const a = (t.artist && (t.artist["#text"] || t.artist.name)) || "";
+    return a.toLowerCase().indexOf("everything but the girl") !== -1;
+  });
+  upstreamDebug.push("Raw tracks matching 'Everything But the Girl': " + matchingRaw.length);
+  matchingRaw.forEach(t => {
+    upstreamDebug.push(
+      "  RAW: artist=" + JSON.stringify(t.artist) +
+      " | album=" + JSON.stringify(t.album) +
+      " | name=" + t.name +
+      " | date=" + (t.date ? JSON.stringify(t.date) : "MISSING") +
+      " | nowplaying=" + !!(t["@attr"] && t["@attr"].nowplaying)
+    );
+  });
+
   // Group scrobbles by album, skipping the "now playing" entry (it has no timestamp) and anything without an album tag.
   const groups = {};
   allTracks.forEach(t => {
@@ -2557,7 +2574,9 @@ async function generateRecentListens(){
   const BATCH_SIZE = 6;
   const scored = [];
   // TEMPORARY debug log — remove once the missing-album issue is resolved.
-  const debugLines = ["Window: " + new Date(fromUnix * 1000).toLocaleDateString() + " - " + new Date(toUnix * 1000).toLocaleDateString()];
+  const debugLines = ["Window: " + new Date(fromUnix * 1000).toLocaleDateString() + " - " + new Date(toUnix * 1000).toLocaleDateString()]
+    .concat(upstreamDebug)
+    .concat(["--- grouped albums ---"]);
   for(let i = 0; i < groupList.length; i += BATCH_SIZE){
     const batch = groupList.slice(i, i + BATCH_SIZE);
     note.textContent = "Checking track counts… " + Math.min(i + BATCH_SIZE, groupList.length) + " of " + groupList.length + " albums";
@@ -2582,17 +2601,24 @@ async function generateRecentListens(){
   }
 
   const MIN_TRACKS_FOR_ALBUM = 4; // filters out singles/EPs (2-3 track releases) — a couple scrobbles shouldn't count as a "full listen"
+  // Requiring literally every track scrobbled (a strict floor(count/trackCount) >= 1) was too
+  // strict for real listening — skipping an intro, or not scrobbling the last track before
+  // closing the app, shouldn't disqualify an otherwise-complete listen. 80% of the tracklist
+  // now counts as "a full listen" instead of demanding 100%.
+  const FULL_LISTEN_RATIO = 0.8;
   const fullyListened = scored
     .map(g => {
       const hasRealTrackCount = g.trackCount > 0;
       const divisor = hasRealTrackCount ? g.trackCount : RECENT_TRACK_COUNT_GUESS;
-      const estListens = Math.floor(g.count / divisor);
-      return Object.assign({}, g, {estListens, guessed: !hasRealTrackCount});
+      const ratio = g.count / divisor;
+      const estListens = Math.max(1, Math.round(ratio));
+      return Object.assign({}, g, {estListens, ratio, guessed: !hasRealTrackCount});
     })
     .filter(g => {
-      const passes = g.estListens >= 1 && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM);
+      const passes = g.ratio >= FULL_LISTEN_RATIO && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM);
       debugLines.push(
         g.artist + " — " + g.album +
+        " | ratio=" + g.ratio.toFixed(2) +
         " | estListens=" + g.estListens +
         " | guessed=" + g.guessed +
         " | KEPT=" + passes
