@@ -2523,6 +2523,15 @@ async function generateRecentListens(){
 
   // Fetch real track counts (batched), then estimate full listens.
   const knownTrackCounts = buildKnownTrackCountIndex();
+  // Preserve years already known from a previous check or "Check missing years" — Last.fm's
+  // releasedate field is unreliable enough that a fresh fetch can come back blank even for an
+  // album that had a real year before, and that shouldn't wipe out the good value.
+  const previousYears = {};
+  if(recentResults && recentResults.albums){
+    recentResults.albums.forEach(al => {
+      if(al.year) previousYears[al.artist.toLowerCase() + "|" + al.album.toLowerCase()] = al.year;
+    });
+  }
   const BATCH_SIZE = 6;
   const scored = [];
   for(let i = 0; i < groupList.length; i += BATCH_SIZE){
@@ -2532,6 +2541,10 @@ async function generateRecentListens(){
       const meta = await fetchAlbumMeta(g.artist, g.album);
       const known = knownTrackCounts[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
       if(known) meta.trackCount = known.trackCount;
+      if(!meta.year){
+        const prevYear = previousYears[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
+        if(prevYear) meta.year = prevYear;
+      }
       return Object.assign({}, g, meta);
     }));
     scored.push(...results);
