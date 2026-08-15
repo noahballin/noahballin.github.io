@@ -366,43 +366,43 @@
   </div>
 
   <div id="discoverHeader" class="hidden">
-    <h1>New This Week</h1>
-    <div class="week-picker">
-      <button class="week-btn active" data-week="0" onclick="selectDiscoverWeek(0)">
-        <span class="week-label">This Week</span>
-        <span class="week-range" id="weekRange0"></span>
-      </button>
-      <button class="week-btn" data-week="1" onclick="selectDiscoverWeek(1)">
-        <span class="week-label">Last Week</span>
-        <span class="week-range" id="weekRange1"></span>
-      </button>
-      <button class="week-btn" data-week="2" onclick="selectDiscoverWeek(2)">
-        <span class="week-label">2 Weeks Ago</span>
-        <span class="week-range" id="weekRange2"></span>
-      </button>
+    <div class="recent-title-row">
+      <h1>New This Week</h1>
+      <button class="filters-toggle-btn" id="discoverToggleBtn" onclick="toggleDiscoverControls()">Options ▾</button>
     </div>
-    <div class="count-picker" id="countPicker">
-      <button class="count-btn" data-count="5" onclick="selectDiscoverCount(5)">5</button>
-      <button class="count-btn active" data-count="10" onclick="selectDiscoverCount(10)">10</button>
-      <button class="count-btn" data-count="25" onclick="selectDiscoverCount(25)">25</button>
-      <button class="count-btn" data-count="50" onclick="selectDiscoverCount(50)">50</button>
-      <button class="count-btn" data-count="100" onclick="selectDiscoverCount(100)">100</button>
-    </div>
-    <div class="sync-note" id="discoverPoolNote">Checking how many albums came out…</div>
-    <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscoverList()">Find albums</button>
     <div class="sync-note" id="discoverNote"></div>
+    <div id="discoverControlsPanel" class="hidden">
+      <div class="week-picker">
+        <button class="week-btn active" data-week="0" onclick="selectDiscoverWeek(0)">
+          <span class="week-label">This Week</span>
+          <span class="week-range" id="weekRange0"></span>
+        </button>
+        <button class="week-btn" data-week="1" onclick="selectDiscoverWeek(1)">
+          <span class="week-label">Last Week</span>
+          <span class="week-range" id="weekRange1"></span>
+        </button>
+        <button class="week-btn" data-week="2" onclick="selectDiscoverWeek(2)">
+          <span class="week-label">2 Weeks Ago</span>
+          <span class="week-range" id="weekRange2"></span>
+        </button>
+      </div>
+      <div class="count-picker" id="countPicker">
+        <button class="count-btn" data-count="5" onclick="selectDiscoverCount(5)">5</button>
+        <button class="count-btn active" data-count="10" onclick="selectDiscoverCount(10)">10</button>
+        <button class="count-btn" data-count="25" onclick="selectDiscoverCount(25)">25</button>
+        <button class="count-btn" data-count="50" onclick="selectDiscoverCount(50)">50</button>
+        <button class="count-btn" data-count="100" onclick="selectDiscoverCount(100)">100</button>
+      </div>
+      <div class="sync-note" id="discoverPoolNote">Checking how many albums came out…</div>
+      <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscoverList()">Find albums</button>
+    </div>
   </div>
   <div id="recentHeader" class="hidden">
-    <div class="recent-title-row">
-      <h1>Past Week</h1>
-      <button class="filters-toggle-btn" id="recentToggleBtn" onclick="toggleRecentControls()">Controls ▾</button>
-    </div>
+    <h1>Past Week</h1>
+    <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
+    <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
+    <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
     <div class="sync-note" id="recentNote"></div>
-    <div id="recentControlsPanel" class="hidden">
-      <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
-      <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
-      <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
-    </div>
   </div>
   <div id="reviewsHeader" class="hidden">
     <h1>Reviews</h1>
@@ -821,12 +821,13 @@ function toggleReviewsFilters(){
   document.getElementById("reviewsFiltersPanel").classList.toggle("hidden", !reviewsFiltersOpen);
   updateFiltersToggleLabel();
 }
-let recentControlsOpen = false;
-function toggleRecentControls(){
-  recentControlsOpen = !recentControlsOpen;
-  document.getElementById("recentControlsPanel").classList.toggle("hidden", !recentControlsOpen);
-  document.getElementById("recentToggleBtn").textContent = "Controls" + (recentControlsOpen ? " ▴" : " ▾");
+let discoverControlsOpen = false;
+function toggleDiscoverControls(){
+  discoverControlsOpen = !discoverControlsOpen;
+  document.getElementById("discoverControlsPanel").classList.toggle("hidden", !discoverControlsOpen);
+  document.getElementById("discoverToggleBtn").textContent = "Options" + (discoverControlsOpen ? " ▴" : " ▾");
 }
+
 function updateFiltersToggleLabel(){
   const activeCount = ["rotation", "distinctiveness", "pull", "vibe", "decade"].filter(k => reviewsFilter[k]).length;
   const btn = document.getElementById("filtersToggleBtn");
