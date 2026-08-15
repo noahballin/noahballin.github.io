@@ -163,11 +163,6 @@
   }
   .save-discover-btn{margin:16px 14px 4px; width:calc(100% - 28px);}
   .recent-sub{font-size:12px; color:var(--ink-dim); margin-top:8px; line-height:1.5;}
-  #recentDebugPanel{margin-top:14px;}
-  #recentDebugText{
-    width:100%; box-sizing:border-box; margin-top:8px; background:var(--card); border:1px solid var(--line);
-    color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:10px; padding:8px; border-radius:8px;
-  }
   .divider-line{height:1px; background:var(--line); margin:20px 0;}
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
@@ -406,11 +401,6 @@
     <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
     <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
     <div class="sync-note" id="recentNote"></div>
-    <!-- TEMPORARY debug panel for diagnosing missing-album issue — remove once resolved -->
-    <div id="recentDebugPanel" class="hidden">
-      <button class="sync-btn secondary-btn" onclick="copyRecentDebugLog()">Copy debug log</button>
-      <textarea id="recentDebugText" readonly rows="6"></textarea>
-    </div>
   </div>
   <div id="reviewsHeader" class="hidden">
     <h1>Reviews</h1>
@@ -2369,19 +2359,6 @@ function saveRecentResultsToStorage(){
 // Persisted so it survives a full page reload (iOS often reloads a backgrounded home-screen
 // PWA), not just a tab switch — stays populated until you explicitly re-check.
 let recentResults = loadRecentResultsFromStorage();
-let recentDebugLog = ""; // TEMPORARY — remove along with the debug panel once resolved
-function copyRecentDebugLog(){
-  const text = document.getElementById("recentDebugText").value;
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(() => {
-      document.getElementById("recentNote").textContent = "Debug log copied.";
-    }).catch(() => {
-      document.getElementById("recentDebugText").select();
-    });
-  } else {
-    document.getElementById("recentDebugText").select();
-  }
-}
 
 async function fetchRecentTracksPage(fromUnix, toUnix, page){
   const url = "https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks"
@@ -2519,23 +2496,6 @@ async function generateRecentListens(){
     return;
   }
 
-  // TEMPORARY debug log — remove once the missing-album issue is resolved.
-  const upstreamDebug = ["RAW FETCH: " + allTracks.length + " tracks total, window " + fromUnix + " to " + toUnix];
-  const matchingRaw = allTracks.filter(t => {
-    const a = (t.artist && (t.artist["#text"] || t.artist.name)) || "";
-    return a.toLowerCase().indexOf("everything but the girl") !== -1;
-  });
-  upstreamDebug.push("Raw tracks matching 'Everything But the Girl': " + matchingRaw.length);
-  matchingRaw.forEach(t => {
-    upstreamDebug.push(
-      "  RAW: artist=" + JSON.stringify(t.artist) +
-      " | album=" + JSON.stringify(t.album) +
-      " | name=" + t.name +
-      " | date=" + (t.date ? JSON.stringify(t.date) : "MISSING") +
-      " | nowplaying=" + !!(t["@attr"] && t["@attr"].nowplaying)
-    );
-  });
-
   // Group scrobbles by album, skipping the "now playing" entry (it has no timestamp) and anything without an album tag.
   const groups = {};
   allTracks.forEach(t => {
@@ -2565,27 +2525,13 @@ async function generateRecentListens(){
   const knownTrackCounts = buildKnownTrackCountIndex();
   const BATCH_SIZE = 6;
   const scored = [];
-  // TEMPORARY debug log — remove once the missing-album issue is resolved.
-  const debugLines = ["Window: " + new Date(fromUnix * 1000).toLocaleDateString() + " - " + new Date(toUnix * 1000).toLocaleDateString()]
-    .concat(upstreamDebug)
-    .concat(["--- grouped albums ---"]);
   for(let i = 0; i < groupList.length; i += BATCH_SIZE){
     const batch = groupList.slice(i, i + BATCH_SIZE);
     note.textContent = "Checking track counts… " + Math.min(i + BATCH_SIZE, groupList.length) + " of " + groupList.length + " albums";
     const results = await Promise.all(batch.map(async g => {
       const meta = await fetchAlbumMeta(g.artist, g.album);
-      const rawTrackCount = meta.trackCount;
       const known = knownTrackCounts[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
       if(known) meta.trackCount = known.trackCount;
-      debugLines.push(
-        g.artist + " — " + g.album +
-        " | scrobbles=" + g.count +
-        " | lastfm_trackCount=" + rawTrackCount +
-        " | known_override=" + (known ? known.trackCount : "none") +
-        " | final_trackCount=" + meta.trackCount +
-        " | year=" + (meta.year || "-") +
-        " | genres=" + ((meta.genres || []).join("/") || "-")
-      );
       return Object.assign({}, g, meta);
     }));
     scored.push(...results);
@@ -2606,22 +2552,8 @@ async function generateRecentListens(){
       const estListens = Math.max(1, Math.round(ratio));
       return Object.assign({}, g, {estListens, ratio, guessed: !hasRealTrackCount});
     })
-    .filter(g => {
-      const passes = g.ratio >= FULL_LISTEN_RATIO && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM);
-      debugLines.push(
-        g.artist + " — " + g.album +
-        " | ratio=" + g.ratio.toFixed(2) +
-        " | estListens=" + g.estListens +
-        " | guessed=" + g.guessed +
-        " | KEPT=" + passes
-      );
-      return passes;
-    })
+    .filter(g => g.ratio >= FULL_LISTEN_RATIO && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM))
     .sort((a, b) => b.lastUts - a.lastUts);
-
-  recentDebugLog = debugLines.join("\n");
-  document.getElementById("recentDebugPanel").classList.remove("hidden");
-  document.getElementById("recentDebugText").value = recentDebugLog;
 
   recentResults = {fromUnix, toUnix, albums: fullyListened};
   saveRecentResultsToStorage();
