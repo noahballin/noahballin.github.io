@@ -989,6 +989,29 @@ function loadAddedAlbums(listId){
 function saveAddedAlbums(listId, arr){ localStorage.setItem("ll_added_" + listId, JSON.stringify(arr)); }
 function effectiveAlbums(list){ return list.albums.concat(loadAddedAlbums(list.id)); }
 
+// Track counts already verified via a real Lists sync are more trustworthy than a fresh
+// Last.fm lookup for This Week — Last.fm's own album.getinfo can inconsistently resolve the
+// same artist+album query to a different (e.g. deluxe-edition) release across separate calls.
+// Reusing whatever Lists already confirmed keeps both features in agreement.
+function buildKnownTrackCountIndex(){
+  const index = {};
+  getAllLists().forEach(list => {
+    const prog = getProgressFor(list.id);
+    effectiveAlbums(list).forEach((al, i) => {
+      const e = entryForIn(prog, i);
+      if(e.trackCount && e.trackCount > 0){
+        const artist = e.ov_a || al.a;
+        const title = e.ov_t || al.t;
+        const key = artist.toLowerCase() + "|" + title.toLowerCase();
+        if(!index[key] || (e.syncedAt || 0) > (index[key].syncedAt || 0)){
+          index[key] = {trackCount: e.trackCount, syncedAt: e.syncedAt || 0};
+        }
+      }
+    });
+  });
+  return index;
+}
+
 function loadFolders(){
   try{ return JSON.parse(localStorage.getItem("ll_folders")) || []; }
   catch(e){ return []; }
@@ -2507,6 +2530,7 @@ async function generateRecentListens(){
   }
 
   // Fetch real track counts (batched), then estimate full listens.
+  const knownTrackCounts = buildKnownTrackCountIndex();
   const BATCH_SIZE = 6;
   const scored = [];
   for(let i = 0; i < groupList.length; i += BATCH_SIZE){
@@ -2514,6 +2538,8 @@ async function generateRecentListens(){
     note.textContent = "Checking track counts… " + Math.min(i + BATCH_SIZE, groupList.length) + " of " + groupList.length + " albums";
     const results = await Promise.all(batch.map(async g => {
       const meta = await fetchAlbumMeta(g.artist, g.album);
+      const known = knownTrackCounts[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
+      if(known) meta.trackCount = known.trackCount;
       return Object.assign({}, g, meta);
     }));
     scored.push(...results);
