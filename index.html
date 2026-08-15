@@ -2495,19 +2495,11 @@ async function generateRecentListens(){
   btn.disabled = true;
   note.textContent = "Pulling your last 7 days of scrobbles…";
 
-  const nowUnix = Math.floor(Date.now() / 1000);
-  // Reuse the same 7-day window across repeated checks instead of recalculating "now" every
-  // time — otherwise the window quietly slides forward on every tap, which can drop albums
-  // near the boundary in and out for no reason other than which moment you happened to check.
-  // Only roll forward to a genuinely new window once a full week has actually passed.
-  let toUnix, fromUnix;
-  if(recentResults && recentResults.toUnix && (nowUnix - recentResults.toUnix) < 7 * 24 * 60 * 60){
-    toUnix = recentResults.toUnix;
-    fromUnix = recentResults.fromUnix;
-  } else {
-    toUnix = nowUnix;
-    fromUnix = toUnix - 7 * 24 * 60 * 60;
-  }
+  // A true rolling 7-days-ending-now — freezing this window (as an earlier attempt did) meant
+  // brand new scrobbles since your last check could fall outside the query entirely until a
+  // full week passed. Always query up through the current moment instead.
+  const toUnix = Math.floor(Date.now() / 1000);
+  const fromUnix = toUnix - 7 * 24 * 60 * 60;
 
   let allTracks = [];
   try{
