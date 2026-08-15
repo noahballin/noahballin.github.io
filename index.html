@@ -2562,7 +2562,10 @@ async function generateRecentListens(){
       const hasRealTrackCount = g.trackCount > 0;
       const divisor = hasRealTrackCount ? g.trackCount : RECENT_TRACK_COUNT_GUESS;
       const ratio = g.count / divisor;
-      const estListens = Math.max(1, Math.round(ratio));
+      // The 80% leniency (below) only helps an album clear the "did you listen at least once"
+      // bar. Beyond that first credited listen, use strict floor division — no rounding help —
+      // so extra listens need the genuine full tracklist, not just another 80%.
+      const estListens = Math.max(1, Math.floor(ratio));
       return Object.assign({}, g, {estListens, ratio, guessed: !hasRealTrackCount});
     })
     .filter(g => g.ratio >= FULL_LISTEN_RATIO && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM))
