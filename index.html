@@ -717,9 +717,15 @@ function openReviewModal(artist, title, suggestedYear, suggestedGenres){
   reviewingKey = reviewKey(artist, title);
   const reviews = loadReviews();
   const existing = reviews[reviewingKey];
+  // Fall back to This Week's auto-pulled genres whenever the saved review doesn't have its own
+  // yet — not just for brand-new reviews — so genres show up even after you've already
+  // reviewed an album on other axes but never touched genres. Still fully editable either way.
+  const initialGenres = (existing && existing.genres && existing.genres.length)
+    ? existing.genres.slice()
+    : (suggestedGenres || []).slice();
   reviewDraft = existing
-    ? {rotation: existing.rotation, distinctiveness: existing.distinctiveness, pull: existing.pull, vibe: existing.vibe, genres: (existing.genres || []).slice()}
-    : {rotation: null, distinctiveness: null, pull: null, vibe: null, genres: (suggestedGenres || []).slice()};
+    ? {rotation: existing.rotation, distinctiveness: existing.distinctiveness, pull: existing.pull, vibe: existing.vibe, genres: initialGenres}
+    : {rotation: null, distinctiveness: null, pull: null, vibe: null, genres: initialGenres};
 
   const knownYear = (existing && existing.year) || suggestedYear || "";
   document.getElementById("reviewModalTitle").textContent = artist + " — " + title;
