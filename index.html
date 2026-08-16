@@ -167,6 +167,7 @@
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
   .reviews-filters{margin-top:16px; display:flex; flex-direction:column; gap:14px;}
+  #reviewsSortRow{margin-top:14px;}
   .filters-toggle-btn{
     margin-top:14px; background:var(--card); border:1px solid var(--line); color:var(--ink-dim);
     font-family:'IBM Plex Mono',monospace; font-size:12px; padding:8px 14px; border-radius:8px; cursor:pointer;
@@ -196,6 +197,22 @@
   }
   .review-vibe-opt img{width:100%; height:100%; object-fit:contain;}
   .review-vibe-opt.active{border-color:var(--teal);}
+  .genre-tag-list{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;}
+  .genre-tag-list:empty{margin-bottom:0;}
+  .genre-chip{
+    display:inline-flex; align-items:center; gap:6px; background:var(--card-hi); border:1px solid var(--line);
+    color:var(--gold-dim); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; border-radius:14px;
+  }
+  .genre-chip button{background:none; border:none; color:var(--ink-dim); font-size:13px; line-height:1; padding:0; cursor:pointer;}
+  .genre-add-row{display:flex; gap:8px;}
+  .genre-add-row input{
+    flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:8px 10px; border-radius:8px;
+  }
+  .genre-add-row button{
+    background:var(--card-hi); border:1px solid var(--line); color:var(--ink); font-family:'IBM Plex Mono',monospace;
+    font-size:12px; padding:8px 14px; border-radius:8px; cursor:pointer;
+  }
 
   /* dashboard */
   .dash-grid{display:flex; flex-direction:column; gap:10px;}
@@ -405,6 +422,17 @@
   <div id="reviewsHeader" class="hidden">
     <h1>Reviews</h1>
     <p class="recent-sub" id="reviewsCount"></p>
+    <div class="reviews-filter-row" id="reviewsSortRow">
+      <label>Sort by</label>
+      <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
+        <option value="recent">Most recently reviewed</option>
+        <option value="oldest">Oldest reviewed</option>
+        <option value="artist">Artist A–Z</option>
+        <option value="album">Album A–Z</option>
+        <option value="yearNewest">Year (newest first)</option>
+        <option value="yearOldest">Year (oldest first)</option>
+      </select>
+    </div>
     <button class="filters-toggle-btn" id="filtersToggleBtn" onclick="toggleReviewsFilters()">Filters ▾</button>
     <div class="reviews-filters hidden" id="reviewsFiltersPanel">
       <div class="reviews-filter-row">
@@ -574,6 +602,15 @@
     <input id="reviewModalYear" type="text" placeholder="e.g. 1998" inputmode="numeric" maxlength="4">
   </div>
 
+  <div class="field">
+    <label>Genres</label>
+    <div class="genre-tag-list" id="reviewGenreList"></div>
+    <div class="genre-add-row">
+      <input id="reviewGenreInput" type="text" placeholder="Add a genre" onkeydown="if(event.key==='Enter'){event.preventDefault(); addReviewGenre();}">
+      <button type="button" onclick="addReviewGenre()">Add</button>
+    </div>
+  </div>
+
   <div class="review-axis">
     <label>Rotation</label>
     <div class="review-opts" id="reviewRotation"></div>
@@ -674,15 +711,15 @@ function saveReviewsStore(obj){ localStorage.setItem("ll_album_reviews", JSON.st
 function reviewKey(artist, title){ return (artist + "|||" + title).toLowerCase().trim(); }
 
 let reviewingKey = null;
-let reviewDraft = {rotation: null, distinctiveness: null, pull: null, vibe: null};
+let reviewDraft = {rotation: null, distinctiveness: null, pull: null, vibe: null, genres: []};
 
-function openReviewModal(artist, title, suggestedYear){
+function openReviewModal(artist, title, suggestedYear, suggestedGenres){
   reviewingKey = reviewKey(artist, title);
   const reviews = loadReviews();
   const existing = reviews[reviewingKey];
   reviewDraft = existing
-    ? {rotation: existing.rotation, distinctiveness: existing.distinctiveness, pull: existing.pull, vibe: existing.vibe}
-    : {rotation: null, distinctiveness: null, pull: null, vibe: null};
+    ? {rotation: existing.rotation, distinctiveness: existing.distinctiveness, pull: existing.pull, vibe: existing.vibe, genres: (existing.genres || []).slice()}
+    : {rotation: null, distinctiveness: null, pull: null, vibe: null, genres: (suggestedGenres || []).slice()};
 
   const knownYear = (existing && existing.year) || suggestedYear || "";
   document.getElementById("reviewModalTitle").textContent = artist + " — " + title;
@@ -693,8 +730,30 @@ function openReviewModal(artist, title, suggestedYear){
   // or auto-pulled from Last.fm/MusicBrainz on This Week) — no need to show it otherwise.
   document.getElementById("reviewYearField").classList.toggle("hidden", !!knownYear);
   document.getElementById("reviewDeleteRow").classList.toggle("hidden", !existing);
+  renderReviewGenres();
   renderReviewOptions();
   openModal("reviewModal");
+}
+function renderReviewGenres(){
+  const el = document.getElementById("reviewGenreList");
+  el.innerHTML = reviewDraft.genres.map((g, idx) =>
+    '<span class="genre-chip">' + escapeHtml(g) + '<button type="button" onclick="removeReviewGenre(' + idx + ')">&times;</button></span>'
+  ).join("");
+}
+function addReviewGenre(){
+  const input = document.getElementById("reviewGenreInput");
+  const val = input.value.trim();
+  if(!val) return;
+  if(!reviewDraft.genres.some(g => g.toLowerCase() === val.toLowerCase())){
+    reviewDraft.genres.push(val);
+    renderReviewGenres();
+  }
+  input.value = "";
+  input.focus();
+}
+function removeReviewGenre(idx){
+  reviewDraft.genres.splice(idx, 1);
+  renderReviewGenres();
 }
 function renderReviewOptions(){
   renderReviewOptionGroup("reviewRotation", ROTATION_OPTIONS, "rotation");
@@ -734,6 +793,7 @@ function saveReviewModal(){
     artist: document.getElementById("reviewModalArtist").value,
     title: document.getElementById("reviewModalAlbum").value,
     year: year,
+    genres: reviewDraft.genres.slice(),
     rotation: reviewDraft.rotation,
     distinctiveness: reviewDraft.distinctiveness,
     pull: reviewDraft.pull,
@@ -805,7 +865,12 @@ async function exportReviewsCSV(){
 
 /* ---------- REVIEWS TAB (browse + filter all reviewed albums) ---------- */
 let reviewsFilter = {rotation: "", distinctiveness: "", pull: "", vibe: "", decade: ""};
+let reviewsSort = "recent";
 let reviewsFiltersOpen = false;
+function setReviewsSort(value){
+  reviewsSort = value;
+  renderReviewsResultsArea();
+}
 
 function initReviewsHeader(){
   populateFilterSelect("reviewsFilterRotation", ROTATION_OPTIONS);
@@ -890,13 +955,22 @@ function setReviewsVibeFilter(id){
 }
 function getFilteredReviews(){
   const reviews = loadReviews();
-  return Object.values(reviews).filter(r =>
+  const filtered = Object.values(reviews).filter(r =>
     (!reviewsFilter.rotation || r.rotation === reviewsFilter.rotation) &&
     (!reviewsFilter.distinctiveness || r.distinctiveness === reviewsFilter.distinctiveness) &&
     (!reviewsFilter.pull || r.pull === reviewsFilter.pull) &&
     (!reviewsFilter.vibe || r.vibe === reviewsFilter.vibe) &&
     reviewDecadeMatches(r, reviewsFilter.decade)
-  ).sort((a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0));
+  );
+  const sorters = {
+    recent: (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0),
+    oldest: (a, b) => (a.reviewedAt || 0) - (b.reviewedAt || 0),
+    artist: (a, b) => a.artist.localeCompare(b.artist),
+    album: (a, b) => a.title.localeCompare(b.title),
+    yearNewest: (a, b) => (b.year || "0") - (a.year || "0"),
+    yearOldest: (a, b) => (a.year || "9999") - (b.year || "9999")
+  };
+  return filtered.sort(sorters[reviewsSort] || sorters.recent);
 }
 function renderReviewsResultsArea(){
   const content = document.getElementById("content");
@@ -917,13 +991,14 @@ function renderReviewsResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(r.artist, r.title, r.year);
+    row.onclick = () => openReviewModal(r.artist, r.title, r.year, r.genres);
     row.innerHTML =
       '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
       '<div class="discover-main">' +
         '<div class="discover-artist">' + escapeHtml(r.artist) + '</div>' +
         '<div class="discover-title">' + escapeHtml(r.title) + '</div>' +
         '<div class="discover-meta">' +
+          (r.genres && r.genres.length ? '<span class="genre-tag">' + escapeHtml(r.genres.join(" / ")) + '</span>' : '') +
           (r.year ? '<span>' + escapeHtml(r.year) + '</span>' : '') +
           '<span>' + escapeHtml(r.rotation || "—") + '</span>' +
           '<span>' + escapeHtml(r.distinctiveness || "—") + '</span>' +
@@ -2623,7 +2698,7 @@ function renderRecentResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
-    row.onclick = () => openReviewModal(al.artist, al.album, al.year);
+    row.onclick = () => openReviewModal(al.artist, al.album, al.year, al.genres);
     const metaBits = al.genres && al.genres.length
       ? ['<span class="genre-tag">' + escapeHtml(al.genres.join(" / ")) + '</span>']
       : [];
