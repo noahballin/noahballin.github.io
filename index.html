@@ -492,6 +492,14 @@
     <label>API key</label>
     <input id="inputApiKey" type="text" autocapitalize="off" autocorrect="off" placeholder="32-character key">
   </div>
+  <div class="field">
+    <label>Theme (for testing designs — saved automatically)</label>
+    <select id="themeSelect" onchange="setTheme(this.value)"></select>
+    <p style="font-size:11px; color:var(--ink-dim); margin-top:8px; line-height:1.5;">
+      Browsing fonts to try later? <a href="https://fonts.google.com" target="_blank">fonts.google.com</a> —
+      currently using Fraunces (headings) and IBM Plex Mono (everything else).
+    </p>
+  </div>
   <div class="modal-actions">
     <button class="btn-close" onclick="closeAllModals()">Close</button>
     <button class="btn-save" onclick="saveSettings()">Save</button>
@@ -1046,6 +1054,50 @@ function saveReviewsFilterAsList(){
 }
 
 
+/* ---------- THEMES ---------- */
+const THEMES = {
+  vinyl: {
+    label: "Vinyl Warm (default)",
+    bg: "#17140F", card: "#211D17", "card-hi": "#29241C", line: "#3A3327",
+    ink: "#EDE6D8", "ink-dim": "#9C9384", gold: "#5636a0", "gold-dim": "#d383c8", teal: "#94d83b"
+  },
+  midnight: {
+    label: "Midnight",
+    bg: "#0B0F1A", card: "#131A2B", "card-hi": "#1B2438", line: "#2A3550",
+    ink: "#E4E8F5", "ink-dim": "#8891AC", gold: "#5B7FDE", "gold-dim": "#A78BDB", teal: "#4FD6C4"
+  },
+  paper: {
+    label: "Paper (light)",
+    bg: "#F5F1E8", card: "#FFFFFF", "card-hi": "#ECE6D8", line: "#D8CFBC",
+    ink: "#211D17", "ink-dim": "#7A6F5C", gold: "#8A4FBF", "gold-dim": "#B25FA0", teal: "#3F9E4F"
+  },
+  noir: {
+    label: "Noir (mono)",
+    bg: "#121212", card: "#1E1E1E", "card-hi": "#282828", line: "#3A3A3A",
+    ink: "#F0F0F0", "ink-dim": "#9A9A9A", gold: "#C9C9C9", "gold-dim": "#ABABAB", teal: "#FFFFFF"
+  },
+  sunset: {
+    label: "Sunset",
+    bg: "#1A0F14", card: "#26161C", "card-hi": "#331E26", line: "#4A2A35",
+    ink: "#F5E6DC", "ink-dim": "#B08A85", gold: "#E8734A", "gold-dim": "#F2A65A", teal: "#FF6F91"
+  }
+};
+function applyTheme(name){
+  const theme = THEMES[name] || THEMES.vinyl;
+  const root = document.documentElement.style;
+  Object.keys(theme).forEach(key => {
+    if(key !== "label") root.setProperty("--" + key, theme[key]);
+  });
+}
+function loadThemeName(){
+  return localStorage.getItem("ll_theme") || "vinyl";
+}
+function setTheme(name){
+  localStorage.setItem("ll_theme", name);
+  applyTheme(name);
+}
+applyTheme(loadThemeName());
+
 function loadSettings(){
   try{
     const s = JSON.parse(localStorage.getItem("ll_settings"));
@@ -1596,6 +1648,11 @@ function openModal(id){
 function openSettings(){
   document.getElementById("inputUsername").value = settings.username || "";
   document.getElementById("inputApiKey").value = settings.apiKey || "";
+  const themeSelect = document.getElementById("themeSelect");
+  themeSelect.innerHTML = Object.keys(THEMES).map(key =>
+    '<option value="' + key + '">' + THEMES[key].label + '</option>'
+  ).join("");
+  themeSelect.value = loadThemeName();
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("settingsModal").classList.add("open");
 }
