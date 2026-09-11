@@ -78,16 +78,22 @@
     display:flex; align-items:center; gap:12px; margin-top:10px;
   }
   .ring-wrap{position:relative; width:46px; height:46px; flex:none;}
-  .ring-wrap svg{transform:rotate(-90deg);}
+  .ring-wrap svg{transform:rotate(-90deg); width:100%; height:100%; display:block;}
   .ring-track{fill:none; stroke:var(--line); stroke-width:6;}
   .ring-fill{fill:none; stroke:var(--gold); stroke-width:6; stroke-linecap:round; transition:stroke-dashoffset .5s ease;}
   .ring-count{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     font-size:10px; color:var(--ink); font-weight:600;
   }
-  .status-text{flex:1;}
+  .status-text{flex:1; min-width:0;}
   .status-text .big{font-size:12px; color:var(--ink);}
   .status-text .small{font-size:10px; color:var(--ink-dim); margin-top:2px;}
+  .filter-cycle{
+    flex:none; background:var(--card); border:1px solid var(--line); color:var(--ink-dim);
+    font-family:var(--font-body); font-size:10px; letter-spacing:0.04em; text-transform:uppercase;
+    padding:6px 10px; border-radius:12px; cursor:pointer; min-width:62px; text-align:center;
+  }
+  .filter-cycle.filtered{border-color:var(--teal); color:var(--teal);}
 
   .sync-btn{
     margin-top:16px; width:100%; padding:12px; border-radius:var(--radius);
@@ -387,7 +393,7 @@
     <select id="listSelector" onchange="goList(this.value)"></select>
     <div class="status-row">
       <div class="ring-wrap">
-        <svg width="64" height="64" viewBox="0 0 64 64">
+        <svg viewBox="0 0 64 64">
           <circle class="ring-track" cx="32" cy="32" r="27"></circle>
           <circle class="ring-fill" id="ringFill" cx="32" cy="32" r="27" stroke-dasharray="169.6" stroke-dashoffset="169.6"></circle>
         </svg>
@@ -397,14 +403,10 @@
         <div class="big" id="progressCount">0 of 0 listened</div>
         <div class="small" id="progressSub"></div>
       </div>
+      <button class="filter-cycle" id="filterCycleBtn" onclick="cycleFilter()">All</button>
     </div>
     <button class="sync-btn needs-setup" id="syncBtn" onclick="handleSyncClick()">Connect Last.fm to sync</button>
     <div class="sync-note" id="syncNote"></div>
-    <div class="filters">
-      <button class="active" data-filter="all" onclick="setFilter('all')">All</button>
-      <button data-filter="unheard" onclick="setFilter('unheard')">Unheard</button>
-      <button data-filter="heard" onclick="setFilter('heard')">Heard</button>
-    </div>
   </div>
 
   <div id="discoverHeader" class="hidden">
@@ -1513,6 +1515,7 @@ function renderListCardHtml(list){
 
 /* ---------- ALBUM VIEW ---------- */
 function renderAlbums(){
+  updateFilterCycleBtn(); // keeps the label right across list switches and initial load
   const albums = effectiveAlbums(activeList);
   const visibleIndices = [];
   albums.forEach((al, i) => { if(!entryFor(i).hidden) visibleIndices.push(i); });
@@ -1700,10 +1703,22 @@ function confirmDelete(i){
     render();
   };
 }
+const FILTER_CYCLE = ["all", "unheard", "heard"];
+const FILTER_LABELS = {all: "All", unheard: "Unheard", heard: "Heard"};
 function setFilter(f){
   filter = f;
-  document.querySelectorAll("#listHeader .filters button").forEach(b => b.classList.toggle("active", b.dataset.filter === f));
+  updateFilterCycleBtn();
   renderAlbums();
+}
+function cycleFilter(){
+  const next = FILTER_CYCLE[(FILTER_CYCLE.indexOf(filter) + 1) % FILTER_CYCLE.length];
+  setFilter(next);
+}
+function updateFilterCycleBtn(){
+  const btn = document.getElementById("filterCycleBtn");
+  if(!btn) return;
+  btn.textContent = FILTER_LABELS[filter] || "All";
+  btn.classList.toggle("filtered", filter !== "all");
 }
 
 /* ---------- MODALS ---------- */
