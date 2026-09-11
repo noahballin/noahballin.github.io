@@ -35,25 +35,25 @@
   .hidden{display:none !important;}
 
   header{
-    padding:calc(20px + env(safe-area-inset-top)) 20px 18px;
-    margin-top:12px;
+    padding:calc(12px + env(safe-area-inset-top)) 20px 12px;
+    margin-top:0;
     border-bottom:1px solid var(--line);
     position:sticky; top:0; z-index:5;
     background:rgba(23,20,15,0.94);
     backdrop-filter:blur(6px);
   }
   .eyebrow{
-    font-size:11px; letter-spacing:0.18em; text-transform:uppercase;
+    font-size:10px; letter-spacing:0.18em; text-transform:uppercase;
     color:var(--gold); font-weight:600; display:flex; justify-content:space-between; align-items:center; gap:10px;
   }
   .eyebrow .label{flex:1;}
   .gear, .back-btn{
-    background:none; border:none; color:var(--ink-dim); font-size:19px; cursor:pointer;
-    padding:11px 12px; line-height:1; margin:-11px 0;
+    background:none; border:none; color:var(--ink-dim); font-size:17px; cursor:pointer;
+    padding:9px 10px; line-height:1; margin:-9px 0;
   }
   .gear:active, .back-btn:active{color:var(--gold);}
   h1{
-    font-family:var(--font-display); font-weight:600; font-size:26px; margin:6px 0 0;
+    font-family:var(--font-display); font-weight:600; font-size:20px; margin:3px 0 0;
     letter-spacing:-0.01em; line-height:1.15;
   }
   select#listSelector{
@@ -75,23 +75,23 @@
   .triple-stat{color:var(--gold); font-weight:600;}
 
   .status-row{
-    display:flex; align-items:center; gap:16px; margin-top:18px;
+    display:flex; align-items:center; gap:12px; margin-top:10px;
   }
-  .ring-wrap{position:relative; width:64px; height:64px; flex:none;}
+  .ring-wrap{position:relative; width:46px; height:46px; flex:none;}
   .ring-wrap svg{transform:rotate(-90deg);}
   .ring-track{fill:none; stroke:var(--line); stroke-width:6;}
   .ring-fill{fill:none; stroke:var(--gold); stroke-width:6; stroke-linecap:round; transition:stroke-dashoffset .5s ease;}
   .ring-count{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    font-size:12px; color:var(--ink); font-weight:600;
+    font-size:10px; color:var(--ink); font-weight:600;
   }
   .status-text{flex:1;}
-  .status-text .big{font-size:13px; color:var(--ink);}
-  .status-text .small{font-size:11px; color:var(--ink-dim); margin-top:2px;}
+  .status-text .big{font-size:12px; color:var(--ink);}
+  .status-text .small{font-size:10px; color:var(--ink-dim); margin-top:2px;}
 
   .sync-btn{
     margin-top:16px; width:100%; padding:12px; border-radius:var(--radius);
-    background:var(--gold); color:#17140F; border:none; font-family:var(--font-body);
+    background:var(--gold); color:#17140F; border:1px solid transparent; font-family:var(--font-body);
     font-weight:600; font-size:13px; letter-spacing:0.04em; text-transform:uppercase;
     cursor:pointer;
   }
@@ -170,12 +170,18 @@
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
   .reviews-filters{margin-top:16px; display:flex; flex-direction:column; gap:14px;}
   #reviewsSortRow{margin-top:14px;}
+  .reviews-top-row{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
+  .reviews-count-inline{font-size:10.5px; color:var(--ink-dim); flex:none;}
+  .reviews-controls-row{display:flex; gap:8px; margin-top:10px; align-items:stretch;}
+  .reviews-controls-row .reviews-search{flex:1; margin-top:0;}
+  .reviews-controls-row .filters-toggle-btn{margin-top:0; flex:none; white-space:nowrap;}
   .reviews-search{
-    width:100%; box-sizing:border-box; margin-top:14px; background:var(--card); border:1px solid var(--line);
-    color:var(--ink); font-family:var(--font-body); font-size:13px; padding:10px 12px; border-radius:8px;
+    width:100%; box-sizing:border-box; background:var(--card); border:1px solid var(--line);
+    color:var(--ink); font-family:var(--font-body); font-size:12px; padding:8px 10px; border-radius:8px;
   }
   .near-miss-section{margin-top:26px; border-top:1px solid var(--line); padding-top:6px;}
-  .recent-btn-row{display:flex; gap:8px;}
+  .recent-btn-row{display:flex; gap:8px; align-items:stretch;}
+  .recent-btn-row .sync-btn{margin-top:12px;}
   .recent-btn-row #recentGenerateBtn{flex:2; min-width:0;}
   .recent-btn-row #checkYearsBtn{flex:1; min-width:0;}
   .near-miss-toggle-row{padding:22px 10px 8px; text-align:center;}
@@ -189,8 +195,8 @@
   .near-miss-card{opacity:0.72;}
   .near-miss-card:hover{opacity:1;}
   .filters-toggle-btn{
-    margin-top:14px; background:var(--card); border:1px solid var(--line); color:var(--ink-dim);
-    font-family:var(--font-body); font-size:12px; padding:8px 14px; border-radius:8px; cursor:pointer;
+    margin-top:10px; background:var(--card); border:1px solid var(--line); color:var(--ink-dim);
+    font-family:var(--font-body); font-size:11px; padding:8px 12px; border-radius:8px; cursor:pointer;
   }
   .recent-title-row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
   .recent-title-row h1{margin:0;}
@@ -390,7 +396,6 @@
       <div class="status-text">
         <div class="big" id="progressCount">0 of 0 listened</div>
         <div class="small" id="progressSub"></div>
-        <div class="small" id="tripleStat"></div>
       </div>
     </div>
     <button class="sync-btn needs-setup" id="syncBtn" onclick="handleSyncClick()">Connect Last.fm to sync</button>
@@ -434,7 +439,6 @@
   </div>
   <div id="recentHeader" class="hidden">
     <h1>Past Week</h1>
-    <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
     <div class="recent-btn-row">
       <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
       <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Years</button>
@@ -442,23 +446,27 @@
     <div class="sync-note" id="recentNote"></div>
   </div>
   <div id="reviewsHeader" class="hidden">
-    <h1>Reviews</h1>
-    <p class="recent-sub" id="reviewsCount"></p>
-    <input class="reviews-search" id="reviewsSearchInput" type="text" placeholder="Search artist or album…"
-      autocapitalize="off" autocorrect="off" oninput="setReviewsSearch(this.value)">
-    <div class="reviews-filter-row" id="reviewsSortRow">
-      <label>Sort by</label>
-      <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
-        <option value="recent">Most recently reviewed</option>
+    <div class="reviews-top-row">
+      <h1>Reviews</h1>
+      <span class="reviews-count-inline" id="reviewsCount"></span>
+    </div>
+    <div class="reviews-controls-row">
+      <input class="reviews-search" id="reviewsSearchInput" type="text" placeholder="Search…"
+        autocapitalize="off" autocorrect="off" oninput="setReviewsSearch(this.value)">
+      <button class="filters-toggle-btn" id="filtersToggleBtn" onclick="toggleReviewsFilters()">Filters</button>
+    </div>
+    <div class="reviews-filters hidden" id="reviewsFiltersPanel">
+      <div class="reviews-filter-row" id="reviewsSortRow">
+        <label>Sort by</label>
+        <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
+          <option value="recent">Most recently reviewed</option>
         <option value="oldest">Oldest reviewed</option>
         <option value="artist">Artist A–Z</option>
         <option value="album">Album A–Z</option>
         <option value="yearNewest">Year (newest first)</option>
         <option value="yearOldest">Year (oldest first)</option>
-      </select>
-    </div>
-    <button class="filters-toggle-btn" id="filtersToggleBtn" onclick="toggleReviewsFilters()">Filters ▾</button>
-    <div class="reviews-filters hidden" id="reviewsFiltersPanel">
+        </select>
+      </div>
       <div class="reviews-filter-row">
         <label>Year / Decade</label>
         <select id="reviewsFilterDecade" onchange="setReviewsTextFilter('decade', this.value)"></select>
@@ -960,7 +968,7 @@ function updateFiltersToggleLabel(){
   const activeCount = ["rotation", "distinctiveness", "pull", "vibe", "decade"].filter(k => reviewsFilter[k]).length;
   const btn = document.getElementById("filtersToggleBtn");
   if(!btn) return;
-  btn.textContent = "Filters" + (activeCount > 0 ? " (" + activeCount + ")" : "") + (reviewsFiltersOpen ? " ▴" : " ▾");
+  btn.textContent = "Filters" + (activeCount > 0 ? " (" + activeCount + ")" : "");
 }
 function populateDecadeFilter(){
   const reviews = loadReviews();
@@ -1041,7 +1049,7 @@ function renderReviewsResultsArea(){
   const filtered = getFilteredReviews();
   const total = Object.keys(loadReviews()).length;
   document.getElementById("reviewsCount").textContent =
-    filtered.length + " of " + total + " reviewed album" + (total === 1 ? "" : "s") + (filtered.length !== total ? " match these filters" : "");
+    (filtered.length !== total ? filtered.length + " / " + total : total);
 
   if(filtered.length === 0){
     content.innerHTML = '<div class="empty-hint">' + (total === 0 ? "Review an album from This Week to see it here." : (reviewsSearch ? "Nothing matches that search." : "No reviews match these filters.")) + '</div>';
@@ -1521,15 +1529,6 @@ function renderAlbums(){
   document.getElementById("progressSub").textContent = settings.username
     ? "Synced against @" + settings.username + " on Last.fm"
     : "Manual check-off — connect Last.fm to auto-sync";
-
-  let tripleCount = 0;
-  visibleIndices.forEach(i => {
-    const est = estFullListens(entryFor(i));
-    if(est !== null && est.value >= 3) tripleCount++;
-  });
-  document.getElementById("tripleStat").innerHTML = tripleCount > 0
-    ? '<span class="triple-stat">★ ~' + tripleCount + ' with 3+ full listens (estimated)</span>'
-    : "";
 
   const content = document.getElementById("content");
   const wrap = document.createElement("div");
