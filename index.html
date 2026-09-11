@@ -175,6 +175,15 @@
     color:var(--ink); font-family:var(--font-body); font-size:13px; padding:10px 12px; border-radius:8px;
   }
   .near-miss-section{margin-top:26px; border-top:1px solid var(--line); padding-top:6px;}
+  .recent-btn-row{display:flex; gap:8px;}
+  .recent-btn-row #recentGenerateBtn{flex:2; min-width:0;}
+  .recent-btn-row #checkYearsBtn{flex:1; min-width:0;}
+  .near-miss-toggle-row{padding:22px 10px 8px; text-align:center;}
+  .near-miss-toggle-link{
+    background:none; border:none; color:var(--ink-dim); opacity:0.6; cursor:pointer;
+    font-family:var(--font-body); font-size:10.5px; text-decoration:underline; padding:4px;
+  }
+  .near-miss-toggle-link:hover{opacity:1;}
   .near-miss-header{padding:12px 10px 4px; font-size:12px; color:var(--ink-dim); letter-spacing:0.03em;}
   .near-miss-sub{font-size:10.5px; color:var(--ink-dim); opacity:0.75; margin-top:5px; line-height:1.5;}
   .near-miss-card{opacity:0.72;}
@@ -426,9 +435,10 @@
   <div id="recentHeader" class="hidden">
     <h1>Past Week</h1>
     <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
-    <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
-    <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
-    <button class="sync-btn secondary-btn" id="nearMissToggleBtn" onclick="toggleNearMisses()">Show near misses</button>
+    <div class="recent-btn-row">
+      <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
+      <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Years</button>
+    </div>
     <div class="sync-note" id="recentNote"></div>
   </div>
   <div id="reviewsHeader" class="hidden">
@@ -2837,12 +2847,6 @@ async function checkMissingYears(){
 function renderRecentResultsArea(){
   const content = document.getElementById("content");
   if(section !== "recent") return;
-  // Keep the toggle's count label in sync regardless of which path triggered this render.
-  const nmBtn = document.getElementById("nearMissToggleBtn");
-  if(nmBtn){
-    const nmCount = (recentResults && recentResults.nearMisses) ? recentResults.nearMisses.length : 0;
-    nmBtn.textContent = (nearMissesVisible ? "Hide" : "Show") + " near misses" + (nmCount > 0 ? " (" + nmCount + ")" : "");
-  }
   if(!recentResults || !recentResults.albums || recentResults.albums.length === 0){
     content.innerHTML = '<div class="empty-hint">Tap "Check this week" to see what you\'ve fully listened to.</div>';
     return;
@@ -2875,13 +2879,20 @@ function renderRecentResultsArea(){
   content.innerHTML = "";
   content.appendChild(wrap);
 
-  // "Didn't quite qualify" section — hidden behind a toggle, since it's a diagnostic view for
-  // correcting a wrong track count rather than something to see on every check.
+  // "Didn't quite qualify" — a diagnostic view for correcting a wrong track count, tucked at the
+  // bottom behind a small text link so it stays out of the way of the normal results.
   const nearMisses = (recentResults.nearMisses || []);
+  if(nearMisses.length > 0){
+    const toggleRow = document.createElement("div");
+    toggleRow.className = "near-miss-toggle-row";
+    toggleRow.innerHTML = '<button class="near-miss-toggle-link" onclick="toggleNearMisses()">' +
+      (nearMissesVisible ? "hide" : "show") + ' ' + nearMisses.length + " that didn't quite qualify</button>";
+    content.appendChild(toggleRow);
+  }
   if(nearMissesVisible && nearMisses.length > 0){
     const nmWrap = document.createElement("div");
     nmWrap.className = "near-miss-section";
-    nmWrap.innerHTML = '<div class="near-miss-header">Didn\'t quite qualify (' + nearMisses.length + ')' +
+    nmWrap.innerHTML = '<div class="near-miss-header">' +
       '<div class="near-miss-sub">Usually means Last.fm matched a deluxe edition with more tracks. Tap to set the real track count.</div></div>';
     nearMisses.forEach(al => {
       const row = document.createElement("div");
