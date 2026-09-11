@@ -170,6 +170,15 @@
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
   .reviews-filters{margin-top:16px; display:flex; flex-direction:column; gap:14px;}
   #reviewsSortRow{margin-top:14px;}
+  .reviews-search{
+    width:100%; box-sizing:border-box; margin-top:14px; background:var(--card); border:1px solid var(--line);
+    color:var(--ink); font-family:var(--font-body); font-size:13px; padding:10px 12px; border-radius:8px;
+  }
+  .near-miss-section{margin-top:26px; border-top:1px solid var(--line); padding-top:6px;}
+  .near-miss-header{padding:12px 10px 4px; font-size:12px; color:var(--ink-dim); letter-spacing:0.03em;}
+  .near-miss-sub{font-size:10.5px; color:var(--ink-dim); opacity:0.75; margin-top:5px; line-height:1.5;}
+  .near-miss-card{opacity:0.72;}
+  .near-miss-card:hover{opacity:1;}
   .filters-toggle-btn{
     margin-top:14px; background:var(--card); border:1px solid var(--line); color:var(--ink-dim);
     font-family:var(--font-body); font-size:12px; padding:8px 14px; border-radius:8px; cursor:pointer;
@@ -419,11 +428,14 @@
     <p class="recent-sub">Albums estimated as fully listened to in the last 7 days, based on your scrobbles.</p>
     <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
     <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Check missing years</button>
+    <button class="sync-btn secondary-btn" id="nearMissToggleBtn" onclick="toggleNearMisses()">Show near misses</button>
     <div class="sync-note" id="recentNote"></div>
   </div>
   <div id="reviewsHeader" class="hidden">
     <h1>Reviews</h1>
     <p class="recent-sub" id="reviewsCount"></p>
+    <input class="reviews-search" id="reviewsSearchInput" type="text" placeholder="Search artist or album…"
+      autocapitalize="off" autocorrect="off" oninput="setReviewsSearch(this.value)">
     <div class="reviews-filter-row" id="reviewsSortRow">
       <label>Sort by</label>
       <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
@@ -674,6 +686,22 @@
   </div>
 </div>
 
+<div class="modal" id="trackCountModal">
+  <h2 id="trackCountModalTitle">Set track count</h2>
+  <p id="trackCountModalInfo" style="font-size:12px; color:var(--ink-dim); line-height:1.5;"></p>
+  <div class="field">
+    <label>Actual number of tracks on the edition you listened to</label>
+    <input id="trackCountModalInput" type="text" inputmode="numeric" maxlength="3" placeholder="e.g. 16">
+  </div>
+  <div class="modal-actions">
+    <button class="btn-close" onclick="closeAllModals()">Cancel</button>
+    <button class="btn-save" onclick="saveTrackCountOverride()">Save</button>
+  </div>
+  <div class="modal-actions hidden" id="trackCountClearRow">
+    <button class="btn-close" style="color:#B5654F;" onclick="clearTrackCountOverride()">Remove override</button>
+  </div>
+</div>
+
 <script src="lists-data.js"></script>
 <script>
 
@@ -882,9 +910,14 @@ async function exportReviewsCSV(){
 /* ---------- REVIEWS TAB (browse + filter all reviewed albums) ---------- */
 let reviewsFilter = {rotation: "", distinctiveness: "", pull: "", vibe: "", decade: ""};
 let reviewsSort = "recent";
+let reviewsSearch = "";
 let reviewsFiltersOpen = false;
 function setReviewsSort(value){
   reviewsSort = value;
+  renderReviewsResultsArea();
+}
+function setReviewsSearch(value){
+  reviewsSearch = value.trim().toLowerCase();
   renderReviewsResultsArea();
 }
 
@@ -976,7 +1009,10 @@ function getFilteredReviews(){
     (!reviewsFilter.distinctiveness || r.distinctiveness === reviewsFilter.distinctiveness) &&
     (!reviewsFilter.pull || r.pull === reviewsFilter.pull) &&
     (!reviewsFilter.vibe || r.vibe === reviewsFilter.vibe) &&
-    reviewDecadeMatches(r, reviewsFilter.decade)
+    reviewDecadeMatches(r, reviewsFilter.decade) &&
+    (!reviewsSearch ||
+      r.artist.toLowerCase().indexOf(reviewsSearch) !== -1 ||
+      r.title.toLowerCase().indexOf(reviewsSearch) !== -1)
   );
   const sorters = {
     recent: (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0),
@@ -998,7 +1034,7 @@ function renderReviewsResultsArea(){
     filtered.length + " of " + total + " reviewed album" + (total === 1 ? "" : "s") + (filtered.length !== total ? " match these filters" : "");
 
   if(filtered.length === 0){
-    content.innerHTML = '<div class="empty-hint">' + (total === 0 ? "Review an album from This Week to see it here." : "No reviews match these filters.") + '</div>';
+    content.innerHTML = '<div class="empty-hint">' + (total === 0 ? "Review an album from This Week to see it here." : (reviewsSearch ? "Nothing matches that search." : "No reviews match these filters.")) + '</div>';
     return;
   }
   const wrap = document.createElement("div");
@@ -1128,6 +1164,21 @@ function loadAddedAlbums(listId){
 }
 function saveAddedAlbums(listId, arr){ localStorage.setItem("ll_added_" + listId, JSON.stringify(arr)); }
 function effectiveAlbums(list){ return list.albums.concat(loadAddedAlbums(list.id)); }
+
+// Manual per-album track-count overrides. Last.fm sometimes resolves an album to its deluxe /
+// super-deluxe edition, inflating the track count so a genuinely complete listen never clears
+// the 80% threshold. This lets you pin the real number for a specific album, which then wins
+// over anything Last.fm returns.
+function loadTrackCountOverrides(){
+  try{ return JSON.parse(localStorage.getItem("ll_trackcount_overrides")) || {}; }
+  catch(e){ return {}; }
+}
+function saveTrackCountOverrides(obj){ localStorage.setItem("ll_trackcount_overrides", JSON.stringify(obj)); }
+function trackCountOverrideKey(artist, album){ return (artist + "|||" + album).toLowerCase().trim(); }
+function getTrackCountOverride(artist, album){
+  const o = loadTrackCountOverrides()[trackCountOverrideKey(artist, album)];
+  return o && o.trackCount ? o.trackCount : null;
+}
 
 // Track counts already verified via a real Lists sync are more trustworthy than a fresh
 // Last.fm lookup for This Week — Last.fm's own album.getinfo can inconsistently resolve the
@@ -1656,6 +1707,7 @@ function closeAllModals(){
   document.getElementById("backupModal").classList.remove("open");
   document.getElementById("albumModal").classList.remove("open");
   document.getElementById("reviewModal").classList.remove("open");
+  document.getElementById("trackCountModal").classList.remove("open");
 }
 function openModal(id){
   document.getElementById("backdrop").classList.add("open");
@@ -2704,6 +2756,10 @@ async function generateRecentListens(){
       const meta = await fetchAlbumMeta(g.artist, g.album);
       const known = knownTrackCounts[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
       if(known) meta.trackCount = known.trackCount;
+      // A manual override beats everything else — it's the explicit "I checked, this is the
+      // real tracklist" answer for albums Last.fm keeps resolving to a deluxe edition.
+      const manualCount = getTrackCountOverride(g.artist, g.album);
+      if(manualCount) meta.trackCount = manualCount;
       if(!meta.year){
         const prevYear = previousYears[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
         if(prevYear) meta.year = prevYear;
@@ -2720,7 +2776,7 @@ async function generateRecentListens(){
   // closing the app, shouldn't disqualify an otherwise-complete listen. 80% of the tracklist
   // now counts as "a full listen" instead of demanding 100%.
   const FULL_LISTEN_RATIO = 0.8;
-  const fullyListened = scored
+  const withEstimates = scored
     .map(g => {
       const hasRealTrackCount = g.trackCount > 0;
       const divisor = hasRealTrackCount ? g.trackCount : RECENT_TRACK_COUNT_GUESS;
@@ -2730,11 +2786,18 @@ async function generateRecentListens(){
       // so extra listens need the genuine full tracklist, not just another 80%.
       const estListens = Math.max(1, Math.floor(ratio));
       return Object.assign({}, g, {estListens, ratio, guessed: !hasRealTrackCount});
-    })
-    .filter(g => g.ratio >= FULL_LISTEN_RATIO && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM))
-    .sort((a, b) => b.lastUts - a.lastUts);
+    });
 
-  recentResults = {fromUnix, toUnix, albums: fullyListened};
+  const passes = g => g.ratio >= FULL_LISTEN_RATIO && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM);
+  const fullyListened = withEstimates.filter(passes).sort((a, b) => b.lastUts - a.lastUts);
+  // Albums that didn't qualify but plausibly should have — most often because Last.fm resolved
+  // the album to a deluxe edition with an inflated tracklist. Surfaced separately so the real
+  // track count can be corrected, instead of the album silently vanishing.
+  const nearMisses = withEstimates
+    .filter(g => !passes(g) && g.ratio >= 0.4)
+    .sort((a, b) => b.ratio - a.ratio);
+
+  recentResults = {fromUnix, toUnix, albums: fullyListened, nearMisses: nearMisses};
   saveRecentResultsToStorage();
   btn.disabled = false;
   note.textContent = fullyListened.length > 0
@@ -2774,6 +2837,12 @@ async function checkMissingYears(){
 function renderRecentResultsArea(){
   const content = document.getElementById("content");
   if(section !== "recent") return;
+  // Keep the toggle's count label in sync regardless of which path triggered this render.
+  const nmBtn = document.getElementById("nearMissToggleBtn");
+  if(nmBtn){
+    const nmCount = (recentResults && recentResults.nearMisses) ? recentResults.nearMisses.length : 0;
+    nmBtn.textContent = (nearMissesVisible ? "Hide" : "Show") + " near misses" + (nmCount > 0 ? " (" + nmCount + ")" : "");
+  }
   if(!recentResults || !recentResults.albums || recentResults.albums.length === 0){
     content.innerHTML = '<div class="empty-hint">Tap "Check this week" to see what you\'ve fully listened to.</div>';
     return;
@@ -2805,7 +2874,101 @@ function renderRecentResultsArea(){
   });
   content.innerHTML = "";
   content.appendChild(wrap);
+
+  // "Didn't quite qualify" section — hidden behind a toggle, since it's a diagnostic view for
+  // correcting a wrong track count rather than something to see on every check.
+  const nearMisses = (recentResults.nearMisses || []);
+  if(nearMissesVisible && nearMisses.length > 0){
+    const nmWrap = document.createElement("div");
+    nmWrap.className = "near-miss-section";
+    nmWrap.innerHTML = '<div class="near-miss-header">Didn\'t quite qualify (' + nearMisses.length + ')' +
+      '<div class="near-miss-sub">Usually means Last.fm matched a deluxe edition with more tracks. Tap to set the real track count.</div></div>';
+    nearMisses.forEach(al => {
+      const row = document.createElement("div");
+      row.className = "discover-card near-miss-card";
+      row.style.cursor = "pointer";
+      row.onclick = () => openTrackCountModal(al.artist, al.album, al.trackCount, al.count);
+      row.innerHTML =
+        '<div class="discover-main">' +
+          '<div class="discover-artist">' + escapeHtml(al.artist) + '</div>' +
+          '<div class="discover-title">' + escapeHtml(al.album) + '</div>' +
+          '<div class="discover-meta">' +
+            '<span>' + al.count + ' of ' + (al.guessed ? "~" + RECENT_TRACK_COUNT_GUESS : al.trackCount) + ' tracks</span>' +
+            '<span>' + Math.round(al.ratio * 100) + '% — needs 80%</span>' +
+          '</div>' +
+        '</div>';
+      nmWrap.appendChild(row);
+    });
+    content.appendChild(nmWrap);
+  }
+
   content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+}
+
+/* ---------- TRACK COUNT OVERRIDE ---------- */
+let nearMissesVisible = false;
+function toggleNearMisses(){
+  nearMissesVisible = !nearMissesVisible;
+  renderRecentResultsArea(); // handles the button label too
+}
+let trackCountEditing = null;
+function openTrackCountModal(artist, album, currentCount, scrobbles){
+  trackCountEditing = {artist, album};
+  document.getElementById("trackCountModalTitle").textContent = artist + " — " + album;
+  document.getElementById("trackCountModalInfo").textContent =
+    scrobbles + " scrobbles this week, currently counted against " + (currentCount || RECENT_TRACK_COUNT_GUESS) + " tracks.";
+  const existing = getTrackCountOverride(artist, album);
+  document.getElementById("trackCountModalInput").value = existing || currentCount || "";
+  document.getElementById("trackCountClearRow").classList.toggle("hidden", !existing);
+  openModal("trackCountModal");
+}
+function saveTrackCountOverride(){
+  if(!trackCountEditing) return;
+  const raw = document.getElementById("trackCountModalInput").value.trim();
+  const n = parseInt(raw, 10);
+  if(isNaN(n) || n < 1) return;
+  const all = loadTrackCountOverrides();
+  all[trackCountOverrideKey(trackCountEditing.artist, trackCountEditing.album)] = {
+    artist: trackCountEditing.artist,
+    title: trackCountEditing.album,
+    trackCount: n
+  };
+  saveTrackCountOverrides(all);
+  closeAllModals();
+  recomputeRecentFromOverrides();
+}
+function clearTrackCountOverride(){
+  if(!trackCountEditing) return;
+  const all = loadTrackCountOverrides();
+  delete all[trackCountOverrideKey(trackCountEditing.artist, trackCountEditing.album)];
+  saveTrackCountOverrides(all);
+  closeAllModals();
+  recomputeRecentFromOverrides();
+}
+// Re-applies thresholds to the already-fetched results using current overrides — no new API
+// calls needed, since only the track count changed, not the scrobble data.
+function recomputeRecentFromOverrides(){
+  if(!recentResults) return;
+  const all = (recentResults.albums || []).concat(recentResults.nearMisses || []);
+  const MIN_TRACKS_FOR_ALBUM = 4;
+  const FULL_LISTEN_RATIO = 0.8;
+  const rescored = all.map(g => {
+    const manual = getTrackCountOverride(g.artist, g.album);
+    const trackCount = manual || g.trackCount;
+    const hasRealTrackCount = trackCount > 0;
+    const divisor = hasRealTrackCount ? trackCount : RECENT_TRACK_COUNT_GUESS;
+    const ratio = g.count / divisor;
+    return Object.assign({}, g, {
+      trackCount, ratio,
+      estListens: Math.max(1, Math.floor(ratio)),
+      guessed: !hasRealTrackCount
+    });
+  });
+  const passes = g => g.ratio >= FULL_LISTEN_RATIO && (g.guessed || g.trackCount >= MIN_TRACKS_FOR_ALBUM);
+  recentResults.albums = rescored.filter(passes).sort((a, b) => b.lastUts - a.lastUts);
+  recentResults.nearMisses = rescored.filter(g => !passes(g) && g.ratio >= 0.4).sort((a, b) => b.ratio - a.ratio);
+  saveRecentResultsToStorage();
+  renderRecentResultsArea();
 }
 
 // Draws just the first frame of a gif onto a canvas so it displays as a static image
