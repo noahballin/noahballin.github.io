@@ -2315,7 +2315,33 @@ async function fetchAlbumStats(artist, album){
   if(data.album && data.album.tracks && data.album.tracks.track){
     trackCount = Array.isArray(data.album.tracks.track) ? data.album.tracks.track.length : 1;
   }
-  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false};
+  // Which Last.fm entry autocorrect actually landed on, so variants that resolve to the same one count once.
+  const entity = ((data.album && data.album.artist) || artist) + "|||" + ((data.album && data.album.name) || album);
+  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false, entity: entity.toLowerCase()};
+}
+
+// Adds up your plays across the Last.fm entries one album is split over (see lastfmNameVariants).
+// Each scrobble is filed under exactly one entry, so summing distinct entries can't double count.
+async function fetchAlbumStatsAcrossVariants(artist, album, primary, spotifyInfo){
+  const variants = lastfmNameVariants(artist, album, spotifyInfo);
+  if(variants.length === 0) return primary;
+  const entries = {};
+  if(!primary.notFound) entries[primary.entity] = primary;
+  for(const v of variants){
+    try{
+      const r = await fetchAlbumStats(v.artist, v.title);
+      if(!r.notFound && !entries[r.entity]) entries[r.entity] = r;
+    }catch(err){
+      // one variant failing just means one fewer place to look
+    }
+  }
+  const found = Object.values(entries);
+  if(found.length === 0) return primary;
+  return {
+    playcount: found.reduce((sum, r) => sum + r.playcount, 0),
+    trackCount: Math.max.apply(null, found.map(r => r.trackCount)),
+    notFound: false
+  };
 }
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
@@ -2343,6 +2369,7 @@ async function syncAll(){
         fetchAlbumStats(artist, album).then(result => ({result}), error => ({error})),
         spotifyAlbumInfoSafe(artist, album, spState)
       ]);
+      if(stats.result) stats.result = await fetchAlbumStatsAcrossVariants(artist, album, stats.result, sp);
       return {i, artist, album, result: stats.result || null, error: stats.error || null, sp};
     }));
 
@@ -2668,6 +2695,7 @@ const SPOTIFY_MISS_RETRY_MS = 14 * 86400000;   // albums Spotify didn't have get
 const SPOTIFY_LOOKUP_CONCURRENCY = 2;          // shared across every caller, so batched syncs stay polite
 const EDITION_WORDS = /\b(deluxe|remaster(ed)?|edition|anniversary|expanded|bonus|reissue|version|mono|stereo|legacy|collector'?s|special|super)\b/i;
 const SPOTIFY_TYPE_RANK = {album: 0, single: 1, compilation: 2};
+const SPOTIFY_ALBUM_CACHE_VERSION = 2;   // bump when matching changes enough that old misses deserve a re-check
 
 let spotifyAlbumCache = null;
 let spotifyCacheSaveTimer = null;
@@ -2675,6 +2703,15 @@ function loadSpotifyAlbumCache(){
   if(!spotifyAlbumCache){
     try{ spotifyAlbumCache = JSON.parse(localStorage.getItem(SPOTIFY_ALBUM_CACHE_KEY)) || {}; }
     catch(e){ spotifyAlbumCache = {}; }
+    if(spotifyAlbumCache.__version !== SPOTIFY_ALBUM_CACHE_VERSION){
+      // Matching got more forgiving (other-script names, longer credits), so re-check old misses
+      // now rather than after the two-week retry. Existing matches are still right and stay.
+      Object.keys(spotifyAlbumCache).forEach(k => {
+        const v = spotifyAlbumCache[k];
+        if(!v || typeof v !== "object" || !v.found) delete spotifyAlbumCache[k];
+      });
+      spotifyAlbumCache.__version = SPOTIFY_ALBUM_CACHE_VERSION;
+    }
   }
   return spotifyAlbumCache;
 }
@@ -2701,6 +2738,9 @@ function spotifyBaseTitle(title){
   }while(t !== prev);
   return t;
 }
+function hasNonLatinLetters(s){
+  return [...String(s || "")].some(ch => /\p{L}/u.test(ch) && !/\p{Script=Latin}/u.test(ch));
+}
 function isEditionTitle(name){ return spotifyBaseTitle(name) !== String(name || "").trim(); }
 function spotifyAlbumKey(artist, title){ return normName(artist) + "|||" + normName(spotifyBaseTitle(title)); }
 function spotifyThumbUrl(images){
@@ -2721,17 +2761,25 @@ function spotifyYearFor(artist, title){
 // Picks the best result for artist + title. Exact = same artist and same base title; among
 // those the standard edition wins (for its track count), but the year is the earliest release
 // date of any exact match, so a 2011 remaster doesn't hide a 1971 original.
-function pickSpotifyAlbum(items, artist, title){
+function pickSpotifyAlbum(items, artist, title, fromArtistFilter){
   const wantA = normName(artist), wantT = normName(spotifyBaseTitle(title));
   const artistExact = a => (a.artists || []).some(x => x && normName(x.name) === wantA);
   const artistLoose = a => (a.artists || []).some(x => {
     const n = x && normName(x.name);
     return n && n.length >= 3 && wantA.length >= 3 && (n.indexOf(wantA) !== -1 || wantA.indexOf(n) !== -1);
   });
+  const artistScriptDiffers = a => hasNonLatinLetters(artist) !== (a.artists || []).some(x => x && hasNonLatinLetters(x.name));
   const typeRank = a => (a.album_type in SPOTIFY_TYPE_RANK ? SPOTIFY_TYPE_RANK[a.album_type] : 3);
   const albums = (items || []).filter(a => a && a.id && a.name);
+  const titleExact = a => normName(spotifyBaseTitle(a.name)) === wantT;
 
-  const exact = albums.filter(a => artistExact(a) && normName(spotifyBaseTitle(a.name)) === wantT);
+  let exact = albums.filter(a => artistExact(a) && titleExact(a));
+  // Results from Spotify's own artist filter may also match on the same name in another script
+  // (細野晴臣 ↔ Haruomi Hosono) or a longer credit ("I.K. Dairo" ↔ "I.K. Dairo M.B.E. & His Blue Spots").
+  // Only there: a plain query has no artist constraint to lean on.
+  if(!exact.length && fromArtistFilter){
+    exact = albums.filter(a => titleExact(a) && (artistLoose(a) || artistScriptDiffers(a)));
+  }
   if(exact.length){
     const chosen = exact.slice().sort((a, b) =>
       (typeRank(a) - typeRank(b)) ||
@@ -2755,7 +2803,7 @@ async function matchSpotifyAlbum(artist, title){
     const data = await spotifyGet("/search", {q: q, type: "album", limit: 10});
     return (data && data.albums && data.albums.items) || [];
   };
-  let pick = pickSpotifyAlbum(await search('artist:"' + a + '" album:"' + t + '"'), artist, title);
+  let pick = pickSpotifyAlbum(await search('artist:"' + a + '" album:"' + t + '"'), artist, title, true);
   if(!pick.exact){
     // Field filters are strict about punctuation and spelling; a plain query catches near-misses.
     const loose = pickSpotifyAlbum(await search(a + " " + t), artist, title);
@@ -2774,6 +2822,7 @@ function spotifyAlbumEntry(pick){
     url: (al.external_urls && al.external_urls.spotify) || "",
     artist: artists.length ? artists[0].name : "",
     artistLine: artists.map(x => x.name).join(", "),
+    artists: artists.map(x => x.name),
     title: al.name,
     type: al.album_type || ""
   };
@@ -2852,6 +2901,37 @@ function preferredTrackCount(artist, title, spotifyInfo, fallback){
     || (spotifyInfo && spotifyInfo.found && spotifyInfo.tracks)
     || fallback
     || 0;
+}
+// Every artist Spotify credits on the album, first artist first. Entries cached before this was
+// stored only kept the joined line, so fall back to splitting it.
+function spotifyCreditedArtists(info){
+  if(!info) return [];
+  if(info.artists && info.artists.length) return info.artists.slice();
+  return (info.artistLine ? info.artistLine.split(", ") : [info.artist]).filter(Boolean);
+}
+// Other spellings Last.fm may have filed your scrobbles for this album under: each credited artist,
+// the full credit, and Spotify's title. Empty for an ordinary album where everything already agrees.
+const LASTFM_VARIANT_MAX = 6;
+function lastfmNameVariants(artist, title, info){
+  if(!info || !info.found) return [];
+  const credited = spotifyCreditedArtists(info);
+  const artists = credited.slice();
+  if(credited.length > 1){
+    artists.push(credited.join(", "));
+    artists.push(credited.slice(0, -1).join(", ") + " & " + credited[credited.length - 1]);
+  }
+  const titles = [title];
+  const spotifyTitle = spotifyBaseTitle(info.title || "");
+  if(spotifyTitle && normName(spotifyTitle) !== normName(title)) titles.push(spotifyTitle);
+  const seen = new Set([normName(artist) + "|||" + normName(title)]);
+  const out = [];
+  titles.forEach(t => [artist].concat(artists).forEach(a => {
+    const key = normName(a) + "|||" + normName(t);
+    if(!a || seen.has(key) || out.length >= LASTFM_VARIANT_MAX) return;
+    seen.add(key);
+    out.push({artist: a, title: t});
+  }));
+  return out;
 }
 
 /* ---------- ALBUM COVERS + DIRECT SPOTIFY LINKS ---------- */
@@ -3768,6 +3848,47 @@ function stripEditionSuffix(album){
   return album.replace(/\s*[\(\[](deluxe|ultra|extended|expanded|special|anniversary|remaster(ed)?|bonus\s*track(s)?|complete|super\s*deluxe)[^)\]]*[\)\]]\s*$/i, "").trim();
 }
 
+// Groups scrobbles into albums. Scrobbles carry the *track* artist, so an album whose tracks are
+// credited to different artists (Pacific: Hosono / Suzuki / Yamashita) would otherwise split into
+// groups that can never reach a full listen. Same-title tracks by different artists played back to
+// back link those artists for that title, and everything linked becomes one album — so a later
+// session of just one artist's tracks from it still counts toward the same album.
+function groupScrobblesByAlbum(tracks){
+  const plays = [];
+  tracks.forEach(t => {
+    if(t["@attr"] && t["@attr"].nowplaying) return;   // "now playing" has no timestamp
+    const artist = (t.artist && (t.artist["#text"] || t.artist.name)) || "";
+    const rawAlbum = (t.album && t.album["#text"]) || "";
+    if(!artist || !rawAlbum) return;
+    const album = stripEditionSuffix(rawAlbum);
+    const uts = t.date && t.date.uts ? parseInt(t.date.uts, 10) : 0;
+    plays.push({artist, album, uts, node: album.toLowerCase() + "|" + artist.toLowerCase()});
+  });
+  plays.sort((a, b) => a.uts - b.uts);
+
+  const parent = {};
+  const root = k => { while(parent[k] !== undefined && parent[k] !== k) k = parent[k]; return k; };
+  for(let i = 1; i < plays.length; i++){
+    const prev = plays[i - 1], cur = plays[i];
+    if(prev.node !== cur.node && prev.album.toLowerCase() === cur.album.toLowerCase()){
+      const a = root(prev.node), b = root(cur.node);
+      if(a !== b) parent[b] = a;
+    }
+  }
+
+  const groups = {};
+  plays.forEach(p => {
+    const key = root(p.node);
+    // Credited to the earliest play's artist for now; a merged album gets Spotify's first artist later.
+    if(!groups[key]) groups[key] = {artist: p.artist, album: p.album, count: 0, lastUts: 0, artists: []};
+    const g = groups[key];
+    g.count++;
+    if(p.uts > g.lastUts) g.lastUts = p.uts;
+    if(g.artists.indexOf(p.artist) === -1) g.artists.push(p.artist);
+  });
+  return Object.values(groups);
+}
+
 async function fetchAlbumMeta(artist, album){
   const queryAlbum = stripEditionSuffix(album);
   const infoUrl = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
@@ -3853,21 +3974,7 @@ async function generateRecentListens(){
     return;
   }
 
-  // Group scrobbles by album, skipping the "now playing" entry (it has no timestamp) and anything without an album tag.
-  const groups = {};
-  allTracks.forEach(t => {
-    if(t["@attr"] && t["@attr"].nowplaying) return;
-    const artist = (t.artist && (t.artist["#text"] || t.artist.name)) || "";
-    const rawAlbum = (t.album && t.album["#text"]) || "";
-    if(!artist || !rawAlbum) return;
-    const album = stripEditionSuffix(rawAlbum);
-    const key = artist.toLowerCase() + "|" + album.toLowerCase();
-    if(!groups[key]) groups[key] = {artist, album, count: 0, lastUts: 0};
-    groups[key].count++;
-    const uts = t.date && t.date.uts ? parseInt(t.date.uts, 10) : 0;
-    if(uts > groups[key].lastUts) groups[key].lastUts = uts;
-  });
-  let groupList = Object.values(groups);
+  let groupList = groupScrobblesByAlbum(allTracks);
 
   // With MIN_TRACKS_FOR_ALBUM=4 and FULL_LISTEN_RATIO=0.8, an album needs at least 4 scrobbles
   // to have any mathematical chance of passing (even a real 4-track release needs 0.8*4=3.2,
@@ -3909,6 +4016,11 @@ async function generateRecentListens(){
         fetchAlbumMeta(g.artist, g.album),
         spotifyAlbumInfoSafe(g.artist, g.album, spState)
       ]);
+      // A merged multi-artist album is credited the way Spotify credits it: its first artist.
+      if(g.artists && g.artists.length > 1 && sp && sp.found){
+        const firstArtist = spotifyCreditedArtists(sp)[0];
+        if(firstArtist) g = Object.assign({}, g, {artist: firstArtist});
+      }
       const groupKey = g.artist.toLowerCase() + "|" + g.album.toLowerCase();
       const known = knownTrackCounts[groupKey];
       // Manual override > Spotify's standard edition > a count Lists already synced > Last.fm.
