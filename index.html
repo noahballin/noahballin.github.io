@@ -208,6 +208,22 @@
   .recent-title-row h1{margin:0;}
   .recent-title-row .filters-toggle-btn{margin-top:0; flex:none;}
   .reviews-filter-row label{display:block; font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;}
+  .range-filter{margin-top:4px;}
+  .range-filter-top{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:7px;}
+  .range-filter-top label{font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em;}
+  .range-filter-value{font-size:10.5px; color:var(--teal); text-align:right; line-height:1.35; flex:1;}
+  .range-filter-value.is-all{color:var(--ink-dim); opacity:0.7;}
+  .range-dots{display:flex; gap:10px; align-items:center;}
+  .range-dot{
+    width:19px; height:19px; border-radius:50%; border:1.5px solid var(--line);
+    background:var(--card); padding:0; cursor:pointer; flex:none; position:relative;
+  }
+  .range-dot.in-range{background:var(--teal); border-color:var(--teal);}
+  .range-dot.is-end{box-shadow:0 0 0 3px rgba(148,216,59,0.22);}
+  .range-reset{
+    background:none; border:none; color:var(--ink-dim); font-family:var(--font-body);
+    font-size:10px; text-decoration:underline; cursor:pointer; padding:4px 0 0; opacity:0.65;
+  }
   .reviews-filter-row select{
     width:100%; background:var(--card); border:1px solid var(--line); color:var(--ink);
     font-family:var(--font-body); font-size:12px; padding:9px 10px; border-radius:8px;
@@ -462,29 +478,21 @@
         <label>Sort by</label>
         <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
           <option value="recent">Most recently reviewed</option>
-        <option value="oldest">Oldest reviewed</option>
-        <option value="artist">Artist A–Z</option>
-        <option value="album">Album A–Z</option>
-        <option value="yearNewest">Year (newest first)</option>
-        <option value="yearOldest">Year (oldest first)</option>
+          <option value="oldest">Oldest reviewed</option>
+          <option value="rotation">Rotation (highest first)</option>
+          <option value="artist">Artist A–Z</option>
+          <option value="album">Album A–Z</option>
+          <option value="yearNewest">Year (newest first)</option>
+          <option value="yearOldest">Year (oldest first)</option>
         </select>
       </div>
       <div class="reviews-filter-row">
         <label>Year / Decade</label>
         <select id="reviewsFilterDecade" onchange="setReviewsTextFilter('decade', this.value)"></select>
       </div>
-      <div class="reviews-filter-row">
-        <label>Rotation</label>
-        <select id="reviewsFilterRotation" onchange="setReviewsTextFilter('rotation', this.value)"></select>
-      </div>
-      <div class="reviews-filter-row">
-        <label>Distinctiveness</label>
-        <select id="reviewsFilterDistinctiveness" onchange="setReviewsTextFilter('distinctiveness', this.value)"></select>
-      </div>
-      <div class="reviews-filter-row">
-        <label>Pull</label>
-        <select id="reviewsFilterPull" onchange="setReviewsTextFilter('pull', this.value)"></select>
-      </div>
+      <div class="range-filter" id="rangeRotation"></div>
+      <div class="range-filter" id="rangeDistinctiveness"></div>
+      <div class="range-filter" id="rangePull"></div>
       <div class="reviews-filter-row">
         <label>Vibe</label>
         <div class="review-vibe-opts" id="reviewsFilterVibe"></div>
@@ -928,7 +936,84 @@ async function exportReviewsCSV(){
 }
 
 /* ---------- REVIEWS TAB (browse + filter all reviewed albums) ---------- */
-let reviewsFilter = {rotation: "", distinctiveness: "", pull: "", vibe: "", decade: ""};
+// Range-based axis filters: each holds {min, max} indices into its options array, or null for
+// "All". Index 0 is the strongest end of each scale (In rotation / Sounds like nothing else /
+// Felt that with all my heart), so a range is any run of consecutive labels.
+const RANGE_AXES = {
+  rotation: {label: "Rotation", options: ROTATION_OPTIONS, containerId: "rangeRotation"},
+  distinctiveness: {label: "Distinctiveness", options: DISTINCTIVENESS_OPTIONS, containerId: "rangeDistinctiveness"},
+  pull: {label: "Pull", options: PULL_OPTIONS, containerId: "rangePull"}
+};
+let reviewsRange = {rotation: null, distinctiveness: null, pull: null};
+let reviewsRangeAnchor = {rotation: null, distinctiveness: null, pull: null};
+let reviewsFilter = {vibe: "", decade: ""};
+
+function renderRangeFilter(axisKey){
+  const axis = RANGE_AXES[axisKey];
+  const el = document.getElementById(axis.containerId);
+  if(!el) return;
+  const range = reviewsRange[axisKey];
+  let valueText, valueClass;
+  if(!range){
+    valueText = "All";
+    valueClass = "range-filter-value is-all";
+  } else if(range.min === range.max){
+    valueText = axis.options[range.min];
+    valueClass = "range-filter-value";
+  } else {
+    // Read low-to-high so it matches how you'd say it out loud.
+    valueText = axis.options[range.max] + " → " + axis.options[range.min];
+    valueClass = "range-filter-value";
+  }
+  let dots = '<div class="range-dots">';
+  axis.options.forEach((opt, idx) => {
+    const inRange = !range || (idx >= range.min && idx <= range.max);
+    const isEnd = range && (idx === range.min || idx === range.max);
+    dots += '<button class="range-dot' + (inRange ? " in-range" : "") + (isEnd ? " is-end" : "") +
+      '" title="' + escapeHtml(opt) + '" onclick="tapRangeDot(\'' + axisKey + '\', ' + idx + ')"></button>';
+  });
+  dots += '</div>';
+  el.innerHTML =
+    '<div class="range-filter-top"><label>' + axis.label + '</label>' +
+      '<span class="' + valueClass + '">' + escapeHtml(valueText) + '</span></div>' +
+    dots +
+    (range ? '<button class="range-reset" onclick="resetRange(\'' + axisKey + '\')">clear</button>' : '');
+}
+function tapRangeDot(axisKey, idx){
+  const range = reviewsRange[axisKey];
+  if(!range){
+    // From "All", the first tap starts a new single-value selection.
+    reviewsRange[axisKey] = {min: idx, max: idx};
+    reviewsRangeAnchor[axisKey] = idx;
+  } else if(range.min === range.max && range.min === idx){
+    // Tapping the only selected dot clears back to All.
+    reviewsRange[axisKey] = null;
+    reviewsRangeAnchor[axisKey] = null;
+  } else {
+    // Otherwise extend from the anchor to whatever was tapped.
+    const anchor = reviewsRangeAnchor[axisKey] !== null ? reviewsRangeAnchor[axisKey] : range.min;
+    reviewsRange[axisKey] = {min: Math.min(anchor, idx), max: Math.max(anchor, idx)};
+  }
+  renderRangeFilter(axisKey);
+  updateFiltersToggleLabel();
+  renderReviewsResultsArea();
+}
+function resetRange(axisKey){
+  reviewsRange[axisKey] = null;
+  reviewsRangeAnchor[axisKey] = null;
+  renderRangeFilter(axisKey);
+  updateFiltersToggleLabel();
+  renderReviewsResultsArea();
+}
+function reviewMatchesRange(r, axisKey){
+  const range = reviewsRange[axisKey];
+  if(!range) return true;
+  const value = r[axisKey];
+  if(!value) return false;
+  const idx = RANGE_AXES[axisKey].options.indexOf(value);
+  if(idx === -1) return false;
+  return idx >= range.min && idx <= range.max;
+}
 let reviewsSort = "recent";
 let reviewsSearch = "";
 let reviewsFiltersOpen = false;
@@ -942,9 +1027,9 @@ function setReviewsSearch(value){
 }
 
 function initReviewsHeader(){
-  populateFilterSelect("reviewsFilterRotation", ROTATION_OPTIONS);
-  populateFilterSelect("reviewsFilterDistinctiveness", DISTINCTIVENESS_OPTIONS);
-  populateFilterSelect("reviewsFilterPull", PULL_OPTIONS);
+  renderRangeFilter("rotation");
+  renderRangeFilter("distinctiveness");
+  renderRangeFilter("pull");
   renderReviewsVibeFilter();
   updateFiltersToggleLabel();
 }
@@ -967,7 +1052,8 @@ function toggleDiscoverControls(){
 }
 
 function updateFiltersToggleLabel(){
-  const activeCount = ["rotation", "distinctiveness", "pull", "vibe", "decade"].filter(k => reviewsFilter[k]).length;
+  let activeCount = ["vibe", "decade"].filter(k => reviewsFilter[k]).length;
+  activeCount += ["rotation", "distinctiveness", "pull"].filter(k => reviewsRange[k]).length;
   const btn = document.getElementById("filtersToggleBtn");
   if(!btn) return;
   btn.textContent = "Filters" + (activeCount > 0 ? " (" + activeCount + ")" : "");
@@ -997,10 +1083,6 @@ function reviewDecadeMatches(r, decadeFilter){
   if(decadeFilter === "2026" || decadeFilter === "2025") return r.year === decadeFilter;
   return (Math.floor(parseInt(r.year, 10) / 10) * 10 + "s") === decadeFilter;
 }
-function populateFilterSelect(id, options){
-  const el = document.getElementById(id);
-  el.innerHTML = '<option value="">All</option>' + options.map(o => '<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>').join("");
-}
 function setReviewsTextFilter(axisKey, value){
   reviewsFilter[axisKey] = value;
   updateFiltersToggleLabel();
@@ -1025,18 +1107,24 @@ function setReviewsVibeFilter(id){
 function getFilteredReviews(){
   const reviews = loadReviews();
   const filtered = Object.values(reviews).filter(r =>
-    (!reviewsFilter.rotation || r.rotation === reviewsFilter.rotation) &&
-    (!reviewsFilter.distinctiveness || r.distinctiveness === reviewsFilter.distinctiveness) &&
-    (!reviewsFilter.pull || r.pull === reviewsFilter.pull) &&
+    reviewMatchesRange(r, "rotation") &&
+    reviewMatchesRange(r, "distinctiveness") &&
+    reviewMatchesRange(r, "pull") &&
     (!reviewsFilter.vibe || r.vibe === reviewsFilter.vibe) &&
     reviewDecadeMatches(r, reviewsFilter.decade) &&
     (!reviewsSearch ||
       r.artist.toLowerCase().indexOf(reviewsSearch) !== -1 ||
       r.title.toLowerCase().indexOf(reviewsSearch) !== -1)
   );
+  // Unset values sort to the end rather than the top.
+  const rotationRank = r => {
+    const i = ROTATION_OPTIONS.indexOf(r.rotation);
+    return i === -1 ? 999 : i;
+  };
   const sorters = {
     recent: (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0),
     oldest: (a, b) => (a.reviewedAt || 0) - (b.reviewedAt || 0),
+    rotation: (a, b) => rotationRank(a) - rotationRank(b),
     artist: (a, b) => a.artist.localeCompare(b.artist),
     album: (a, b) => a.title.localeCompare(b.title),
     yearNewest: (a, b) => (b.year || "0") - (a.year || "0"),
@@ -1089,12 +1177,19 @@ function renderReviewsResultsArea(){
   saveRow.innerHTML = '<button class="sync-btn save-discover-btn" onclick="saveReviewsFilterAsList()">Make a list from these ' + filtered.length + ' albums</button>';
   content.appendChild(saveRow);
 }
+function rangeLabelFor(axisKey){
+  const range = reviewsRange[axisKey];
+  if(!range) return null;
+  const opts = RANGE_AXES[axisKey].options;
+  return range.min === range.max ? opts[range.min] : opts[range.max] + "–" + opts[range.min];
+}
 function reviewsFilterLabel(){
   const parts = [];
   if(reviewsFilter.decade) parts.push(reviewsFilter.decade === "unknown" ? "no year set" : reviewsFilter.decade);
-  if(reviewsFilter.rotation) parts.push(reviewsFilter.rotation);
-  if(reviewsFilter.distinctiveness) parts.push(reviewsFilter.distinctiveness);
-  if(reviewsFilter.pull) parts.push(reviewsFilter.pull);
+  ["rotation", "distinctiveness", "pull"].forEach(k => {
+    const lbl = rangeLabelFor(k);
+    if(lbl) parts.push(lbl);
+  });
   if(reviewsFilter.vibe) parts.push("chosen vibe");
   return parts.length ? "Reviewed: " + parts.join(" / ") : "All Reviewed Albums";
 }
