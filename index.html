@@ -199,6 +199,20 @@
   #discoverHeader .week-picker{margin-top:12px;}
   #discoverHeader .sync-btn{margin-top:10px;}
   .spotify-status{font-size:12px; color:var(--ink); margin-bottom:2px;}
+  .check-group-head{margin:18px 0 4px; display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+  .check-group-title{font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink);}
+  .check-group-sub{font-size:10.5px; color:var(--ink-dim); margin-top:2px; line-height:1.45;}
+  .check-issue{padding:10px 0; border-bottom:1px solid var(--line);}
+  .check-issue-album{font-size:13px; color:var(--ink); line-height:1.4;}
+  .check-issue-detail{font-size:10.5px; color:var(--ink-dim); margin-top:3px;}
+  .check-issue-spotify{font-size:11px; color:var(--teal); margin-top:3px; line-height:1.4;}
+  .check-issue-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; align-items:center;}
+  .check-btn{
+    flex:none; background:var(--gold); color:#17140F; border:1px solid transparent; border-radius:6px; padding:6px 10px;
+    font-family:var(--font-body); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; cursor:pointer;
+  }
+  .check-btn.secondary{background:var(--card-hi); color:var(--ink-dim); border-color:var(--line);}
+  .check-fixed{font-size:10.5px; color:var(--teal);}
   .recent-btn-row{display:flex; gap:8px; align-items:stretch;}
   .recent-btn-row .sync-btn{margin-top:12px;}
   .recent-btn-row #recentGenerateBtn{flex:2; min-width:0;}
@@ -602,6 +616,9 @@
     <button class="btn-close" onclick="shareList()">Share this list</button>
   </div>
   <div class="modal-actions">
+    <button class="btn-close" onclick="checkListAgainstSpotify()">Check against Spotify</button>
+  </div>
+  <div class="modal-actions">
     <button class="btn-close" onclick="closeAllModals()">Cancel</button>
     <button class="btn-save" onclick="saveListOptions()">Save</button>
   </div>
@@ -743,6 +760,16 @@
   </div>
   <div class="modal-actions hidden" id="trackCountClearRow">
     <button class="btn-close" style="color:#B5654F;" onclick="clearTrackCountOverride()">Remove override</button>
+  </div>
+</div>
+
+<div class="modal" id="listCheckModal">
+  <h2>Check against Spotify</h2>
+  <p>Looks for albums Spotify can't find, spelling that differs from Spotify's, singles or compilations, and Various Artists. Nothing changes unless you tap.</p>
+  <div class="sync-note" id="listCheckStatus"></div>
+  <div id="listCheckBody"></div>
+  <div class="modal-actions" style="margin-top:16px;">
+    <button class="btn-close" onclick="closeAllModals()">Close</button>
   </div>
 </div>
 
@@ -1817,28 +1844,32 @@ function saveAlbumModal(){
     const newIndex = activeList.albums.length + added.length - 1;
     entryFor(newIndex); // materializes a default progress entry
   } else {
-    const e = entryFor(editingIndex);
-    const orig = effectiveAlbums(activeList)[editingIndex];
-    e.ov_a = (a === orig.a) ? null : a;
-    e.ov_t = (t === orig.t) ? null : t;
-    e.ov_y = (y === orig.y) ? null : y;
-    e.ov_g = (g === orig.g) ? null : g;
-    // Artist/title changed — clear any stale Last.fm sync state so it gets a fresh lookup.
-    e.playcount = null;
-    e.trackCount = null;
-    e.syncedAt = null;
-    e.notFound = null;
-    // If the new name matches an album you've already reviewed, that's a clear signal you've
-    // heard it — without this, clearing the sync state above would make it look "unlistened"
-    // again until the next sync, even though a review (and its vibe emote) says otherwise.
-    if(e.manual === null){
-      const matchingReview = loadReviews()[reviewKey(a, t)];
-      if(matchingReview) e.manual = true;
-    }
+    applyAlbumEdit(editingIndex, a, t, y, g);
   }
   saveProgressFor(activeList.id, progress);
   closeAllModals();
   render();
+}
+// Shared by the edit modal and the list checker's one-tap fixes (caller saves progress).
+function applyAlbumEdit(i, a, t, y, g){
+  const e = entryFor(i);
+  const orig = effectiveAlbums(activeList)[i];
+  e.ov_a = (a === orig.a) ? null : a;
+  e.ov_t = (t === orig.t) ? null : t;
+  e.ov_y = (y === orig.y) ? null : y;
+  e.ov_g = (g === orig.g) ? null : g;
+  // Artist/title changed — clear any stale Last.fm sync state so it gets a fresh lookup.
+  e.playcount = null;
+  e.trackCount = null;
+  e.syncedAt = null;
+  e.notFound = null;
+  // If the new name matches an album you've already reviewed, that's a clear signal you've
+  // heard it — without this, clearing the sync state above would make it look "unlistened"
+  // again until the next sync, even though a review (and its vibe emote) says otherwise.
+  if(e.manual === null){
+    const matchingReview = loadReviews()[reviewKey(a, t)];
+    if(matchingReview) e.manual = true;
+  }
 }
 function deleteAlbumFromModal(){
   if(editingIndex === null) return;
@@ -1887,6 +1918,7 @@ function closeAllModals(){
   document.getElementById("albumModal").classList.remove("open");
   document.getElementById("reviewModal").classList.remove("open");
   document.getElementById("trackCountModal").classList.remove("open");
+  document.getElementById("listCheckModal").classList.remove("open");
 }
 function openModal(id){
   document.getElementById("backdrop").classList.add("open");
@@ -2895,6 +2927,178 @@ function paintCover(key, url){
   document.querySelectorAll(".album-cover").forEach(el => {
     if(el.dataset.coverKey === key && !el.querySelector("img")) el.insertAdjacentHTML("beforeend", coverImgHtml(url));
   });
+}
+
+/* ---------- LIST CHECKER (list data vs Spotify) ---------- */
+// Flags albums Spotify can't find, spelling that differs from Spotify's, singles/compilations
+// posing as albums, and Various Artists entries. Nothing changes without a tap.
+const LIST_CHECK_GROUPS = [
+  {kind: "missing", label: "Not found on Spotify", sub: "A typo, a title that doesn't exist, or just not on Spotify"},
+  {kind: "spelling", label: "Spelled differently", sub: "Matching Spotify's spelling keeps track counts, years and covers lined up"},
+  {kind: "notAlbum", label: "Probably not an album", sub: "Spotify lists these as singles or compilations"},
+  {kind: "various", label: "Various Artists", sub: "Compilations rarely belong in an album list"}
+];
+let listCheck = null;   // {listId, running, checked, total, issues: [{i, artist, title, kind, detail, spotify}], fixed: {}, stop}
+
+async function checkListAgainstSpotify(){
+  const id = listOptionsTargetId;
+  closeAllModals();
+  if(!isSpotifyConnected()){
+    openSettings();
+    spotifyNotice("Connect Spotify to check lists against it.");
+    return;
+  }
+  if(listCheck && listCheck.running){
+    openModal("listCheckModal");
+    return;
+  }
+  goList(id);
+  // Captured up front: lookups are async, and you might open another list while they run.
+  const list = activeList, prog = progress;
+  const indices = [];
+  effectiveAlbums(list).forEach((al, i) => { if(!entryForIn(prog, i).hidden) indices.push(i); });
+  listCheck = {listId: list.id, running: true, checked: 0, total: indices.length, issues: [], fixed: {}, stop: null};
+  openModal("listCheckModal");
+  renderListCheck();
+
+  const state = newSpotifyLookupState();
+  await mapLimit(indices, 4, async i => {
+    const artist = lookupArtistIn(list, prog, i);
+    // Various Artists gets flagged whatever Spotify says, so don't spend a request on it.
+    if(normName(artist) !== "variousartists") await spotifyAlbumInfoSafe(artist, lookupAlbumIn(list, prog, i), state);
+    listCheck.checked++;
+    if(listCheck.checked % 5 === 0) renderListCheck();
+  });
+  saveSpotifyAlbumCache();
+
+  indices.forEach(i => {
+    const artist = lookupArtistIn(list, prog, i), title = lookupAlbumIn(list, prog, i);
+    const issue = listIssueFor(artist, title);
+    if(issue) listCheck.issues.push(Object.assign({i, artist, title}, issue));
+  });
+  listCheck.stop = state.stop;
+  listCheck.running = false;
+  renderListCheck();
+  if(section === "lists" && activeList && activeList.id === list.id) render();   // newly found covers
+}
+
+function listIssueFor(artist, title){
+  if(normName(artist) === "variousartists") return {kind: "various", detail: ""};
+  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
+  if(!hit) return null;   // lookup failed this time — not evidence of a problem
+  if(!hit.found){
+    if(!hit.suggestion) return {kind: "missing", detail: ""};
+    return {kind: "spelling", detail: "No exact match — closest Spotify album",
+      spotify: {artist: hit.suggestion.artist, title: spotifyBaseTitle(hit.suggestion.title)}};
+  }
+  if(hit.type === "single" && hit.tracks < 5){
+    return {kind: "notAlbum", detail: "A single on Spotify (" + hit.tracks + " track" + (hit.tracks === 1 ? "" : "s") + ")"};
+  }
+  if(hit.type === "compilation") return {kind: "notAlbum", detail: "A compilation on Spotify"};
+  // Only adopt Spotify's artist spelling when it's the same artist — on a collaboration the
+  // album's first-listed artist can be someone else entirely.
+  const spArtist = normName(hit.artist) === normName(artist) ? hit.artist : artist;
+  const spTitle = spotifyBaseTitle(hit.title);
+  const same = (x, y) => x.trim().toLowerCase() === y.trim().toLowerCase();
+  if(same(spArtist, artist) && same(spTitle, title)) return null;
+  return {kind: "spelling", detail: "", spotify: {artist: spArtist, title: spTitle}};
+}
+
+function renderListCheck(){
+  if(!listCheck) return;
+  const status = document.getElementById("listCheckStatus");
+  const body = document.getElementById("listCheckBody");
+  if(listCheck.running){
+    status.textContent = "Checking " + listCheck.checked + " of " + listCheck.total + " albums…";
+    body.innerHTML = "";
+    return;
+  }
+  const fixedCount = Object.keys(listCheck.fixed).length;
+  const bits = [listCheck.total + " albums checked",
+    listCheck.issues.length ? listCheck.issues.length + " to look at" : "everything matches Spotify"];
+  if(fixedCount) bits.push(fixedCount + " updated — sync again to refresh scrobbles");
+  if(listCheck.stop) bits.push("Spotify stopped: " + listCheck.stop);
+  status.textContent = bits.join(" · ");
+
+  body.innerHTML = LIST_CHECK_GROUPS.map(group => {
+    const items = [];
+    listCheck.issues.forEach((issue, idx) => { if(issue.kind === group.kind) items.push({issue, idx}); });
+    if(items.length === 0) return "";
+    const unfixedFixable = items.filter(x => x.issue.spotify && !listCheck.fixed[x.idx]).length;
+    return '<div class="check-group-head">' +
+        '<div><div class="check-group-title">' + group.label + ' (' + items.length + ')</div>' +
+        '<div class="check-group-sub">' + group.sub + '</div></div>' +
+        (group.kind === "spelling" && unfixedFixable > 1
+          ? '<button class="check-btn" onclick="applyAllListCheckFixes()">Use all ' + unfixedFixable + '</button>' : '') +
+      '</div>' +
+      items.map(({issue, idx}) => {
+        const fixed = listCheck.fixed[idx];
+        return '<div class="check-issue">' +
+          '<div class="check-issue-album">' + escapeHtml(issue.artist) + ' — ' + escapeHtml(issue.title) + '</div>' +
+          (issue.detail ? '<div class="check-issue-detail">' + escapeHtml(issue.detail) + '</div>' : '') +
+          (issue.spotify ? '<div class="check-issue-spotify">Spotify: ' + escapeHtml(issue.spotify.artist) + ' — ' + escapeHtml(issue.spotify.title) + '</div>' : '') +
+          '<div class="check-issue-actions">' +
+            (fixed
+              ? '<span class="check-fixed">✓ updated</span>'
+              : (issue.spotify ? '<button class="check-btn" onclick="applyListCheckFix(' + idx + ')">Use Spotify\'s</button>' : '') +
+                '<button class="check-btn secondary" onclick="editFromListCheck(' + idx + ')">Edit</button>' +
+                '<button class="check-btn secondary" onclick="searchFromListCheck(' + idx + ')">Search Spotify</button>') +
+          '</div>' +
+        '</div>';
+      }).join("");
+  }).join("");
+}
+
+function ensureListCheckListOpen(){
+  if(!activeList || activeList.id !== listCheck.listId || section !== "lists" || mode !== "albums") goList(listCheck.listId);
+}
+function applyListCheckFix(idx, skipRender){
+  const issue = listCheck && listCheck.issues[idx];
+  if(!issue || !issue.spotify || listCheck.fixed[idx]) return;
+  ensureListCheckListOpen();
+  const e = entryFor(issue.i);
+  const orig = effectiveAlbums(activeList)[issue.i];
+  const a = issue.spotify.artist, t = issue.spotify.title;
+  // Year and genre stay exactly as they were; only artist/title take Spotify's spelling.
+  applyAlbumEdit(issue.i, a, t, e.ov_y || orig.y || "", e.ov_g || orig.g || "");
+  saveProgressFor(activeList.id, progress);
+  listCheck.fixed[idx] = true;
+
+  const cache = loadSpotifyAlbumCache();
+  const oldHit = cache[spotifyAlbumKey(issue.artist, issue.title)];
+  const newKey = spotifyAlbumKey(a, t);
+  if(oldHit && oldHit.found){
+    if(!cache[newKey]) cache[newKey] = oldHit;   // same Spotify album, new spelling
+    scheduleSpotifyCacheSave();
+  }else{
+    // Was only a suggestion: look the corrected name up properly so its cover and track count arrive.
+    getSpotifyAlbumInfo(a, t, {force: true})
+      .then(() => { saveSpotifyAlbumCache(); if(section === "lists") render(); })
+      .catch(() => {});
+  }
+  if(!skipRender){
+    render();
+    renderListCheck();
+  }
+}
+function applyAllListCheckFixes(){
+  if(!listCheck) return;
+  listCheck.issues.forEach((issue, idx) => {
+    if(issue.kind === "spelling" && issue.spotify && !listCheck.fixed[idx]) applyListCheckFix(idx, true);
+  });
+  render();
+  renderListCheck();
+}
+function editFromListCheck(idx){
+  const issue = listCheck && listCheck.issues[idx];
+  if(!issue) return;
+  closeAllModals();
+  ensureListCheckListOpen();
+  openEditAlbum(issue.i);
+}
+function searchFromListCheck(idx){
+  const issue = listCheck && listCheck.issues[idx];
+  if(issue) openSpotifySearch(issue.artist, issue.title);
 }
 
 /* ---------- DISCOVER (new releases via Spotify, ranked with Last.fm, personalised) ---------- */
