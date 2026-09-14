@@ -186,6 +186,10 @@
     color:var(--ink); font-family:var(--font-body); font-size:12px; padding:8px 10px; border-radius:8px;
   }
   .near-miss-section{margin-top:26px; border-top:1px solid var(--line); padding-top:6px;}
+  .discover-section-head{padding:16px 10px 8px;}
+  .discover-section-title{font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink);}
+  .discover-section-sub{font-size:10.5px; color:var(--ink-dim); margin-top:3px; line-height:1.45;}
+  .rec-because{color:var(--gold-dim);}
   .recent-btn-row{display:flex; gap:8px; align-items:stretch;}
   .recent-btn-row .sync-btn{margin-top:12px;}
   .recent-btn-row #recentGenerateBtn{flex:2; min-width:0;}
@@ -432,34 +436,9 @@
   </div>
 
   <div id="discoverHeader" class="hidden">
-    <h1>New This Week</h1>
-    <button class="sync-btn secondary-btn" id="discoverToggleBtn" onclick="toggleDiscoverControls()"></button>
+    <h1>Discover</h1>
+    <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscover()">Refresh</button>
     <div class="sync-note" id="discoverNote"></div>
-    <div id="discoverControlsPanel" class="hidden">
-      <div class="week-picker">
-        <button class="week-btn active" data-week="0" onclick="selectDiscoverWeek(0)">
-          <span class="week-label">This Week</span>
-          <span class="week-range" id="weekRange0"></span>
-        </button>
-        <button class="week-btn" data-week="1" onclick="selectDiscoverWeek(1)">
-          <span class="week-label">Last Week</span>
-          <span class="week-range" id="weekRange1"></span>
-        </button>
-        <button class="week-btn" data-week="2" onclick="selectDiscoverWeek(2)">
-          <span class="week-label">2 Weeks Ago</span>
-          <span class="week-range" id="weekRange2"></span>
-        </button>
-      </div>
-      <div class="count-picker" id="countPicker">
-        <button class="count-btn" data-count="5" onclick="selectDiscoverCount(5)">5</button>
-        <button class="count-btn active" data-count="10" onclick="selectDiscoverCount(10)">10</button>
-        <button class="count-btn" data-count="25" onclick="selectDiscoverCount(25)">25</button>
-        <button class="count-btn" data-count="50" onclick="selectDiscoverCount(50)">50</button>
-        <button class="count-btn" data-count="100" onclick="selectDiscoverCount(100)">100</button>
-      </div>
-      <div class="sync-note" id="discoverPoolNote">Checking how many albums came out…</div>
-      <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscoverList()">Find albums</button>
-    </div>
   </div>
   <div id="recentHeader" class="hidden">
     <h1>Past Week</h1>
@@ -1088,18 +1067,6 @@ function toggleReviewsFilters(){
   document.getElementById("reviewsFiltersPanel").classList.toggle("hidden", !reviewsFiltersOpen);
   updateFiltersToggleLabel();
 }
-let discoverControlsOpen = false;
-const DISCOVER_WEEK_LABELS = ["This Week", "Last Week", "2 Weeks Ago"];
-function updateDiscoverToggleLabel(){
-  const btn = document.getElementById("discoverToggleBtn");
-  if(!btn) return;
-  btn.textContent = DISCOVER_WEEK_LABELS[discoverWeekOffset] + " · " + discoverCount + " albums" + (discoverControlsOpen ? " ▴" : " ▾");
-}
-function toggleDiscoverControls(){
-  discoverControlsOpen = !discoverControlsOpen;
-  document.getElementById("discoverControlsPanel").classList.toggle("hidden", !discoverControlsOpen);
-  updateDiscoverToggleLabel();
-}
 
 function updateFiltersToggleLabel(){
   let activeCount = ["vibe", "decade"].filter(k => reviewsFilter[k]).length;
@@ -1554,7 +1521,7 @@ function switchSection(s){
   document.getElementById("tabReviews").classList.toggle("active", s === "reviews");
   if(s === "discover" && !discoverInitialized){
     discoverInitialized = true;
-    initDiscoverHeader();
+    discoverResults = loadDiscoverResults(); // restore whatever was last generated
   }
   if(s === "reviews" && !reviewsInitialized){
     reviewsInitialized = true;
@@ -2343,99 +2310,25 @@ async function syncAll(){
   }
 }
 
-/* ---------- DISCOVER (weekly new releases) ---------- */
-const DISCOVER_POOL_CAP = 2000; // safety ceiling; realistic weekly volumes stay well under this, so coverage is effectively comprehensive
+/* ---------- DISCOVER (charting new releases + recommendations) ---------- */
+// Apple's Marketing Tools RSS chart: keyless, CORS-open, updated daily, one request for 100
+// albums. Replaces the old MusicBrainz crawl, which needed hundreds of calls and had no
+// popularity signal to rank by.
+const APPLE_CHART_URL = "https://rss.marketingtools.apple.com/api/v2/us/music/most-played/100/albums.json";
+const CHART_RECENT_DAYS = 21;       // "very recent" target window
+const CHART_FALLBACK_DAYS = 56;     // widened automatically if the tight window is too thin
+const CHART_MIN_RESULTS = 5;
 
-let discoverWeekOffset = 0;
-let discoverCount = 10;
-let discoverResults = null;
+let discoverResults = null;   // {charting: [], recs: [], generatedAt}
 
-// Cached per week (keyed by that week's start date), so switching between the three week
-// options or navigating away and back shows whatever was already generated — only cleared
-// by explicitly regenerating, or once a cached week ages out of the 3-week rolling range.
-function loadDiscoverResultsMap(){
-  try{ return JSON.parse(localStorage.getItem("ll_discover_results")) || {}; }
-  catch(e){ return {}; }
+function loadDiscoverResults(){
+  try{ return JSON.parse(localStorage.getItem("ll_discover_results")); }
+  catch(e){ return null; }
 }
-function saveDiscoverResultsMap(map){
-  localStorage.setItem("ll_discover_results", JSON.stringify(map));
-}
-function pruneStaleDiscoverResults(){
-  const map = loadDiscoverResultsMap();
-  const validStartISOs = new Set();
-  for(let i = 0; i < 3; i++){
-    validStartISOs.add(isoDate(releaseWeekRange(i).start));
-  }
-  let changed = false;
-  Object.keys(map).forEach(key => {
-    if(!validStartISOs.has(key)){ delete map[key]; changed = true; }
-  });
-  if(changed) saveDiscoverResultsMap(map);
-  return map;
+function saveDiscoverResults(){
+  localStorage.setItem("ll_discover_results", JSON.stringify(discoverResults));
 }
 
-function releaseWeekRange(offsetWeeks){
-  // A "release week" runs Friday through Thursday. offsetWeeks: 0 = current week, 1 = last week, 2 = two weeks ago.
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun ... 5=Fri, 6=Sat
-  const daysSinceFriday = (day - 5 + 7) % 7;
-  const mostRecentFriday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceFriday);
-  const start = new Date(mostRecentFriday);
-  start.setDate(start.getDate() - 7 * offsetWeeks);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return {start, end};
-}
-function isoDate(d){
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-}
-function formatRange(start, end){
-  const opts = {month: "short", day: "numeric"};
-  const startStr = start.toLocaleDateString("en-US", opts);
-  const endStr = end.toLocaleDateString("en-US", opts);
-  return startStr + " – " + endStr + ", " + end.getFullYear();
-}
-function formatListeners(n){
-  if(n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
-  return String(n);
-}
-
-function initDiscoverHeader(){
-  for(let i = 0; i < 3; i++){
-    const {start, end} = releaseWeekRange(i);
-    const el = document.getElementById("weekRange" + i);
-    if(el) el.textContent = formatRange(start, end);
-  }
-  const map = pruneStaleDiscoverResults();
-  discoverResults = map[isoDate(releaseWeekRange(discoverWeekOffset).start)] || null;
-  updateDiscoverToggleLabel();
-  checkDiscoverPoolSize();
-}
-function selectDiscoverWeek(offset){
-  discoverWeekOffset = offset;
-  document.querySelectorAll(".week-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.week, 10) === offset));
-  const map = pruneStaleDiscoverResults();
-  discoverResults = map[isoDate(releaseWeekRange(offset).start)] || null;
-  document.getElementById("discoverNote").textContent = "";
-  updateDiscoverToggleLabel();
-  checkDiscoverPoolSize();
-  renderDiscoverResultsArea();
-}
-function selectDiscoverCount(n){
-  const btn = document.querySelector('.count-btn[data-count="' + n + '"]');
-  if(btn && btn.disabled) return;
-  discoverCount = n;
-  document.querySelectorAll(".count-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.count, 10) === n));
-  updateDiscoverToggleLabel();
-  renderDiscoverResultsArea();
-}
-
-function discoverQuery(startISO, endISO){
-  // Deliberately simple: a bare "NOT secondarytype:*" wildcard clause is fragile against
-  // MusicBrainz's Lucene parser and was the likely cause of failed requests. Secondary types
-  // (Live, Compilation, Remix, Soundtrack, etc.) are filtered out client-side instead, below.
-  return 'firstreleasedate:[' + startISO + ' TO ' + endISO + '] AND primarytype:Album';
-}
 async function mbFetch(url){
   let res;
   try{
@@ -2459,87 +2352,6 @@ async function mbFetch(url){
   }
 }
 
-async function checkDiscoverPoolSize(){
-  const note = document.getElementById("discoverPoolNote");
-  note.textContent = "Checking how many albums came out…";
-  const {start, end} = releaseWeekRange(discoverWeekOffset);
-  const q = discoverQuery(isoDate(start), isoDate(end));
-  try{
-    const data = await mbFetch("https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=1");
-    const count = data.count || 0;
-    note.textContent = count > 0
-      ? ("~" + count + " albums cataloged for this week so far — coverage can lag a few days behind release day, and this raw count includes some live/comp/remix albums that get filtered out when generating.")
-      : "No albums cataloged for this week yet — try again in a day or two, MusicBrainz coverage can lag.";
-    document.querySelectorAll(".count-btn").forEach(b => {
-      const n = parseInt(b.dataset.count, 10);
-      b.disabled = count < n;
-      if(b.disabled && b.classList.contains("active")){
-        b.classList.remove("active");
-        const fallback = document.querySelector('.count-btn:not(:disabled)');
-        if(fallback){ fallback.classList.add("active"); discoverCount = parseInt(fallback.dataset.count, 10); }
-      }
-    });
-  }catch(err){
-    note.textContent = "Couldn't check MusicBrainz (" + (err.detail || err.message || "unknown error") + ") — you can still try generating.";
-  }
-}
-
-async function fetchMBReleaseGroupsPage(startISO, endISO, offset){
-  const q = discoverQuery(startISO, endISO);
-  const url = "https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=100&offset=" + offset;
-  const data = await mbFetch(url);
-  const groups = (data["release-groups"] || [])
-    .filter(rg => !rg["secondary-types"] || rg["secondary-types"].length === 0)
-    // MusicBrainz's firstreleasedate range query isn't a strict filter: release-groups whose
-    // date only has year (or year-month) precision — common for reissues and for upcoming
-    // albums that don't have a confirmed exact date yet — can slip through and match any week
-    // in that year. Require a full YYYY-MM-DD date that's actually inside the requested week.
-    .filter(rg => {
-      const d = rg["first-release-date"] || "";
-      return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= startISO && d <= endISO;
-    })
-    .map(rg => ({
-      artist: (rg["artist-credit"] && rg["artist-credit"][0] && rg["artist-credit"][0].name) || rg["artist-credit-phrase"] || "Unknown Artist",
-      title: rg.title,
-      date: rg["first-release-date"] || ""
-    }));
-  return {groups, total: data.count || 0};
-}
-async function fetchLastfmListeners(artist, title){
-  const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
-    + "&api_key=" + encodeURIComponent(settings.apiKey)
-    + "&artist=" + encodeURIComponent(artist)
-    + "&album=" + encodeURIComponent(title)
-    + "&autocorrect=1&format=json";
-  try{
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.error) return 0;
-    const l = data.album && data.album.listeners ? parseInt(data.album.listeners, 10) : 0;
-    return isNaN(l) ? 0 : l;
-  }catch(err){
-    return 0;
-  }
-}
-// A brand-new album's own listener count is nearly meaningless — scrobbles take days/weeks
-// to build up, so a huge release can look identical to random noise in its first week.
-// The artist's overall Last.fm listener count is a much steadier "does this act have a
-// real audience" signal, and doesn't depend on this specific release having caught on yet.
-async function fetchArtistListeners(artist){
-  const url = "https://ws.audioscrobbler.com/2.0/?method=artist.getinfo"
-    + "&api_key=" + encodeURIComponent(settings.apiKey)
-    + "&artist=" + encodeURIComponent(artist)
-    + "&autocorrect=1&format=json";
-  try{
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.error) return 0;
-    const l = data.artist && data.artist.stats && data.artist.stats.listeners ? parseInt(data.artist.stats.listeners, 10) : 0;
-    return isNaN(l) ? 0 : l;
-  }catch(err){
-    return 0;
-  }
-}
 function shuffleArray(arr){
   for(let i = arr.length - 1; i > 0; i--){
     const j = Math.floor(Math.random() * (i + 1));
@@ -2548,172 +2360,237 @@ function shuffleArray(arr){
   return arr;
 }
 
-async function generateDiscoverList(){
-  if(!settings.apiKey){
-    document.getElementById("discoverNote").textContent = "Add a Last.fm API key in Settings first — it's used to rank results by popularity.";
-    return;
+function daysAgo(dateStr){
+  if(!dateStr) return Infinity;
+  const d = new Date(dateStr);
+  if(isNaN(d.getTime())) return Infinity;
+  return (Date.now() - d.getTime()) / 86400000;
+}
+
+/* --- Section 1: charting new releases --- */
+async function fetchChartingReleases(){
+  const data = await mbFetch(APPLE_CHART_URL);
+  const results = (data.feed && data.feed.results) || [];
+  const mapped = results.map((r, idx) => ({
+    artist: r.artistName || "",
+    title: r.name || "",
+    releaseDate: r.releaseDate || "",
+    genres: (r.genres || []).map(g => g.name).filter(n => n && n.toLowerCase() !== "music").slice(0, 2),
+    chartRank: idx + 1,
+    age: daysAgo(r.releaseDate)
+  })).filter(r => r.artist && r.title);
+
+  let recent = mapped.filter(r => r.age <= CHART_RECENT_DAYS);
+  let windowUsed = CHART_RECENT_DAYS;
+  // The tight window can come back nearly empty in a slow release stretch — widen rather
+  // than show nothing.
+  if(recent.length < CHART_MIN_RESULTS){
+    recent = mapped.filter(r => r.age <= CHART_FALLBACK_DAYS);
+    windowUsed = CHART_FALLBACK_DAYS;
   }
+  recent.sort((a, b) => a.chartRank - b.chartRank);
+  return {albums: recent, windowUsed, scanned: mapped.length};
+}
+
+/* --- Section 2: recommendations from albums you rated highly --- */
+const REC_SEED_ROTATIONS = ["In rotation", "Will come back to it"];
+const REC_MAX_SEEDS = 5;
+const REC_SIMILAR_PER_SEED = 6;
+const REC_MAX_ARTISTS = 10;
+
+async function fetchSimilarArtists(artist){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&limit=" + REC_SIMILAR_PER_SEED + "&autocorrect=1&format=json";
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.error || !data.similarartists) return [];
+    const arr = data.similarartists.artist;
+    return (Array.isArray(arr) ? arr : [arr]).map(a => a && a.name).filter(Boolean);
+  }catch(e){ return []; }
+}
+async function fetchArtistTopAlbum(artist){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=artist.gettopalbums"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&limit=3&autocorrect=1&format=json";
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.error || !data.topalbums) return null;
+    const arr = data.topalbums.album;
+    const albums = (Array.isArray(arr) ? arr : [arr]).filter(a => a && a.name && a.name !== "(null)");
+    if(albums.length === 0) return null;
+    const pick = albums[0];
+    return {artist: pick.artist && pick.artist.name ? pick.artist.name : artist, title: pick.name};
+  }catch(e){ return null; }
+}
+
+async function buildRecommendations(note){
+  const reviews = loadReviews();
+  const seeds = Object.values(reviews).filter(r => REC_SEED_ROTATIONS.indexOf(r.rotation) !== -1);
+  if(seeds.length === 0) return {recs: [], seedCount: 0};
+
+  // One seed per artist so a heavily-reviewed artist doesn't dominate.
+  const byArtist = {};
+  seeds.forEach(s => { if(!byArtist[s.artist.toLowerCase()]) byArtist[s.artist.toLowerCase()] = s; });
+  const seedList = shuffleArray(Object.values(byArtist)).slice(0, REC_MAX_SEEDS);
+
+  const seedArtistKeys = new Set(Object.keys(byArtist));
+  const candidates = {}; // artistName -> seed that surfaced it
+  for(let i = 0; i < seedList.length; i++){
+    note.textContent = "Finding artists like " + seedList[i].artist + "…";
+    const similar = await fetchSimilarArtists(seedList[i].artist);
+    similar.forEach(name => {
+      const key = name.toLowerCase();
+      if(seedArtistKeys.has(key)) return;   // already something you know
+      if(!candidates[key]) candidates[key] = {name, via: seedList[i]};
+    });
+    await sleep(120);
+  }
+
+  const chosen = shuffleArray(Object.values(candidates)).slice(0, REC_MAX_ARTISTS);
+  const recs = [];
+  for(let i = 0; i < chosen.length; i++){
+    note.textContent = "Picking albums… " + (i + 1) + " of " + chosen.length;
+    const album = await fetchArtistTopAlbum(chosen[i].name);
+    if(album){
+      recs.push({
+        artist: album.artist,
+        title: album.title,
+        viaArtist: chosen[i].via.artist,
+        viaTitle: chosen[i].via.title
+      });
+    }
+    await sleep(120);
+  }
+  return {recs, seedCount: seedList.length};
+}
+
+/* --- Orchestration --- */
+async function generateDiscover(){
   const btn = document.getElementById("discoverGenerateBtn");
   const note = document.getElementById("discoverNote");
   btn.disabled = true;
-  const {start, end} = releaseWeekRange(discoverWeekOffset);
-  const startISO = isoDate(start), endISO = isoDate(end);
 
-  note.textContent = "Looking up what came out that week…";
-  let candidates = [];
-  let offset = 0, total = Infinity;
-  const seen = new Set();
+  let charting = {albums: [], windowUsed: CHART_RECENT_DAYS, scanned: 0};
+  let chartError = null;
+  note.textContent = "Loading the charts…";
   try{
-    while(candidates.length < DISCOVER_POOL_CAP && offset < total && offset < 3000){
-      note.textContent = "Looking up releases… " + Math.min(offset + 100, total === Infinity ? offset + 100 : total) + (total !== Infinity ? " of " + total : "");
-      const page = await fetchMBReleaseGroupsPage(startISO, endISO, offset);
-      total = page.total;
-      page.groups.forEach(g => {
-        const key = (g.artist + "|" + g.title).toLowerCase();
-        if(g.title && !seen.has(key)){
-          seen.add(key);
-          candidates.push(g);
-        }
-      });
-      offset += 100;
-      await sleep(350); // MusicBrainz asks for ~1 req/sec; this paces well under that
-    }
+    charting = await fetchChartingReleases();
   }catch(err){
-    note.textContent = "Couldn't reach MusicBrainz (" + (err.detail || err.message || "unknown error") + "). Try again in a moment.";
-    btn.disabled = false;
-    return;
-  }
-  candidates = candidates.slice(0, DISCOVER_POOL_CAP);
-
-  if(candidates.length === 0){
-    discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, albums: []};
-    saveDiscoverResultsMap(Object.assign(loadDiscoverResultsMap(), {[startISO]: discoverResults}));
-    note.textContent = "No albums found for that week yet.";
-    btn.disabled = false;
-    renderDiscoverResultsArea();
-    return;
+    chartError = err.detail || "couldn't reach Apple's chart feed";
   }
 
-  const scored = await scoreCandidatesWithLastfm(candidates, note);
-
-  // "Important" bucket: ranked by the ARTIST's overall Last.fm listener count, not the
-  // brand-new album's own count (which hasn't had time to accumulate scrobbles yet).
-  scored.sort((a, b) => b.artistListeners - a.artistListeners);
-
-  const n = Math.min(discoverCount, scored.length);
-  const topCut = Math.ceil(n * 0.7);
-  let picks = scored.slice(0, topCut);
-
-  // "Fun to try": artists with a real but modest following — genuinely findable/emerging
-  // acts, not zero-listener MusicBrainz noise and not already-huge names duplicating the top bucket.
-  const pickedKeys = new Set(picks.map(p => p.artist + "|" + p.title));
-  const FUN_MIN = 1000, FUN_MAX = 50000;
-  let funPool = scored.filter(c =>
-    !pickedKeys.has(c.artist + "|" + c.title) && c.artistListeners >= FUN_MIN && c.artistListeners <= FUN_MAX
-  );
-  funPool = shuffleArray(funPool);
-  let undergroundPicks = funPool.slice(0, n - topCut);
-  const undergroundKeys = new Set(undergroundPicks.map(p => p.artist + "|" + p.title));
-  picks = picks.concat(undergroundPicks);
-
-  if(picks.length < n){
-    const already = new Set(picks.map(p => p.artist + "|" + p.title));
-    for(const c of scored){
-      if(picks.length >= n) break;
-      const key = c.artist + "|" + c.title;
-      if(!already.has(key)){ picks.push(c); already.add(key); }
+  let recResult = {recs: [], seedCount: 0};
+  if(settings.apiKey){
+    try{
+      recResult = await buildRecommendations(note);
+    }catch(err){
+      // Recommendations are a bonus — never let them break the charting section.
     }
   }
-  picks = picks.map(p => Object.assign({}, p, {underground: undergroundKeys.has(p.artist + "|" + p.title)}));
-  picks.sort((a, b) => b.artistListeners - a.artistListeners);
 
-  discoverResults = {startISO, endISO, weekOffset: discoverWeekOffset, totalFound: total, poolScored: scored.length, albums: picks};
-  saveDiscoverResultsMap(Object.assign(loadDiscoverResultsMap(), {[startISO]: discoverResults}));
+  discoverResults = {
+    charting: charting.albums,
+    windowUsed: charting.windowUsed,
+    recs: recResult.recs,
+    seedCount: recResult.seedCount,
+    generatedAt: Date.now()
+  };
+  saveDiscoverResults();
+
   btn.disabled = false;
-  note.textContent = "Found " + picks.length + " of " + discoverCount + " requested, ranked by artist popularity across "
-    + scored.length + (total !== Infinity && scored.length < total ? " of " + total : "") + " real releases that week.";
+  const bits = [];
+  if(chartError) bits.push("Chart unavailable (" + chartError + ")");
+  else bits.push(charting.albums.length + " charting from the last " + charting.windowUsed + " days");
+  if(recResult.recs.length > 0) bits.push(recResult.recs.length + " picks from " + recResult.seedCount + " albums you rated highly");
+  else if(!settings.apiKey) bits.push("add a Last.fm key in Settings for personal picks");
+  else if(recResult.seedCount === 0) bits.push("rate albums \u201cIn rotation\u201d or \u201cWill come back to it\u201d for personal picks");
+  note.textContent = bits.join(" \u00b7 ");
   renderDiscoverResultsArea();
 }
 
-async function scoreCandidatesWithLastfm(candidates, note){
-  const BATCH_SIZE = 6;
-  const scored = [];
-  for(let i = 0; i < candidates.length; i += BATCH_SIZE){
-    const batch = candidates.slice(i, i + BATCH_SIZE);
-    note.textContent = "Scoring " + Math.min(i + BATCH_SIZE, candidates.length) + " of " + candidates.length + " releases against Last.fm…";
-    const results = await Promise.all(batch.map(async c => {
-      const [listeners, artistListeners] = await Promise.all([
-        fetchLastfmListeners(c.artist, c.title),
-        fetchArtistListeners(c.artist)
-      ]);
-      return Object.assign({}, c, {listeners, artistListeners});
-    }));
-    scored.push(...results);
-    await sleep(150); // brief pause between batches
-  }
-  return scored;
+function discoverCardHtml(al, subline){
+  return '<div class="num"></div>' +
+    '<div class="discover-main">' +
+      '<div class="album-link">' +
+        '<div class="discover-artist">' + escapeHtml(al.artist) + '</div>' +
+        '<div class="discover-title">' + escapeHtml(al.title) + '</div>' +
+      '</div>' +
+      '<div class="discover-meta">' + subline + '</div>' +
+    '</div>';
 }
 
 function renderDiscoverResultsArea(){
   const content = document.getElementById("content");
   if(section !== "discover") return;
-  if(!discoverResults || !discoverResults.albums || discoverResults.albums.length === 0){
-    content.innerHTML = '<div class="empty-hint">Pick a week and tap "Find albums" to see what came out.</div>';
+  if(!discoverResults){
+    content.innerHTML = '<div class="empty-hint">Tap Refresh to see what\'s new and what to try next.</div>';
     return;
   }
-  if(discoverResults.albums.length < discoverCount){
-    content.innerHTML = '<div class="empty-hint">Only generated ' + discoverResults.albums.length + ' for this week so far — regenerate to get '
-      + discoverCount + '.</div>';
-    return;
-  }
-  // Reuse the existing (larger) result set when the count picker goes smaller — just show
-  // the top N of what's already cached instead of requiring a fresh generation.
-  const displayAlbums = discoverResults.albums.slice(0, discoverCount);
-  const wrap = document.createElement("div");
-  displayAlbums.forEach((al, i) => {
-    const row = document.createElement("div");
-    row.className = "discover-card";
-    row.innerHTML =
-      '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
-      '<div class="discover-main">' +
-        '<div class="album-link">' +
-          '<div class="discover-artist">' + al.artist + '</div>' +
-          '<div class="discover-title">' + al.title + (al.underground ? ' <span class="underground-badge">Fun to try</span>' : '') + '</div>' +
-        '</div>' +
-        '<div class="discover-meta">' +
-          '<span>' + (al.date || "") + '</span>' +
-          '<span>' + formatListeners(al.artistListeners) + ' listeners on ' + al.artist + '</span>' +
-          (al.listeners > 0 ? '<span>' + formatListeners(al.listeners) + ' on this album so far</span>' : '') +
-        '</div>' +
-      '</div>';
-    const linkEl = row.querySelector(".album-link");
-    if(linkEl) linkEl.onclick = () => openSpotifySearch(al.artist, al.title);
-    wrap.appendChild(row);
-  });
+  const frag = document.createDocumentFragment();
+
+  const addSection = (label, sub, items, builder, saveKind) => {
+    if(items.length === 0) return;
+    const head = document.createElement("div");
+    head.className = "discover-section-head";
+    head.innerHTML = '<div class="discover-section-title">' + label + '</div>' +
+      (sub ? '<div class="discover-section-sub">' + sub + '</div>' : '');
+    frag.appendChild(head);
+    items.forEach(al => {
+      const row = document.createElement("div");
+      row.className = "discover-card";
+      row.innerHTML = builder(al);
+      const linkEl = row.querySelector(".album-link");
+      if(linkEl){
+        linkEl.style.cursor = "pointer";
+        linkEl.onclick = () => openSpotifySearch(al.artist, al.title);
+      }
+      frag.appendChild(row);
+    });
+    const saveRow = document.createElement("div");
+    saveRow.className = "add-album-row";
+    saveRow.innerHTML = '<button class="sync-btn save-discover-btn" onclick="saveDiscoverAsList(\'' + saveKind + '\')">Save these ' + items.length + ' as a list</button>';
+    frag.appendChild(saveRow);
+  };
+
+  addSection("Charting now", "New releases currently in Apple's top 100",
+    discoverResults.charting,
+    al => discoverCardHtml(al, [
+      '<span>#' + al.chartRank + '</span>',
+      al.genres && al.genres.length ? '<span class="genre-tag">' + escapeHtml(al.genres.join(" / ").toLowerCase()) + '</span>' : '',
+      al.releaseDate ? '<span>' + escapeHtml(al.releaseDate) + '</span>' : ''
+    ].join("")),
+    "charting");
+
+  addSection("Might be your thing", "Artists adjacent to albums you keep coming back to",
+    discoverResults.recs,
+    al => discoverCardHtml(al, '<span class="rec-because">because you rated ' + escapeHtml(al.viaTitle) + '</span>'),
+    "recs");
+
   content.innerHTML = "";
-  content.appendChild(wrap);
-
-  const saveBtn = document.createElement("button");
-  saveBtn.className = "sync-btn save-discover-btn";
-  saveBtn.textContent = "Save as a list";
-  saveBtn.onclick = saveDiscoverAsList;
-  content.appendChild(saveBtn);
+  if(!frag.childNodes.length){
+    content.innerHTML = '<div class="empty-hint">Nothing came back. Try refreshing, or check your connection.</div>';
+    return;
+  }
+  content.appendChild(frag);
 }
 
-function parseISODateLocal(isoStr){
-  const [y, m, d] = isoStr.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-function saveDiscoverAsList(){
-  if(!discoverResults || discoverResults.albums.length === 0) return;
-  // Use the actual saved dates rather than recomputing from weekOffset — offset meaning
-  // drifts once real time has passed since generation (e.g. "1 week ago" today isn't the
-  // same calendar week it was when this was first generated).
-  const start = parseISODateLocal(discoverResults.startISO);
-  const end = parseISODateLocal(discoverResults.endISO);
-  const label = "New Releases — " + formatRange(start, end);
-  // Match whatever's actually on screen (respects the count picker), not the full cached set.
-  const albums = discoverResults.albums.slice(0, discoverCount).map(al => ({a: al.artist, t: al.title, y: (al.date || "").slice(0, 4), g: ""}));
+function saveDiscoverAsList(kind){
+  if(!discoverResults) return;
+  const items = kind === "charting" ? discoverResults.charting : discoverResults.recs;
+  if(!items || items.length === 0) return;
+  const stamp = new Date().toLocaleDateString(undefined, {month: "short", day: "numeric", year: "numeric"});
+  const label = (kind === "charting" ? "Charting — " : "Recommended — ") + stamp;
+  const albums = items.map(al => ({
+    a: al.artist,
+    t: al.title,
+    y: al.releaseDate ? al.releaseDate.slice(0, 4) : "",
+    g: al.genres ? al.genres.join(" / ") : ""
+  }));
   let id = slugify(label);
   const existingIds = new Set(getAllLists().map(l => l.id));
   if(existingIds.has(id)) id = id + "-" + Date.now();
