@@ -213,11 +213,17 @@
   .range-filter-top label{font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em;}
   .range-filter-value{font-size:10.5px; color:var(--teal); text-align:right; line-height:1.35; flex:1;}
   .range-filter-value.is-all{color:var(--ink-dim); opacity:0.7;}
-  .range-dots{display:flex; gap:10px; align-items:center;}
+  .range-dots{
+    display:flex; gap:10px; align-items:center; touch-action:none; user-select:none;
+    -webkit-user-select:none; padding:6px 0;
+  }
   .range-dot{
     width:19px; height:19px; border-radius:50%; border:1.5px solid var(--line);
     background:var(--card); padding:0; cursor:pointer; flex:none; position:relative;
+    touch-action:none; transition:background .12s ease, border-color .12s ease;
   }
+  /* Invisible padding so the drag target is comfortably finger-sized without visual bulk. */
+  .range-dot::after{content:""; position:absolute; inset:-8px;}
   .range-dot.in-range{background:var(--teal); border-color:var(--teal);}
   .range-dot.is-end{box-shadow:0 0 0 3px rgba(148,216,59,0.22);}
   .range-reset{
@@ -965,39 +971,83 @@ function renderRangeFilter(axisKey){
     valueText = axis.options[range.max] + " → " + axis.options[range.min];
     valueClass = "range-filter-value";
   }
-  let dots = '<div class="range-dots">';
-  axis.options.forEach((opt, idx) => {
+  // Rendered right-to-left: index 0 (the strongest end of the scale) sits on the right,
+  // so the dots read low → high the way a rating scale normally would.
+  let dots = '<div class="range-dots" data-axis="' + axisKey + '">';
+  for(let idx = axis.options.length - 1; idx >= 0; idx--){
+    const opt = axis.options[idx];
     const inRange = !range || (idx >= range.min && idx <= range.max);
     const isEnd = range && (idx === range.min || idx === range.max);
     dots += '<button class="range-dot' + (inRange ? " in-range" : "") + (isEnd ? " is-end" : "") +
-      '" title="' + escapeHtml(opt) + '" onclick="tapRangeDot(\'' + axisKey + '\', ' + idx + ')"></button>';
-  });
+      '" data-idx="' + idx + '" title="' + escapeHtml(opt) + '"></button>';
+  }
   dots += '</div>';
   el.innerHTML =
     '<div class="range-filter-top"><label>' + axis.label + '</label>' +
       '<span class="' + valueClass + '">' + escapeHtml(valueText) + '</span></div>' +
     dots +
     (range ? '<button class="range-reset" onclick="resetRange(\'' + axisKey + '\')">clear</button>' : '');
+  attachRangeDrag(el.querySelector(".range-dots"), axisKey);
 }
-function tapRangeDot(axisKey, idx){
-  const range = reviewsRange[axisKey];
-  if(!range){
-    // From "All", the first tap starts a new single-value selection.
+
+/* Drag-to-select across the dots: press anywhere on the row and slide to set both ends in one
+   gesture. A plain tap still works (and re-tapping a lone selection clears it). */
+let rangeDrag = null;
+function dotIndexFromPoint(container, clientX){
+  const dots = Array.from(container.querySelectorAll(".range-dot"));
+  let best = null, bestDist = Infinity;
+  dots.forEach(d => {
+    const r = d.getBoundingClientRect();
+    const dist = Math.abs(clientX - (r.left + r.width / 2));
+    if(dist < bestDist){ bestDist = dist; best = parseInt(d.dataset.idx, 10); }
+  });
+  return best;
+}
+function attachRangeDrag(container, axisKey){
+  if(!container) return;
+  container.addEventListener("pointerdown", e => {
+    const idx = dotIndexFromPoint(container, e.clientX);
+    if(idx === null) return;
+    e.preventDefault();
+    const prev = reviewsRange[axisKey];
+    rangeDrag = {
+      axisKey, anchor: idx, moved: false,
+      wasLoneSame: !!(prev && prev.min === prev.max && prev.min === idx)
+    };
     reviewsRange[axisKey] = {min: idx, max: idx};
     reviewsRangeAnchor[axisKey] = idx;
-  } else if(range.min === range.max && range.min === idx){
-    // Tapping the only selected dot clears back to All.
+    renderRangeFilter(axisKey);
+  });
+  container.addEventListener("pointermove", e => {
+    if(!rangeDrag || rangeDrag.axisKey !== axisKey) return;
+    if(e.buttons === 0 && e.pointerType === "mouse") return;
+    const idx = dotIndexFromPoint(container, e.clientX);
+    if(idx === null) return;
+    const cur = reviewsRange[axisKey];
+    const next = {min: Math.min(rangeDrag.anchor, idx), max: Math.max(rangeDrag.anchor, idx)};
+    if(!cur || cur.min !== next.min || cur.max !== next.max){
+      if(idx !== rangeDrag.anchor) rangeDrag.moved = true;
+      reviewsRange[axisKey] = next;
+      renderRangeFilter(axisKey);
+    }
+  });
+}
+function finishRangeDrag(){
+  if(!rangeDrag) return;
+  const {axisKey, moved, wasLoneSame} = rangeDrag;
+  rangeDrag = null;
+  // A tap (no drag) on the only selected dot clears back to All.
+  if(!moved && wasLoneSame){
     reviewsRange[axisKey] = null;
     reviewsRangeAnchor[axisKey] = null;
-  } else {
-    // Otherwise extend from the anchor to whatever was tapped.
-    const anchor = reviewsRangeAnchor[axisKey] !== null ? reviewsRangeAnchor[axisKey] : range.min;
-    reviewsRange[axisKey] = {min: Math.min(anchor, idx), max: Math.max(anchor, idx)};
+    renderRangeFilter(axisKey);
   }
-  renderRangeFilter(axisKey);
   updateFiltersToggleLabel();
   renderReviewsResultsArea();
 }
+document.addEventListener("pointerup", finishRangeDrag);
+document.addEventListener("pointercancel", finishRangeDrag);
+
 function resetRange(axisKey){
   reviewsRange[axisKey] = null;
   reviewsRangeAnchor[axisKey] = null;
