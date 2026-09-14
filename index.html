@@ -336,6 +336,14 @@
     font-size:11px; color:var(--ink-dim); width:22px; flex:none; padding-top:3px;
   }
   .album.listened .num{color:var(--teal);}
+  .album-cover{
+    position:relative; width:44px; height:44px; flex:none; border-radius:6px; overflow:hidden; cursor:pointer;
+    background:var(--card-hi); display:flex; align-items:center; justify-content:center;
+  }
+  .album-cover img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+  .album-cover-num{font-size:11px; color:var(--ink-dim);}
+  .album.listened .album-cover-num{color:var(--teal);}
+  .album.listened .album-cover{box-shadow:0 0 0 1.5px var(--teal);}
   .album-main{flex:1; min-width:0;}
   .album-link{cursor:pointer;}
   .album-artist{font-size:13px; color:var(--ink-dim); letter-spacing:0.03em;}
@@ -526,7 +534,7 @@
   <h2>Settings</h2>
   <p>
     Free API key from <a href="https://www.last.fm/api/account/create" target="_blank">last.fm/api/account/create</a>
-    — any app name/description works. Nothing is sent anywhere except directly from this page to Last.fm, MusicBrainz, and Spotify.
+    — any app name/description works. Nothing is sent anywhere except directly from this page to Last.fm and Spotify.
   </p>
   <div class="field">
     <label>Last.fm username</label>
@@ -807,7 +815,7 @@ function openReviewModal(artist, title, suggestedYear, suggestedGenres){
   document.getElementById("reviewModalAlbum").value = title;
   document.getElementById("reviewModalYear").value = knownYear;
   // Only ask for a year if we genuinely don't have one from anywhere yet (a saved review,
-  // or auto-pulled from Last.fm/MusicBrainz on This Week) — no need to show it otherwise.
+  // or auto-pulled from Spotify/Last.fm on This Week) — no need to show it otherwise.
   document.getElementById("reviewYearField").classList.toggle("hidden", !!knownYear);
   document.getElementById("reviewDeleteRow").classList.toggle("hidden", !existing);
   renderReviewGenres();
@@ -1193,7 +1201,7 @@ function renderReviewsResultsArea(){
     row.style.cursor = "pointer";
     row.onclick = () => openReviewModal(r.artist, r.title, r.year, r.genres);
     row.innerHTML =
-      '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
+      albumCoverHtml(r.artist, r.title, String(i + 1).padStart(2, "0")) +
       '<div class="discover-main">' +
         '<div class="discover-artist">' + escapeHtml(r.artist) + '</div>' +
         '<div class="discover-title">' + escapeHtml(r.title) + '</div>' +
@@ -1206,11 +1214,13 @@ function renderReviewsResultsArea(){
         '</div>' +
       '</div>' +
       (vibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '');
+    wireAlbumCover(row, r.artist, r.title);
     wrap.appendChild(row);
   });
   content.innerHTML = "";
   content.appendChild(wrap);
   content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+  hydrateMissingCovers(filtered.map(r => ({artist: r.artist, title: r.title})));
 
   const saveRow = document.createElement("div");
   saveRow.className = "add-album-row";
@@ -1450,7 +1460,9 @@ function lookupAlbumIn(list, prog, i){
 }
 function lookupYearIn(list, prog, i){
   const e = entryForIn(prog, i);
-  return e.ov_y || effectiveAlbums(list)[i].y;
+  const al = effectiveAlbums(list)[i];
+  // Curated and edited years always win; Spotify's release year only fills blanks.
+  return e.ov_y || al.y || spotifyYearFor(e.ov_a || al.a, e.ov_t || al.t);
 }
 function lookupGenreIn(list, prog, i){
   const e = entryForIn(prog, i);
@@ -1708,7 +1720,7 @@ function renderAlbums(){
     const reviewVibe = review && review.vibe ? VIBE_EMOTES.find(v => v.id === review.vibe) : null;
 
     row.innerHTML =
-      '<div class="num">' + String(displayNum).padStart(2, "0") + '</div>' +
+      albumCoverHtml(lookupArtist(i), lookupAlbum(i), String(displayNum).padStart(2, "0")) +
       '<div class="album-main">' +
         '<div class="album-link">' +
           '<div class="album-artist">' + escapeHtml(lookupArtist(i)) + '</div>' +
@@ -1727,7 +1739,8 @@ function renderAlbums(){
     // Set directly rather than as an inline HTML attribute, so artist/title text with quotes,
     // ampersands, etc. doesn't need any special escaping to work safely.
     const linkEl = row.querySelector(".album-link");
-    if(linkEl) linkEl.onclick = () => openSpotifySearch(lookupArtist(i), lookupAlbum(i));
+    if(linkEl) linkEl.onclick = () => openSpotifyAlbum(lookupArtist(i), lookupAlbum(i));
+    wireAlbumCover(row, lookupArtist(i), lookupAlbum(i));
 
     wrap.appendChild(row);
   });
@@ -1769,7 +1782,11 @@ function openEditAlbum(i){
   document.getElementById("albumModalTitle").textContent = "Edit album";
   document.getElementById("albumModalArtist").value = lookupArtist(i);
   document.getElementById("albumModalTitleField").value = lookupAlbum(i);
-  document.getElementById("albumModalYear").value = lookupYear(i) || "";
+  const yearField = document.getElementById("albumModalYear");
+  const e = entryFor(i);
+  yearField.value = e.ov_y || effectiveAlbums(activeList)[i].y || "";
+  const spotifyYear = spotifyYearFor(lookupArtist(i), lookupAlbum(i));
+  yearField.placeholder = spotifyYear ? spotifyYear + " (from Spotify)" : "e.g. 1959";
   document.getElementById("albumModalGenre").value = (lookupGenre(i) || "").toLowerCase();
   document.getElementById("albumModalDeleteRow").classList.remove("hidden");
   openModal("albumModal");
@@ -1780,6 +1797,7 @@ function openAddAlbum(){
   document.getElementById("albumModalArtist").value = "";
   document.getElementById("albumModalTitleField").value = "";
   document.getElementById("albumModalYear").value = "";
+  document.getElementById("albumModalYear").placeholder = "e.g. 1959";
   document.getElementById("albumModalGenre").value = "";
   document.getElementById("albumModalDeleteRow").classList.add("hidden");
   openModal("albumModal");
@@ -2278,6 +2296,7 @@ async function syncAll(){
   effectiveAlbums(activeList).forEach((al, i) => { if(!entryFor(i).hidden) allIndices.push(i); });
   const total = allIndices.length;
   let networkErrors = 0, lastNetworkError = "", noMatch = 0, authError = null;
+  const spState = newSpotifyLookupState();
   const BATCH_SIZE = 6;
 
   for(let start = 0; start < total && !authError; start += BATCH_SIZE){
@@ -2287,12 +2306,12 @@ async function syncAll(){
     const indices = allIndices.slice(start, end);
 
     const results = await Promise.all(indices.map(async i => {
-      try{
-        const result = await fetchAlbumStats(lookupArtist(i), lookupAlbum(i));
-        return {i, result, error: null};
-      }catch(err){
-        return {i, result: null, error: err};
-      }
+      const artist = lookupArtist(i), album = lookupAlbum(i);
+      const [stats, sp] = await Promise.all([
+        fetchAlbumStats(artist, album).then(result => ({result}), error => ({error})),
+        spotifyAlbumInfoSafe(artist, album, spState)
+      ]);
+      return {i, artist, album, result: stats.result || null, error: stats.error || null, sp};
     }));
 
     results.forEach(r => {
@@ -2313,7 +2332,7 @@ async function syncAll(){
         noMatch++;
       } else {
         e.playcount = r.result.playcount;
-        e.trackCount = r.result.trackCount;
+        e.trackCount = preferredTrackCount(r.artist, r.album, r.sp, r.result.trackCount);
       }
     });
 
@@ -2334,6 +2353,9 @@ async function syncAll(){
   } else {
     note.textContent = "Synced just now.";
   }
+  const spNote = spotifyLookupSummary(spState);
+  if(spNote && !authError) note.textContent += " " + spNote;
+  saveSpotifyAlbumCache();
 }
 
 /* ---------- SPOTIFY (Authorization Code with PKCE — no client secret, no backend) ---------- */
@@ -2605,6 +2627,276 @@ async function spotifyGet(path, query){
   throw {type: "rate", status: 429, detail: "Spotify kept turning requests away — try again in a few minutes"};
 }
 
+/* ---------- SPOTIFY ALBUM LOOKUP (track counts, release years, covers, links) ---------- */
+// One cached lookup per album, shared by Lists sync and This Week. Keyed by normalised artist
+// + base title, so "OK Computer" and "OK Computer (Remastered)" share an entry. It's a cache,
+// not user data, so it stays out of the backup allowlist.
+const SPOTIFY_ALBUM_CACHE_KEY = "ll_spotify_albums";
+const SPOTIFY_MISS_RETRY_MS = 14 * 86400000;   // albums Spotify didn't have get re-checked after two weeks
+const SPOTIFY_LOOKUP_CONCURRENCY = 2;          // shared across every caller, so batched syncs stay polite
+const EDITION_WORDS = /\b(deluxe|remaster(ed)?|edition|anniversary|expanded|bonus|reissue|version|mono|stereo|legacy|collector'?s|special|super)\b/i;
+const SPOTIFY_TYPE_RANK = {album: 0, single: 1, compilation: 2};
+
+let spotifyAlbumCache = null;
+let spotifyCacheSaveTimer = null;
+function loadSpotifyAlbumCache(){
+  if(!spotifyAlbumCache){
+    try{ spotifyAlbumCache = JSON.parse(localStorage.getItem(SPOTIFY_ALBUM_CACHE_KEY)) || {}; }
+    catch(e){ spotifyAlbumCache = {}; }
+  }
+  return spotifyAlbumCache;
+}
+function saveSpotifyAlbumCache(){
+  clearTimeout(spotifyCacheSaveTimer);
+  try{ localStorage.setItem(SPOTIFY_ALBUM_CACHE_KEY, JSON.stringify(loadSpotifyAlbumCache())); }
+  catch(e){ /* storage full — lookups still work for this session, they just won't persist */ }
+}
+function scheduleSpotifyCacheSave(){
+  // Stringifying the whole cache after every single lookup adds up over a 300-album sync.
+  clearTimeout(spotifyCacheSaveTimer);
+  spotifyCacheSaveTimer = setTimeout(saveSpotifyAlbumCache, 800);
+}
+
+// Drops trailing edition markers — "(Remastered)", "[Deluxe Edition]", " - 2011 Remaster" —
+// but leaves real parentheticals like "(What's the Story) Morning Glory?" alone.
+function spotifyBaseTitle(title){
+  let t = String(title || "").trim(), prev;
+  do{
+    prev = t;
+    t = t.replace(/\s*[(\[]([^()\[\]]*)[)\]]$/, (m, inner) => EDITION_WORDS.test(inner) ? "" : m)
+      .replace(/\s+[-–—]\s+([^-–—]+)$/, (m, inner) => EDITION_WORDS.test(inner) ? "" : m)
+      .trim();
+  }while(t !== prev);
+  return t;
+}
+function isEditionTitle(name){ return spotifyBaseTitle(name) !== String(name || "").trim(); }
+function spotifyAlbumKey(artist, title){ return normName(artist) + "|||" + normName(spotifyBaseTitle(title)); }
+function spotifyThumbUrl(images){
+  // Images come widest-first; take the smallest that still looks sharp as a 44px thumbnail.
+  const list = (images || []).filter(im => im && im.url);
+  const sharp = list.filter(im => (im.width || 0) >= 120);
+  return sharp.length ? sharp[sharp.length - 1].url : (list[0] ? list[0].url : "");
+}
+function spotifyCachedAlbum(artist, title){
+  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
+  return hit && hit.found ? hit : null;
+}
+function spotifyYearFor(artist, title){
+  const hit = spotifyCachedAlbum(artist, title);
+  return hit ? hit.year : "";
+}
+
+// Picks the best result for artist + title. Exact = same artist and same base title; among
+// those the standard edition wins (for its track count), but the year is the earliest release
+// date of any exact match, so a 2011 remaster doesn't hide a 1971 original.
+function pickSpotifyAlbum(items, artist, title){
+  const wantA = normName(artist), wantT = normName(spotifyBaseTitle(title));
+  const artistExact = a => (a.artists || []).some(x => x && normName(x.name) === wantA);
+  const artistLoose = a => (a.artists || []).some(x => {
+    const n = x && normName(x.name);
+    return n && n.length >= 3 && wantA.length >= 3 && (n.indexOf(wantA) !== -1 || wantA.indexOf(n) !== -1);
+  });
+  const typeRank = a => (a.album_type in SPOTIFY_TYPE_RANK ? SPOTIFY_TYPE_RANK[a.album_type] : 3);
+  const albums = (items || []).filter(a => a && a.id && a.name);
+
+  const exact = albums.filter(a => artistExact(a) && normName(spotifyBaseTitle(a.name)) === wantT);
+  if(exact.length){
+    const chosen = exact.slice().sort((a, b) =>
+      (typeRank(a) - typeRank(b)) ||
+      (Number(isEditionTitle(a.name)) - Number(isEditionTitle(b.name))) ||
+      (a.release_date || "9999").localeCompare(b.release_date || "9999"))[0];
+    const dates = exact.map(a => a.release_date).filter(d => d && parseInt(d, 10) >= 1900).sort();
+    return {exact: true, album: chosen, releaseDate: dates[0] || ""};
+  }
+  // No exact match: remember the closest plausible one as a suggestion for the list checker.
+  const near = albums.find(a => {
+    if(!artistExact(a) && !artistLoose(a)) return false;
+    const t = normName(spotifyBaseTitle(a.name));
+    return t.length >= 3 && wantT.length >= 3 && (t.indexOf(wantT) !== -1 || wantT.indexOf(t) !== -1);
+  });
+  return {exact: false, album: near || null, releaseDate: ""};
+}
+
+async function matchSpotifyAlbum(artist, title){
+  const a = String(artist).replace(/"/g, ""), t = spotifyBaseTitle(title).replace(/"/g, "");
+  const search = async q => {
+    const data = await spotifyGet("/search", {q: q, type: "album", limit: 10});
+    return (data && data.albums && data.albums.items) || [];
+  };
+  let pick = pickSpotifyAlbum(await search('artist:"' + a + '" album:"' + t + '"'), artist, title);
+  if(!pick.exact){
+    // Field filters are strict about punctuation and spelling; a plain query catches near-misses.
+    const loose = pickSpotifyAlbum(await search(a + " " + t), artist, title);
+    if(loose.exact || !pick.album) pick = loose;
+  }
+  return pick;
+}
+
+function spotifyAlbumEntry(pick){
+  const al = pick.album;
+  const entry = {checkedAt: Date.now(), found: !!(pick.exact && al)};
+  if(!al) return entry;
+  const artists = (al.artists || []).filter(x => x && x.name);
+  const summary = {
+    id: al.id,
+    url: (al.external_urls && al.external_urls.spotify) || "",
+    artist: artists.length ? artists[0].name : "",
+    artistLine: artists.map(x => x.name).join(", "),
+    title: al.name,
+    type: al.album_type || ""
+  };
+  if(!entry.found) return Object.assign(entry, {suggestion: summary});
+  const year = (pick.releaseDate || al.release_date || "").slice(0, 4);
+  return Object.assign(entry, summary, {
+    tracks: al.total_tracks || 0,
+    releaseDate: pick.releaseDate || al.release_date || "",
+    year: /^\d{4}$/.test(year) && parseInt(year, 10) >= 1900 ? year : "",
+    image: spotifyThumbUrl(al.images)
+  });
+}
+
+let spotifyLookupsActive = 0;
+const spotifyLookupWaiters = [];
+async function withSpotifyLookupSlot(fn){
+  while(spotifyLookupsActive >= SPOTIFY_LOOKUP_CONCURRENCY){
+    await new Promise(resolve => spotifyLookupWaiters.push(resolve));
+  }
+  spotifyLookupsActive++;
+  try{ return await fn(); }
+  finally{
+    spotifyLookupsActive--;
+    const next = spotifyLookupWaiters.shift();
+    if(next) next();
+  }
+}
+
+const spotifyLookupsInFlight = {};
+// Cached album info ({found, id, url, tracks, year, image, …} or {found: false, suggestion}).
+// Throws Spotify errors; batch callers should use spotifyAlbumInfoSafe.
+async function getSpotifyAlbumInfo(artist, title, opts){
+  const key = spotifyAlbumKey(artist, title);
+  const cache = loadSpotifyAlbumCache();
+  if(!(opts && opts.force) && !spotifyNeedsLookup(artist, title)) return cache[key];
+  if(!spotifyLookupsInFlight[key]){
+    spotifyLookupsInFlight[key] = withSpotifyLookupSlot(() => matchSpotifyAlbum(artist, title))
+      .then(pick => {
+        const entry = spotifyAlbumEntry(pick);
+        cache[key] = entry;
+        scheduleSpotifyCacheSave();
+        return entry;
+      })
+      .finally(() => { delete spotifyLookupsInFlight[key]; });
+  }
+  return spotifyLookupsInFlight[key];
+}
+
+function newSpotifyLookupState(){ return {stop: null, matched: 0, missed: 0, failed: 0}; }
+// Never throws. A session-ending problem (signed out, long rate limit) goes in state.stop so the
+// rest of a batch skips Spotify and falls back to Last.fm instead of failing album by album.
+async function spotifyAlbumInfoSafe(artist, title, state, opts){
+  if(state.stop || !isSpotifyConnected()) return null;
+  try{
+    const info = await getSpotifyAlbumInfo(artist, title, opts);
+    if(info.found) state.matched++;
+    else state.missed++;
+    return info;
+  }catch(err){
+    if(err.type === "reauth" || err.type === "rate") state.stop = spotifyErrorText(err);
+    else state.failed++;
+    return null;
+  }
+}
+function spotifyLookupSummary(state){
+  if(state.stop) return "Spotify stopped: " + state.stop + ".";
+  if(!isSpotifyConnected()) return "Connect Spotify in Settings for exact track counts and years.";
+  const bits = [];
+  if(state.missed) bits.push(state.missed + " not found on Spotify");
+  if(state.failed) bits.push(state.failed + " Spotify lookup" + (state.failed === 1 ? "" : "s") + " failed");
+  return bits.length ? bits.join(", ") + "." : "";
+}
+// Manual override > Spotify's standard edition > whatever the caller already had (Last.fm).
+function preferredTrackCount(artist, title, spotifyInfo, fallback){
+  return getTrackCountOverride(artist, title)
+    || (spotifyInfo && spotifyInfo.found && spotifyInfo.tracks)
+    || fallback
+    || 0;
+}
+
+/* ---------- ALBUM COVERS + DIRECT SPOTIFY LINKS ---------- */
+// Covers come from the album lookup cache. Albums not looked up yet show their number in the
+// empty square; This Week and Reviews fill those in as you browse (Lists get them from sync).
+const COVER_HYDRATE_CHUNK = 8;
+const COVER_HYDRATE_MAX = 60;   // per render, so a long Reviews list doesn't fire hundreds of lookups at once
+
+function spotifyNeedsLookup(artist, title){
+  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
+  return !hit || (!hit.found && Date.now() - hit.checkedAt >= SPOTIFY_MISS_RETRY_MS);
+}
+function coverImgHtml(url){
+  return '<img src="' + escapeHtml(url) + '" alt="" loading="lazy" onerror="this.remove()">';
+}
+function albumCoverHtml(artist, title, label){
+  const hit = spotifyCachedAlbum(artist, title);
+  return '<div class="album-cover" data-cover-key="' + escapeHtml(spotifyAlbumKey(artist, title)) + '">' +
+      '<span class="album-cover-num">' + escapeHtml(label || "") + '</span>' +
+      (hit && hit.image ? coverImgHtml(hit.image) : '') +
+    '</div>';
+}
+function openSpotifyAlbum(artist, title){
+  const hit = spotifyCachedAlbum(artist, title);
+  if(hit && hit.url) openSpotifyUrl(hit.url);
+  else openSpotifySearch(artist, title);
+}
+function wireAlbumCover(row, artist, title){
+  const el = row.querySelector(".album-cover");
+  if(!el) return;
+  el.onclick = ev => {
+    ev.stopPropagation();   // in This Week and Reviews the row itself opens the review modal
+    openSpotifyAlbum(artist, title);
+  };
+}
+
+const coverHydrationTried = new Set();
+let coverHydrationRunning = false;
+let coverHydrationQueued = null;
+// Looks up albums on screen that have never been checked, then paints their covers in place.
+async function hydrateMissingCovers(pairs){
+  if(!isSpotifyConnected()) return;
+  if(coverHydrationRunning){ coverHydrationQueued = pairs; return; }
+  const todo = [];
+  pairs.forEach(p => {
+    const key = spotifyAlbumKey(p.artist, p.title);
+    if(todo.length >= COVER_HYDRATE_MAX || coverHydrationTried.has(key) || !spotifyNeedsLookup(p.artist, p.title)) return;
+    coverHydrationTried.add(key);   // once per session, even if the lookup fails
+    todo.push(p);
+  });
+  if(todo.length === 0) return;
+  coverHydrationRunning = true;
+  const state = newSpotifyLookupState();
+  try{
+    for(let i = 0; i < todo.length && !state.stop; i += COVER_HYDRATE_CHUNK){
+      await Promise.all(todo.slice(i, i + COVER_HYDRATE_CHUNK).map(async p => {
+        const info = await spotifyAlbumInfoSafe(p.artist, p.title, state);
+        if(info && info.found && info.image) paintCover(spotifyAlbumKey(p.artist, p.title), info.image);
+      }));
+    }
+    saveSpotifyAlbumCache();
+  }finally{
+    coverHydrationRunning = false;
+  }
+  if(coverHydrationQueued){
+    const next = coverHydrationQueued;
+    coverHydrationQueued = null;
+    hydrateMissingCovers(next);
+  }
+}
+function paintCover(key, url){
+  // Patch squares already on screen rather than re-rendering, so scroll position and open modals stay put.
+  document.querySelectorAll(".album-cover").forEach(el => {
+    if(el.dataset.coverKey === key && !el.querySelector("img")) el.insertAdjacentHTML("beforeend", coverImgHtml(url));
+  });
+}
+
 /* ---------- DISCOVER (new releases via Spotify, ranked with Last.fm, personalised) ---------- */
 // Spotify's February 2026 API changes removed /browse/new-releases, related artists and every
 // popularity field, so: candidates come from album search (tag:new = last two weeks, plus a
@@ -2657,29 +2949,6 @@ function saveDiscoverResults(){
   localStorage.setItem(DISCOVER_STORE_KEY, JSON.stringify(discoverResults));
 }
 
-async function mbFetch(url){
-  let res;
-  try{
-    res = await fetch(url);
-  }catch(networkErr){
-    throw {type: "network", detail: networkErr.message || "Failed to fetch"};
-  }
-  let text;
-  try{
-    text = await res.text();
-  }catch(err){
-    throw {type: "network", detail: "Couldn't read response (HTTP " + res.status + ")"};
-  }
-  if(!res.ok){
-    throw {type: "http", detail: "HTTP " + res.status + ": " + text.slice(0, 200)};
-  }
-  try{
-    return JSON.parse(text);
-  }catch(err){
-    throw {type: "parse", detail: "Bad JSON (HTTP " + res.status + "): " + text.slice(0, 200)};
-  }
-}
-
 async function mapLimit(items, limit, fn){
   let next = 0;
   const worker = async () => {
@@ -2717,7 +2986,8 @@ function yearFilterFor(cutoff){
   return cutoffYear < thisYear ? "year:" + cutoffYear + "-" + thisYear : "year:" + thisYear;
 }
 function normName(s){
-  return String(s || "").toLowerCase().replace(/^the\s+/, "").replace(/[^\p{L}\p{N}]+/gu, "");
+  return String(s || "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+    .replace(/&/g, " and ").replace(/^the\s+/, "").replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function normalizeSpotifyAlbum(a){
@@ -2725,10 +2995,7 @@ function normalizeSpotifyAlbum(a){
   if(!a || !a.id || !a.name || a.release_date_precision !== "day" || !a.release_date) return null;
   const artists = (a.artists || []).filter(x => x && x.name);
   if(artists.length === 0) return null;
-  // Images come widest-first; take the smallest that still looks sharp as a 44px thumbnail.
-  const images = (a.images || []).filter(im => im && im.url);
-  const sharp = images.filter(im => (im.width || 0) >= 120);
-  const image = sharp.length ? sharp[sharp.length - 1].url : (images[0] ? images[0].url : "");
+  const image = spotifyThumbUrl(a.images);
   return {
     id: a.id,
     artist: artists[0].name,
@@ -3290,23 +3557,6 @@ async function fetchRecentTracksPage(fromUnix, toUnix, page){
   return {tracks: Array.isArray(tracks) ? tracks : [tracks], totalPages: isNaN(totalPages) ? 1 : totalPages};
 }
 
-// Fallback for when Last.fm doesn't have release date / genre data for an album (common —
-// Last.fm's releasedate field is often blank). MusicBrainz is a much more reliable source for
-// this, and we're already talking to it elsewhere (Discover tab), so reuse the same approach.
-async function fetchMBYear(artist, album){
-  const q = 'artist:"' + artist.replace(/"/g, '\\"') + '" AND releasegroup:"' + album.replace(/"/g, '\\"') + '"';
-  const url = "https://musicbrainz.org/ws/2/release-group/?query=" + encodeURIComponent(q) + "&fmt=json&limit=1";
-  try{
-    const data = await mbFetch(url);
-    const rg = data["release-groups"] && data["release-groups"][0];
-    if(!rg || !rg["first-release-date"]) return "";
-    const m = rg["first-release-date"].match(/^\d{4}/);
-    return m ? m[0] : "";
-  }catch(err){
-    return "";
-  }
-}
-
 // Strips common edition suffixes ("Deluxe", "Ultra", "Extended", etc.) so scrobbles from
 // different editions of the same album merge into one count instead of splitting, and so
 // the track-count lookup is more likely to land on the same release used elsewhere in the app.
@@ -3418,7 +3668,7 @@ async function generateRecentListens(){
   // With MIN_TRACKS_FOR_ALBUM=4 and FULL_LISTEN_RATIO=0.8, an album needs at least 4 scrobbles
   // to have any mathematical chance of passing (even a real 4-track release needs 0.8*4=3.2,
   // rounding up to 4) — anything with 3 or fewer can never qualify no matter what its actual
-  // track count turns out to be. Skipping the Last.fm/MusicBrainz lookups for those entirely
+  // track count turns out to be. Skipping the Last.fm/Spotify lookups for those entirely
   // avoids a real chunk of API calls (usually the largest single group in a given week) without
   // changing which albums end up showing.
   const skippedTooFewScrobbles = groupList.filter(g => g.count < 4).length;
@@ -3446,21 +3696,22 @@ async function generateRecentListens(){
   }
   const BATCH_SIZE = 6;
   const scored = [];
+  const spState = newSpotifyLookupState();
   for(let i = 0; i < groupList.length; i += BATCH_SIZE){
     const batch = groupList.slice(i, i + BATCH_SIZE);
     note.textContent = "Checking track counts… " + Math.min(i + BATCH_SIZE, groupList.length) + " of " + groupList.length + " albums";
     const results = await Promise.all(batch.map(async g => {
-      const meta = await fetchAlbumMeta(g.artist, g.album);
-      const known = knownTrackCounts[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
-      if(known) meta.trackCount = known.trackCount;
-      // A manual override beats everything else — it's the explicit "I checked, this is the
-      // real tracklist" answer for albums Last.fm keeps resolving to a deluxe edition.
-      const manualCount = getTrackCountOverride(g.artist, g.album);
-      if(manualCount) meta.trackCount = manualCount;
-      if(!meta.year){
-        const prevYear = previousYears[g.artist.toLowerCase() + "|" + g.album.toLowerCase()];
-        if(prevYear) meta.year = prevYear;
-      }
+      const [meta, sp] = await Promise.all([
+        fetchAlbumMeta(g.artist, g.album),
+        spotifyAlbumInfoSafe(g.artist, g.album, spState)
+      ]);
+      const groupKey = g.artist.toLowerCase() + "|" + g.album.toLowerCase();
+      const known = knownTrackCounts[groupKey];
+      // Manual override > Spotify's standard edition > a count Lists already synced > Last.fm.
+      meta.trackCount = preferredTrackCount(g.artist, g.album, sp, known ? known.trackCount : meta.trackCount);
+      // Spotify's release date is the year source; Last.fm's releasedate is usually blank, and a
+      // year found on an earlier check shouldn't be wiped out by a blank now.
+      meta.year = (sp && sp.found && sp.year) || meta.year || previousYears[groupKey] || "";
       return Object.assign({}, g, meta);
     }));
     scored.push(...results);
@@ -3500,33 +3751,42 @@ async function generateRecentListens(){
   note.textContent = fullyListened.length > 0
     ? "Found " + fullyListened.length + " album" + (fullyListened.length === 1 ? "" : "s") + " listened to in full this week."
     : "Nothing hit a full-listen threshold this week — scrobbles were too spread out across albums.";
+  const spNote = spotifyLookupSummary(spState);
+  if(spNote) note.textContent += " " + spNote;
+  saveSpotifyAlbumCache();
   renderRecentResultsArea();
 }
 
-// Separate, on-demand step: fills in missing years via MusicBrainz for whatever's
-// currently showing. Kept apart from the main check above so that step stays fast —
-// MusicBrainz's anonymous rate limit needs a real pause between requests (unbatched).
+// Separate, on-demand step: retries Spotify for whatever's showing without a year — albums
+// checked before Spotify was connected, or ones it didn't match last time.
 async function checkMissingYears(){
   if(!recentResults || !recentResults.albums || recentResults.albums.length === 0) return;
-  const btn = document.getElementById("checkYearsBtn");
   const note = document.getElementById("recentNote");
   const missing = recentResults.albums.filter(g => !g.year);
   if(missing.length === 0){
     note.textContent = "Every album already has a year.";
     return;
   }
-  btn.disabled = true;
-  for(let i = 0; i < missing.length; i++){
-    note.textContent = "Checking missing years… " + (i + 1) + " of " + missing.length;
-    const year = await fetchMBYear(missing[i].artist, missing[i].album);
-    if(year) missing[i].year = year;
-    await sleep(400);
+  if(!isSpotifyConnected()){
+    note.textContent = "Connect Spotify in Settings to fill in years.";
+    openSettings();
+    return;
   }
+  const btn = document.getElementById("checkYearsBtn");
+  btn.disabled = true;
+  const spState = newSpotifyLookupState();
+  for(let i = 0; i < missing.length && !spState.stop; i++){
+    note.textContent = "Checking missing years… " + (i + 1) + " of " + missing.length;
+    const sp = await spotifyAlbumInfoSafe(missing[i].artist, missing[i].album, spState, {force: true});
+    if(sp && sp.found && sp.year) missing[i].year = sp.year;
+  }
+  saveSpotifyAlbumCache();
   btn.disabled = false;
   const filled = missing.filter(g => g.year).length;
-  note.textContent = filled > 0
+  if(spState.stop) note.textContent = "Spotify stopped: " + spState.stop + ".";
+  else note.textContent = filled > 0
     ? "Filled in " + filled + " of " + missing.length + " missing year" + (missing.length === 1 ? "" : "s") + "."
-    : "Couldn't find a year for any of the " + missing.length + " missing album" + (missing.length === 1 ? "" : "s") + " on MusicBrainz either.";
+    : "Spotify doesn't have a year for any of the " + missing.length + " missing album" + (missing.length === 1 ? "" : "s") + ".";
   saveRecentResultsToStorage();
   renderRecentResultsArea();
 }
@@ -3554,13 +3814,14 @@ function renderRecentResultsArea(){
     metaBits.push('<span>' + al.count + ' scrobble' + (al.count === 1 ? "" : "s") + '</span>');
     metaBits.push('<span>~' + al.estListens + ' full listen' + (al.estListens === 1 ? "" : "s") + (al.guessed ? ' (guessed ' + RECENT_TRACK_COUNT_GUESS + ' tracks)' : '') + '</span>');
     row.innerHTML =
-      '<div class="num">' + String(i + 1).padStart(2, "0") + '</div>' +
+      albumCoverHtml(al.artist, al.album, String(i + 1).padStart(2, "0")) +
       '<div class="discover-main">' +
         '<div class="discover-artist">' + escapeHtml(al.artist) + '</div>' +
         '<div class="discover-title">' + escapeHtml(al.album) + '</div>' +
         '<div class="discover-meta">' + metaBits.join("") + '</div>' +
       '</div>' +
       (reviewVibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + reviewVibe.url + '"></canvas>' : '');
+    wireAlbumCover(row, al.artist, al.album);
     wrap.appendChild(row);
   });
   content.innerHTML = "";
@@ -3580,7 +3841,7 @@ function renderRecentResultsArea(){
     const nmWrap = document.createElement("div");
     nmWrap.className = "near-miss-section";
     nmWrap.innerHTML = '<div class="near-miss-header">' +
-      '<div class="near-miss-sub">Usually means Last.fm matched a deluxe edition with more tracks. Tap to set the real track count.</div></div>';
+      '<div class="near-miss-sub">Usually means the album got matched to a deluxe edition with more tracks. Tap to set the real track count.</div></div>';
     nearMisses.forEach(al => {
       const row = document.createElement("div");
       row.className = "discover-card near-miss-card";
@@ -3601,6 +3862,7 @@ function renderRecentResultsArea(){
   }
 
   content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+  hydrateMissingCovers(recentResults.albums.map(al => ({artist: al.artist, title: al.album})));
 }
 
 /* ---------- TRACK COUNT OVERRIDE ---------- */
