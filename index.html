@@ -213,6 +213,10 @@
   }
   .check-btn.secondary{background:var(--card-hi); color:var(--ink-dim); border-color:var(--line);}
   .check-fixed{font-size:10.5px; color:var(--teal);}
+  .storage-usage{font-size:11px; color:var(--ink-dim); line-height:1.5;}
+  .storage-total{color:var(--ink); margin-bottom:6px;}
+  .storage-row{display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px solid var(--line);}
+  .storage-sub{margin-top:8px; overflow-wrap:anywhere;}
   .recent-btn-row{display:flex; gap:8px; align-items:stretch;}
   .recent-btn-row .sync-btn{margin-top:12px;}
   .recent-btn-row #recentGenerateBtn{flex:2; min-width:0;}
@@ -670,6 +674,12 @@
     <button class="btn-save" onclick="exportReviewsCSV()">Export reviews (CSV)</button>
   </div>
   <div class="sync-note" id="reviewsExportNote"></div>
+  <div class="divider-line"></div>
+  <p>
+    Storage used on this device, for debugging slow syncs. Safari allows roughly 5 MB per site. Caches
+    (Spotify, Discover, This Week) rebuild themselves; lists, progress and reviews don't.
+  </p>
+  <div class="storage-usage" id="storageUsage"></div>
   <div class="modal-actions" style="margin-top:10px;">
     <button class="btn-close" onclick="closeAllModals()">Close</button>
   </div>
@@ -2177,8 +2187,59 @@ async function shareList(){
 /* ---------- BACKUP & RESTORE ---------- */
 function openBackupModal(){
   document.getElementById("backupNote").textContent = "";
+  renderStorageUsage();
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("backupModal").classList.add("open");
+}
+// Debug aid: what's taking up this site's localStorage (Safari allows roughly 5 MB per site).
+function storageUsageGroup(key){
+  if(key === SPOTIFY_ALBUM_CACHE_KEY) return "Spotify album cache";
+  if(key.indexOf("ll_progress_") === 0) return "List progress";
+  if(key.indexOf("ll_discover") === 0) return "Discover results";
+  if(key === "ll_recent_results") return "This Week results";
+  if(key === "ll_album_reviews") return "Reviews";
+  if(key === "ll_custom_lists" || key === "ll_list_meta" || key === "ll_folders" || key.indexOf("ll_added_") === 0) return "Lists & folders";
+  return "Settings & other";
+}
+function formatCharCount(n){
+  if(n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if(n >= 1000) return (n / 1000).toFixed(1) + "K";
+  return String(n);
+}
+function renderStorageUsage(){
+  const el = document.getElementById("storageUsage");
+  const groups = {}, keys = [];
+  let total = 0;
+  for(let i = 0; i < localStorage.length; i++){
+    const key = localStorage.key(i);
+    if(!key) continue;
+    const size = key.length + (localStorage.getItem(key) || "").length;
+    total += size;
+    keys.push({key, size});
+    const g = storageUsageGroup(key);
+    if(!groups[g]) groups[g] = {size: 0, count: 0};
+    groups[g].size += size;
+    groups[g].count++;
+  }
+  const cache = loadSpotifyAlbumCache();
+  let matched = 0, missed = 0;
+  Object.keys(cache).forEach(k => {
+    if(k === "__version") return;
+    if(cache[k].found) matched++;
+    else missed++;
+  });
+  const rows = Object.keys(groups).sort((a, b) => groups[b].size - groups[a].size).map(g => {
+    let detail = "";
+    if(g === "Spotify album cache") detail = " · " + matched + " matched, " + missed + " not found";
+    if(g === "List progress") detail = " · " + groups[g].count + " list" + (groups[g].count === 1 ? "" : "s");
+    return '<div class="storage-row"><span>' + g + detail + '</span><span>' + formatCharCount(groups[g].size) + '</span></div>';
+  });
+  keys.sort((a, b) => b.size - a.size);
+  el.innerHTML =
+    '<div class="storage-total">' + formatCharCount(total) + ' characters · ~' + (total * 2 / 1e6).toFixed(1) +
+      ' MB at 2 bytes per character</div>' +
+    rows.join("") +
+    '<div class="storage-sub">Largest keys: ' + keys.slice(0, 4).map(k => escapeHtml(k.key) + ' (' + formatCharCount(k.size) + ')').join(", ") + '</div>';
 }
 function gatherBackupData(){
   // "Lists & folders" backup: list definitions, folder structure, albums added via
@@ -2695,30 +2756,104 @@ const SPOTIFY_MISS_RETRY_MS = 14 * 86400000;   // albums Spotify didn't have get
 const SPOTIFY_LOOKUP_CONCURRENCY = 2;          // shared across every caller, so batched syncs stay polite
 const EDITION_WORDS = /\b(deluxe|remaster(ed)?|edition|anniversary|expanded|bonus|reissue|version|mono|stereo|legacy|collector'?s|special|super)\b/i;
 const SPOTIFY_TYPE_RANK = {album: 0, single: 1, compilation: 2};
-const SPOTIFY_ALBUM_CACHE_VERSION = 2;   // bump when matching changes enough that old misses deserve a re-check
+// v2: misses from before the forgiving matching were dropped. v3: entries stored compactly.
+const SPOTIFY_ALBUM_CACHE_VERSION = 3;
+const SPOTIFY_IMAGE_PREFIX = "https://i.scdn.co/image/";
+const SPOTIFY_ALBUM_URL_PREFIX = "https://open.spotify.com/album/";
 
 let spotifyAlbumCache = null;
 let spotifyCacheSaveTimer = null;
+// In memory every entry is the full shape the rest of the app reads ({found, id, url, artist,
+// artists, title, tracks, year, image, …}); on disk it's compact. Both the old full format and the
+// compact one load, so existing caches carry over as they are.
 function loadSpotifyAlbumCache(){
   if(!spotifyAlbumCache){
-    try{ spotifyAlbumCache = JSON.parse(localStorage.getItem(SPOTIFY_ALBUM_CACHE_KEY)) || {}; }
-    catch(e){ spotifyAlbumCache = {}; }
-    if(spotifyAlbumCache.__version !== SPOTIFY_ALBUM_CACHE_VERSION){
-      // Matching got more forgiving (other-script names, longer credits), so re-check old misses
-      // now rather than after the two-week retry. Existing matches are still right and stay.
-      Object.keys(spotifyAlbumCache).forEach(k => {
-        const v = spotifyAlbumCache[k];
-        if(!v || typeof v !== "object" || !v.found) delete spotifyAlbumCache[k];
-      });
-      spotifyAlbumCache.__version = SPOTIFY_ALBUM_CACHE_VERSION;
-    }
+    let raw;
+    try{ raw = JSON.parse(localStorage.getItem(SPOTIFY_ALBUM_CACHE_KEY)) || {}; }
+    catch(e){ raw = {}; }
+    if(!raw || typeof raw !== "object") raw = {};
+    const version = raw.__version || 1;
+    spotifyAlbumCache = {};
+    Object.keys(raw).forEach(k => {
+      if(k === "__version") return;
+      const entry = expandSpotifyAlbumEntry(raw[k]);
+      if(!entry) return;
+      // v1 misses predate the forgiving matching (other-script names, longer credits): re-check them
+      // now rather than after the two-week retry. Matches are still right and stay.
+      if(version < 2 && !entry.found) return;
+      spotifyAlbumCache[k] = entry;
+    });
+    spotifyAlbumCache.__version = SPOTIFY_ALBUM_CACHE_VERSION;
+    // Rewrite an older cache compactly right away. If that write fails, the old copy is still on
+    // disk and still loads next time.
+    if(version < SPOTIFY_ALBUM_CACHE_VERSION && Object.keys(raw).length > 1) saveSpotifyAlbumCache();
   }
   return spotifyAlbumCache;
 }
 function saveSpotifyAlbumCache(){
   clearTimeout(spotifyCacheSaveTimer);
-  try{ localStorage.setItem(SPOTIFY_ALBUM_CACHE_KEY, JSON.stringify(loadSpotifyAlbumCache())); }
+  const cache = loadSpotifyAlbumCache();
+  const out = {__version: SPOTIFY_ALBUM_CACHE_VERSION};
+  Object.keys(cache).forEach(k => {
+    if(k !== "__version" && cache[k]) out[k] = compactSpotifyAlbumEntry(cache[k]);
+  });
+  try{ localStorage.setItem(SPOTIFY_ALBUM_CACHE_KEY, JSON.stringify(out)); }
   catch(e){ /* storage full — lookups still work for this session, they just won't persist */ }
+}
+
+// Compact form. Found: {found: 1, i: id, a: [artists], t: title, k: type (omitted for "album"),
+// n: tracks, d: releaseDate, m: image (i.scdn.co prefix dropped)}. Miss: {checkedAt, s: suggestion}.
+// url, artist, artistLine and year are rebuilt on load. "found" and "checkedAt" keep their old
+// names so an older version of the app still reads matches as matches and retries misses on time.
+function compactSpotifySummary(s){
+  const out = {i: s.id, a: spotifyCreditedArtists(s), t: s.title || ""};
+  if(s.type && s.type !== "album") out.k = s.type;
+  return out;
+}
+function compactSpotifyAlbumEntry(e){
+  if(e.found){
+    const out = Object.assign({found: 1}, compactSpotifySummary(e), {n: e.tracks || 0, d: e.releaseDate || ""});
+    if(e.image) out.m = e.image.indexOf(SPOTIFY_IMAGE_PREFIX) === 0 ? e.image.slice(SPOTIFY_IMAGE_PREFIX.length) : e.image;
+    return out;
+  }
+  const out = {checkedAt: e.checkedAt || 0};
+  if(e.suggestion) out.s = compactSpotifySummary(e.suggestion);
+  return out;
+}
+function expandSpotifySummary(c){
+  const artists = Array.isArray(c.a) ? c.a.filter(Boolean) : [];
+  return {
+    id: c.i || "",
+    url: c.i ? SPOTIFY_ALBUM_URL_PREFIX + c.i : "",
+    artist: artists[0] || "",
+    artistLine: artists.join(", "),
+    artists: artists,
+    title: c.t || "",
+    type: c.k || "album"
+  };
+}
+function expandSpotifyAlbumEntry(v){
+  if(!v || typeof v !== "object") return null;
+  if(v.i !== undefined){   // compact match
+    const d = v.d || "";
+    const y = d.slice(0, 4);
+    return Object.assign(expandSpotifySummary(v), {
+      checkedAt: v.checkedAt || 0,
+      found: true,
+      tracks: v.n || 0,
+      releaseDate: d,
+      year: /^\d{4}$/.test(y) && parseInt(y, 10) >= 1900 ? y : "",
+      image: v.m ? (v.m.indexOf("://") === -1 ? SPOTIFY_IMAGE_PREFIX + v.m : v.m) : ""
+    });
+  }
+  if(v.found === true){   // old full-format match: already the in-memory shape, just make sure artists is filled
+    return Object.assign({}, v, {artists: spotifyCreditedArtists(v)});
+  }
+  // A miss, old or compact
+  const entry = {checkedAt: v.checkedAt || 0, found: false};
+  const suggestion = v.s ? expandSpotifySummary(v.s) : v.suggestion ? Object.assign({}, v.suggestion, {artists: spotifyCreditedArtists(v.suggestion)}) : null;
+  if(suggestion) entry.suggestion = suggestion;
+  return entry;
 }
 function scheduleSpotifyCacheSave(){
   // Stringifying the whole cache after every single lookup adds up over a 300-album sync.
