@@ -680,6 +680,7 @@
     (Spotify, Discover, This Week) rebuild themselves; lists, progress and reviews don't.
   </p>
   <div class="storage-usage" id="storageUsage"></div>
+  <div class="storage-usage" id="spotifyDebug" style="margin-top:16px;"></div>
   <div class="modal-actions" style="margin-top:10px;">
     <button class="btn-close" onclick="closeAllModals()">Close</button>
   </div>
@@ -2188,6 +2189,7 @@ async function shareList(){
 function openBackupModal(){
   document.getElementById("backupNote").textContent = "";
   renderStorageUsage();
+  renderSpotifyDebug();
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("backupModal").classList.add("open");
 }
@@ -2490,7 +2492,6 @@ const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 const SPOTIFY_AUTH_KEY = "ll_spotify_auth";   // {access_token, refresh_token, scope, expires_at}
 const SPOTIFY_PKCE_KEY = "ll_spotify_pkce";   // verifier + state, only between authorize and callback
 const SPOTIFY_MAX_ATTEMPTS = 5;
-const SPOTIFY_MAX_WAIT_MS = 60000;            // a longer Retry-After gets reported, not waited out
 
 function spotifyRedirectUri(){
   // Must exactly match a Redirect URI registered in the Spotify dashboard:
@@ -2702,21 +2703,119 @@ function describeSpotifyStatus(status, message){
   return "Spotify error (" + msg + ")";
 }
 
-// GET against the Web API with token refresh, Retry-After-aware 429 handling, and exponential
-// backoff for network blips and 5xx. Throws {type, status, detail}.
+/* --- rate limiting --- */
+// Spotify limits calls per rolling 30 s window, and its Retry-After header isn't readable from a web
+// page (not in Access-Control-Expose-Headers). So instead of retrying in place, any 429 pauses every
+// Spotify call app-wide — persisted, so a reload doesn't start hammering again — escalating on
+// repeat limits. Requests are also spaced out globally, more widely after recent limits.
+const SPOTIFY_COOLDOWN_KEY = "ll_spotify_cooldown";   // {until, strikes}
+const SPOTIFY_LOG_KEY = "ll_spotify_log";              // recent requests, for the Backup modal
+const SPOTIFY_BASE_INTERVAL_MS = 350;
+const SPOTIFY_COOLDOWN_BASE_MS = 30000;
+const SPOTIFY_COOLDOWN_MAX_MS = 30 * 60000;
+const SPOTIFY_STRIKE_RESET_SUCCESSES = 25;
+const SPOTIFY_LOG_MAX = 200;
+
+function loadSpotifyCooldown(){
+  try{
+    const c = JSON.parse(localStorage.getItem(SPOTIFY_COOLDOWN_KEY));
+    if(c && typeof c.until === "number") return {until: c.until, strikes: c.strikes || 0};
+  }catch(e){}
+  return {until: 0, strikes: 0};
+}
+function saveSpotifyCooldown(c){
+  try{ localStorage.setItem(SPOTIFY_COOLDOWN_KEY, JSON.stringify(c)); }catch(e){}
+}
+function spotifyCooldownRemainingMs(){ return Math.max(0, loadSpotifyCooldown().until - Date.now()); }
+function formatWaitDuration(ms){
+  const secs = Math.ceil(ms / 1000);
+  return secs >= 90 ? Math.ceil(secs / 60) + " min" : secs + " s";
+}
+function spotifyRateError(){
+  return {type: "rate", status: 429, detail: "Spotify is rate limiting this app — paused for " + formatWaitDuration(spotifyCooldownRemainingMs())};
+}
+function noteSpotifyRateLimit(retryAfterSecs){
+  const c = loadSpotifyCooldown();
+  // A request already in flight when the pause started isn't a new strike.
+  if(Date.now() >= c.until) c.strikes = Math.min((c.strikes || 0) + 1, 10);
+  const wait = retryAfterSecs > 0
+    ? retryAfterSecs * 1000
+    : Math.min(SPOTIFY_COOLDOWN_BASE_MS * Math.pow(2, Math.max(0, c.strikes - 1)), SPOTIFY_COOLDOWN_MAX_MS);
+  c.until = Math.max(c.until || 0, Date.now() + wait);
+  saveSpotifyCooldown(c);
+  spotifySuccessStreak = 0;
+}
+let spotifySuccessStreak = 0;
+function noteSpotifySuccess(){
+  spotifySuccessStreak++;
+  if(spotifySuccessStreak < SPOTIFY_STRIKE_RESET_SUCCESSES) return;
+  spotifySuccessStreak = 0;
+  const c = loadSpotifyCooldown();
+  if(c.strikes){ c.strikes = 0; saveSpotifyCooldown(c); }
+}
+function spotifyRequestIntervalMs(){
+  return SPOTIFY_BASE_INTERVAL_MS * Math.pow(2, Math.min(loadSpotifyCooldown().strikes || 0, 3));
+}
+let spotifyNextRequestAt = 0;
+async function spotifyPace(){
+  const now = Date.now();
+  const at = Math.max(now, spotifyNextRequestAt);
+  spotifyNextRequestAt = at + spotifyRequestIntervalMs();
+  if(at > now) await sleep(at - now);
+}
+
+let spotifyLog = null;
+let spotifyLogSaveTimer = null;
+function loadSpotifyLog(){
+  if(!spotifyLog){
+    try{ spotifyLog = JSON.parse(localStorage.getItem(SPOTIFY_LOG_KEY)); }catch(e){}
+    if(!Array.isArray(spotifyLog)) spotifyLog = [];
+  }
+  return spotifyLog;
+}
+function logSpotifyRequest(path, status, note){
+  const log = loadSpotifyLog();
+  log.push({t: Date.now(), p: path, s: status, n: note || ""});
+  if(log.length > SPOTIFY_LOG_MAX) log.splice(0, log.length - SPOTIFY_LOG_MAX);
+  // Throttled, not debounced: a long sync still gets its log written every couple of seconds.
+  if(!spotifyLogSaveTimer){
+    spotifyLogSaveTimer = setTimeout(() => {
+      spotifyLogSaveTimer = null;
+      try{ localStorage.setItem(SPOTIFY_LOG_KEY, JSON.stringify(loadSpotifyLog())); }catch(e){}
+    }, 2000);
+  }
+}
+
+// GET against the Web API: paced, pauses app-wide on 429, refreshes the token once on 401, and
+// backs off briefly for network blips and 5xx. Throws {type, status, detail}.
 async function spotifyGet(path, query){
   const url = SPOTIFY_API + path + (query ? "?" + new URLSearchParams(query).toString() : "");
   let refreshed = false;
   for(let attempt = 0; attempt < SPOTIFY_MAX_ATTEMPTS; attempt++){
+    if(spotifyCooldownRemainingMs() > 0) throw spotifyRateError();
+    await spotifyPace();
+    // Another request may have hit the limit while this one waited its turn.
+    if(spotifyCooldownRemainingMs() > 0) throw spotifyRateError();
     const token = await getSpotifyAccessToken();
     let res;
     try{
       res = await fetch(url, {headers: {Authorization: "Bearer " + token}});
     }catch(e){
+      logSpotifyRequest(path, 0, "network error");
       if(attempt < 2){ await sleep(spotifyBackoffMs(attempt)); continue; }
       throw {type: "network", detail: "couldn't reach Spotify"};
     }
-    if(res.ok) return res.status === 204 ? null : res.json();
+    if(res.status === 429){
+      const header = res.headers.get("Retry-After");
+      logSpotifyRequest(path, 429, header ? "Retry-After " + header + " s" : "Retry-After not readable");
+      noteSpotifyRateLimit(parseInt(header, 10));
+      throw spotifyRateError();
+    }
+    logSpotifyRequest(path, res.status);
+    if(res.ok){
+      noteSpotifySuccess();
+      return res.status === 204 ? null : res.json();
+    }
 
     const message = await readSpotifyErrorMessage(res);
     if(res.status === 401){
@@ -2729,22 +2828,38 @@ async function spotifyGet(path, query){
       localStorage.removeItem(SPOTIFY_AUTH_KEY);
       throw {type: "reauth", status: 401, detail: describeSpotifyStatus(401, message) + " — tap Connect Spotify to sign in again"};
     }
-    if(res.status === 429){
-      const retryAfter = parseInt(res.headers.get("Retry-After"), 10);
-      const wait = isNaN(retryAfter) ? spotifyBackoffMs(attempt) : retryAfter * 1000;
-      if(wait > SPOTIFY_MAX_WAIT_MS){
-        throw {type: "rate", status: 429, detail: "Spotify's rate limit was hit — try again in about " + Math.ceil(wait / 60000) + " min"};
-      }
-      await sleep(wait + Math.random() * 250);
-      continue;
-    }
     if(res.status >= 500 && attempt < SPOTIFY_MAX_ATTEMPTS - 1){
       await sleep(spotifyBackoffMs(attempt));
       continue;
     }
     throw {type: "http", status: res.status, detail: describeSpotifyStatus(res.status, message)};
   }
-  throw {type: "rate", status: 429, detail: "Spotify kept turning requests away — try again in a few minutes"};
+  throw {type: "http", status: 503, detail: "Spotify kept failing — try again in a few minutes"};
+}
+
+// Debug readout in the Backup modal.
+function renderSpotifyDebug(){
+  const el = document.getElementById("spotifyDebug");
+  const c = loadSpotifyCooldown();
+  const remaining = spotifyCooldownRemainingMs();
+  const log = loadSpotifyLog();
+  const now = Date.now();
+  const since = ms => log.filter(x => now - x.t <= ms);
+  const last10 = since(600000);
+  const status = !isSpotifyConnected() ? "not connected"
+    : remaining > 0 ? "paused for " + formatWaitDuration(remaining) + " after a rate limit"
+    : "ready";
+  const time = t => new Date(t).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit", second: "2-digit"});
+  el.innerHTML =
+    '<div class="storage-total">Spotify: ' + status + '</div>' +
+    '<div class="storage-row"><span>Rate-limit strikes \u00b7 request spacing</span><span>' + (c.strikes || 0) + ' \u00b7 ' + spotifyRequestIntervalMs() + ' ms</span></div>' +
+    '<div class="storage-row"><span>Requests, last 30 s / 10 min</span><span>' + since(30000).length + ' / ' + last10.length + '</span></div>' +
+    '<div class="storage-row"><span>Rate limited (429), last 10 min</span><span>' + last10.filter(x => x.s === 429).length + '</span></div>' +
+    '<div class="storage-sub">Recent requests:<br>' +
+      (log.length
+        ? log.slice(-12).reverse().map(x => time(x.t) + ' \u00b7 ' + (x.s || "ERR") + ' \u00b7 ' + escapeHtml(x.p) + (x.n ? ' \u00b7 ' + escapeHtml(x.n) : '')).join('<br>')
+        : 'none logged yet') +
+    '</div>';
 }
 
 /* ---------- SPOTIFY ALBUM LOOKUP (track counts, release years, covers, links) ---------- */
