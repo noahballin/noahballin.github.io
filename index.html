@@ -488,6 +488,7 @@
     </div>
     <button class="sync-btn needs-setup" id="syncBtn" onclick="handleSyncClick()">Connect Last.fm to sync</button>
     <div class="sync-note" id="syncNote"></div>
+    <span class="edit-link hidden" id="fullSyncLink" onclick="handleSyncClick(true)">Full resync (re-checks every album)</span>
   </div>
 
   <div id="discoverHeader" class="hidden">
@@ -673,9 +674,10 @@
 <div class="modal" id="backupModal">
   <h2>Backup &amp; restore</h2>
   <p>
-    Exports your lists and folders — including any album edits, additions, and deletions — as one file.
-    Doesn't include settings, reviews, or listening progress/sync state. Save it to Files or iCloud Drive,
-    or send it to yourself, so you don't lose anything if you ever clear Safari data or switch devices.
+    Exports your lists and folders — including album edits, additions and deletions — plus your manual
+    listened checks, reviews and track-count fixes, as one file. Doesn't include settings or scrobble
+    counts (a sync brings those back). Save it to Files or iCloud Drive, or send it to yourself, so you
+    don't lose anything if you ever clear Safari data or switch devices.
   </p>
   <div class="modal-actions">
     <button class="btn-save" onclick="exportBackup()">Export backup</button>
@@ -877,11 +879,57 @@ const VIBE_EMOTES = [
   {id: "01HV7MXY5R00010B69FDA35GV6", url: "https://cdn.7tv.app/emote/01HV7MXY5R00010B69FDA35GV6/2x.gif"}
 ];
 
+/* ---------- STORAGE WRITES ---------- */
+// Lists, progress and reviews can't be rebuilt, so their writes never fail quietly. If the site's
+// storage is full, rebuildable caches are cleared — cheapest to refill first — and the write retried.
+const CACHE_EVICTION_STEPS = [
+  () => localStorage.removeItem("ll_spotify_log"),
+  () => localStorage.removeItem("ll_discover_spotify_v1"),
+  () => localStorage.removeItem("ll_recent_results"),
+  () => dropSpotifyCacheMisses(),
+  () => localStorage.removeItem("ll_spotify_albums")
+];
+let storageFullAlertAt = 0;
+function isQuotaError(e){
+  return !!e && (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22 || e.code === 1014);
+}
+function saveUserData(key, value){
+  for(let step = 0; ; step++){
+    try{
+      localStorage.setItem(key, value);
+      return true;
+    }catch(e){
+      if(isQuotaError(e) && step < CACHE_EVICTION_STEPS.length){
+        try{ CACHE_EVICTION_STEPS[step](); }catch(err){}
+        continue;
+      }
+      // One alert per burst, so a sync that keeps failing doesn't pop one per batch.
+      if(Date.now() - storageFullAlertAt > 60000){
+        storageFullAlertAt = Date.now();
+        alert(isQuotaError(e)
+          ? "Couldn't save — this site's storage is full, even after clearing caches. Export a backup from Backup & restore now."
+          : "Couldn't save to this device's storage (" + (e && e.message || "unknown error") + ").");
+      }
+      return false;
+    }
+  }
+}
+// Ask the browser not to clear this site's data when the device is low on space.
+let storagePersisted = null;
+try{
+  if(navigator.storage && navigator.storage.persist){
+    navigator.storage.persisted()
+      .then(p => p || navigator.storage.persist())
+      .then(p => { storagePersisted = p; })
+      .catch(() => {});
+  }
+}catch(e){}
+
 function loadReviews(){
   try{ return JSON.parse(localStorage.getItem("ll_album_reviews")) || {}; }
   catch(e){ return {}; }
 }
-function saveReviewsStore(obj){ localStorage.setItem("ll_album_reviews", JSON.stringify(obj)); }
+function saveReviewsStore(obj){ return saveUserData("ll_album_reviews", JSON.stringify(obj)); }
 function reviewKey(artist, title){ return (artist + "|||" + title).toLowerCase().trim(); }
 
 let reviewingKey = null;
@@ -980,7 +1028,7 @@ function saveReviewModal(){
     vibe: reviewDraft.vibe,
     reviewedAt: Date.now()
   };
-  saveReviewsStore(reviews);
+  if(!saveReviewsStore(reviews)) return;   // leave the modal open so the review isn't lost
   closeAllModals();
   render();
 }
@@ -1409,13 +1457,13 @@ function loadSettings(){
   }catch(e){}
   return {username:"", apiKey:"01d425cd6460bc65ad8bbb3d0a138353"};
 }
-function saveSettingsObj(s){ localStorage.setItem("ll_settings", JSON.stringify(s)); }
+function saveSettingsObj(s){ return saveUserData("ll_settings", JSON.stringify(s)); }
 
 function loadCustomLists(){
   try{ return JSON.parse(localStorage.getItem("ll_custom_lists")) || []; }
   catch(e){ return []; }
 }
-function saveCustomLists(l){ localStorage.setItem("ll_custom_lists", JSON.stringify(l)); }
+function saveCustomLists(l){ return saveUserData("ll_custom_lists", JSON.stringify(l)); }
 
 /* Albums a user has added on top of a list's original data (works for built-in AND custom lists,
    without ever mutating the original array — keeps progress indices stable). */
@@ -1423,7 +1471,7 @@ function loadAddedAlbums(listId){
   try{ return JSON.parse(localStorage.getItem("ll_added_" + listId)) || []; }
   catch(e){ return []; }
 }
-function saveAddedAlbums(listId, arr){ localStorage.setItem("ll_added_" + listId, JSON.stringify(arr)); }
+function saveAddedAlbums(listId, arr){ return saveUserData("ll_added_" + listId, JSON.stringify(arr)); }
 function effectiveAlbums(list){ return list.albums.concat(loadAddedAlbums(list.id)); }
 
 // Manual per-album track-count overrides. Last.fm sometimes resolves an album to its deluxe /
@@ -1434,7 +1482,7 @@ function loadTrackCountOverrides(){
   try{ return JSON.parse(localStorage.getItem("ll_trackcount_overrides")) || {}; }
   catch(e){ return {}; }
 }
-function saveTrackCountOverrides(obj){ localStorage.setItem("ll_trackcount_overrides", JSON.stringify(obj)); }
+function saveTrackCountOverrides(obj){ return saveUserData("ll_trackcount_overrides", JSON.stringify(obj)); }
 function trackCountOverrideKey(artist, album){ return (artist + "|||" + album).toLowerCase().trim(); }
 function getTrackCountOverride(artist, album){
   const o = loadTrackCountOverrides()[trackCountOverrideKey(artist, album)];
@@ -1468,13 +1516,13 @@ function loadFolders(){
   try{ return JSON.parse(localStorage.getItem("ll_folders")) || []; }
   catch(e){ return []; }
 }
-function saveFoldersObj(f){ localStorage.setItem("ll_folders", JSON.stringify(f)); }
+function saveFoldersObj(f){ return saveUserData("ll_folders", JSON.stringify(f)); }
 
 function loadListMeta(){
   try{ return JSON.parse(localStorage.getItem("ll_list_meta")) || {}; }
   catch(e){ return {}; }
 }
-function saveListMeta(m){ localStorage.setItem("ll_list_meta", JSON.stringify(m)); }
+function saveListMeta(m){ return saveUserData("ll_list_meta", JSON.stringify(m)); }
 
 let settings = loadSettings();
 let customLists = loadCustomLists();
@@ -1535,15 +1583,54 @@ function setListFolder(id, folderId){
 /* ---------- PROGRESS HELPERS (list-agnostic) ---------- */
 const DEFAULT_TRACK_COUNT_GUESS = 10; // used only when Last.fm doesn't return a tracklist for an album
 
+// On disk an entry keeps only the fields that differ from these defaults (a full entry is ~150
+// characters, most of it nulls); loading fills the rest back in, so everything else can keep
+// testing e.playcount === null and friends. lfv = Last.fm name variants that had plays last sync.
+const PROGRESS_DEFAULTS = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, ov_y:null, ov_g:null, notFound:null, hidden:false, lfv:null};
 function getProgressFor(listId){
-  try{ return JSON.parse(localStorage.getItem("ll_progress_" + listId)) || {}; }
-  catch(e){ return {}; }
+  let raw;
+  try{ raw = JSON.parse(localStorage.getItem("ll_progress_" + listId)) || {}; }
+  catch(e){ raw = {}; }
+  const prog = {};
+  Object.keys(raw).forEach(i => {
+    if(raw[i] && typeof raw[i] === "object") prog[i] = Object.assign({}, PROGRESS_DEFAULTS, raw[i]);
+  });
+  return prog;
+}
+function compactProgress(prog){
+  const out = {};
+  Object.keys(prog).forEach(i => {
+    const e = prog[i];
+    if(!e) return;
+    const c = {};
+    Object.keys(e).forEach(f => {
+      const v = e[f];
+      if(v === null || v === undefined) return;
+      if((f === "hidden" || f === "notFound") && v === false) return;
+      c[f] = v;
+    });
+    if(Object.keys(c).length) out[i] = c;
+  });
+  return out;
 }
 function saveProgressFor(listId, prog){
-  localStorage.setItem("ll_progress_" + listId, JSON.stringify(prog));
+  return saveUserData("ll_progress_" + listId, JSON.stringify(compactProgress(prog)));
 }
+// One-time: rewrite progress saved before entries were compacted.
+(function compactStoredProgress(){
+  const FLAG = "ll_format_progress";   // deliberately not under the ll_progress_ prefix
+  if(localStorage.getItem(FLAG) === "2") return;
+  const ids = [];
+  for(let i = 0; i < localStorage.length; i++){
+    const key = localStorage.key(i);
+    if(key && key.indexOf("ll_progress_") === 0) ids.push(key.slice("ll_progress_".length));
+  }
+  if(ids.every(id => saveProgressFor(id, getProgressFor(id)))){
+    try{ localStorage.setItem(FLAG, "2"); }catch(e){}
+  }
+})();
 function entryForIn(prog, i){
-  if(!prog[i]) prog[i] = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, ov_y:null, ov_g:null, notFound:null, hidden:false};
+  if(!prog[i]) prog[i] = Object.assign({}, PROGRESS_DEFAULTS);
   return prog[i];
 }
 function lookupArtistIn(list, prog, i){
@@ -1861,6 +1948,7 @@ function renderAlbums(){
     syncBtn.textContent = "Sync with Last.fm";
     syncBtn.classList.remove("needs-setup");
   }
+  document.getElementById("fullSyncLink").classList.toggle("hidden", !settings.username || !settings.apiKey);
 }
 
 function toggleManual(i){
@@ -1932,6 +2020,7 @@ function applyAlbumEdit(i, a, t, y, g){
   e.trackCount = null;
   e.syncedAt = null;
   e.notFound = null;
+  e.lfv = null;
   // If the new name matches an album you've already reviewed, that's a clear signal you've
   // heard it — without this, clearing the sync state above would make it look "unlistened"
   // again until the next sync, even though a review (and its vibe emote) says otherwise.
@@ -2298,16 +2387,22 @@ function renderStorageUsage(){
   el.innerHTML =
     '<div class="storage-total">' + formatCharCount(total) + ' characters · ~' + (total * 2 / 1e6).toFixed(1) +
       ' MB at 2 bytes per character</div>' +
+    '<div class="storage-row"><span>Protected from automatic clearing</span><span>' +
+      (storagePersisted === null ? "unknown" : storagePersisted ? "yes" : "no") + '</span></div>' +
     rows.join("") +
     '<div class="storage-sub">Largest keys: ' + keys.slice(0, 4).map(k => escapeHtml(k.key) + ' (' + formatCharCount(k.size) + ')').join(", ") + '</div>';
 }
+// Version 2 backups carry reviews, track-count overrides and manual listened checks too.
+const BACKUP_VERSION = 2;
+const RESTORED_CONTENT_FIELDS = ["ov_a", "ov_t", "ov_y", "ov_g", "hidden"];
 function gatherBackupData(){
-  // "Lists & folders" backup: list definitions, folder structure, albums added via
-  // "+ Add album", and any album edits/deletions — but not settings, reviews, or
-  // listening progress/sync state (manual checks, scrobble counts, Last.fm match status).
+  // Everything you made by hand: list definitions, folder structure, albums added via
+  // "+ Add album", album edits/deletions, manual listened checks, reviews and track-count
+  // overrides. Not settings, tokens, caches, or Last.fm sync state (scrobble counts, match
+  // status) — a sync rebuilds those.
   const data = {};
 
-  ["ll_custom_lists", "ll_list_meta", "ll_folders"].forEach(key => {
+  ["ll_custom_lists", "ll_list_meta", "ll_folders", "ll_album_reviews", "ll_trackcount_overrides"].forEach(key => {
     const val = localStorage.getItem(key);
     if(val !== null) data[key] = val;
   });
@@ -2321,11 +2416,12 @@ function gatherBackupData(){
       continue;
     }
 
-    // Progress entries mix list-content edits (ov_a/ov_t/ov_y/ov_g/hidden) with pure listening
-    // activity (manual/playcount/trackCount/syncedAt/notFound) — keep only the former.
+    // Progress entries mix things you set (ov_a/ov_t/ov_y/ov_g/hidden, manual checks) with sync
+    // state (playcount/trackCount/syncedAt/notFound/lfv) — keep only the former.
     if(key.indexOf("ll_progress_") === 0){
       let parsed;
       try{ parsed = JSON.parse(localStorage.getItem(key)); }catch(e){ continue; }
+      if(!parsed || typeof parsed !== "object") continue;
       const trimmed = {};
       Object.keys(parsed).forEach(idx => {
         const e = parsed[idx] || {};
@@ -2335,13 +2431,39 @@ function gatherBackupData(){
         if(e.ov_y) contentOnly.ov_y = e.ov_y;
         if(e.ov_g) contentOnly.ov_g = e.ov_g;
         if(e.hidden) contentOnly.hidden = true;
+        if(e.manual === true || e.manual === false) contentOnly.manual = e.manual;
         if(Object.keys(contentOnly).length > 0) trimmed[idx] = contentOnly;
       });
       if(Object.keys(trimmed).length > 0) data[key] = JSON.stringify(trimmed);
     }
   }
 
-  return {app: "listening-log", exportedAt: Date.now(), data: data};
+  return {app: "listening-log", version: BACKUP_VERSION, exportedAt: Date.now(), data: data};
+}
+// A restore replaces list content and manual checks with the backup's but keeps this device's
+// scrobble counts, except for albums whose artist/title the backup changes.
+function mergeRestoredProgress(local, restored, includesManual){
+  const fields = includesManual ? RESTORED_CONTENT_FIELDS.concat("manual") : RESTORED_CONTENT_FIELDS;
+  const out = {};
+  new Set(Object.keys(local).concat(Object.keys(restored || {}))).forEach(i => {
+    const e = Object.assign({}, PROGRESS_DEFAULTS, local[i]);
+    const r = (restored && restored[i]) || {};
+    const renamed = (r.ov_a || null) !== (e.ov_a || null) || (r.ov_t || null) !== (e.ov_t || null);
+    fields.forEach(f => { e[f] = r[f] !== undefined ? r[f] : PROGRESS_DEFAULTS[f]; });
+    if(renamed) Object.assign(e, {playcount: null, trackCount: null, syncedAt: null, notFound: null, lfv: null});
+    out[i] = e;
+  });
+  return out;
+}
+// Reviews merge rather than replace: a review only on this device stays, and when both have one
+// the more recently saved copy wins.
+function mergeRestoredReviews(local, restored){
+  const out = Object.assign({}, local);
+  Object.keys(restored || {}).forEach(k => {
+    const r = restored[k];
+    if(r && (!out[k] || (r.reviewedAt || 0) > (out[k].reviewedAt || 0))) out[k] = r;
+  });
+  return out;
 }
 async function exportBackup(){
   const backup = gatherBackupData();
@@ -2389,10 +2511,31 @@ function importBackupFile(file){
       note.textContent = "That file doesn't look like a Listening Log backup.";
       return;
     }
-    if(!confirm("This replaces your current lists, folders, and album edits/additions with the backup's contents. Continue?")) return;
+    const includesManual = !!(parsed.version && parsed.version >= 2);
+    if(!confirm("This replaces your current lists, folders, album edits/additions" + (includesManual ? " and listened checks" : "") +
+      " with the backup's. Reviews in the backup are added to the ones on this device (the newer copy of a review wins). Scrobble counts stay as they are. Continue?")) return;
+    const failed = [];
     Object.keys(data).forEach(key => {
-      if(key.indexOf("ll_") === 0) localStorage.setItem(key, data[key]);
+      if(key.indexOf("ll_") !== 0 || typeof data[key] !== "string") return;
+      let ok;
+      try{
+        if(key.indexOf("ll_progress_") === 0){
+          const listId = key.slice("ll_progress_".length);
+          ok = saveProgressFor(listId, mergeRestoredProgress(getProgressFor(listId), JSON.parse(data[key]), includesManual));
+        }else if(key === "ll_album_reviews"){
+          ok = saveReviewsStore(mergeRestoredReviews(loadReviews(), JSON.parse(data[key])));
+        }else if(key === "ll_trackcount_overrides"){
+          ok = saveTrackCountOverrides(Object.assign(loadTrackCountOverrides(), JSON.parse(data[key])));
+        }else{
+          ok = saveUserData(key, data[key]);
+        }
+      }catch(err){ ok = false; }
+      if(!ok) failed.push(key);
     });
+    if(failed.length){
+      note.textContent = "Restored, except " + failed.length + " item" + (failed.length === 1 ? "" : "s") + " that couldn't be saved (" + failed.slice(0, 3).join(", ") + "). Reload when ready.";
+      return;
+    }
     note.textContent = "Restored — reloading…";
     setTimeout(() => location.reload(), 700);
   };
@@ -2400,9 +2543,10 @@ function importBackupFile(file){
 }
 
 /* ---------- LAST.FM SYNC ---------- */
-function handleSyncClick(){
+function handleSyncClick(full){
   if(!settings.username || !settings.apiKey){ openSettings(); return; }
-  syncAll();
+  if(document.getElementById("syncBtn").disabled) return;   // already syncing
+  syncAll({full: full === true});
 }
 
 async function fetchAlbumStats(artist, album){
@@ -2443,58 +2587,161 @@ async function fetchAlbumStats(artist, album){
 
 // Adds up your plays across the Last.fm entries one album is split over (see lastfmNameVariants).
 // Each scrobble is filed under exactly one entry, so summing distinct entries can't double count.
-async function fetchAlbumStatsAcrossVariants(artist, album, primary, spotifyInfo){
-  const variants = lastfmNameVariants(artist, album, spotifyInfo);
-  if(variants.length === 0) return primary;
+// `only` (keys from a previous result's variantHits) limits the lookups to variants that had plays
+// before; null tries them all. variantHits is null when there's nothing worth remembering: no
+// variants at all, or a lookup failed so the next sync should try every variant again.
+function lastfmVariantKey(v){ return normName(v.artist) + "|||" + normName(v.title); }
+async function fetchAlbumStatsAcrossVariants(artist, album, primary, spotifyInfo, only){
+  const allVariants = lastfmNameVariants(artist, album, spotifyInfo);
+  if(allVariants.length === 0) return Object.assign({}, primary, {variantHits: null});
+  const variants = only ? allVariants.filter(v => only.indexOf(lastfmVariantKey(v)) !== -1) : allVariants;
   const entries = {};
   if(!primary.notFound) entries[primary.entity] = primary;
+  const hits = [];
+  let failed = false;
   for(const v of variants){
     try{
       const r = await fetchAlbumStats(v.artist, v.title);
-      if(!r.notFound && !entries[r.entity]) entries[r.entity] = r;
+      if(!r.notFound && !entries[r.entity]){
+        entries[r.entity] = r;
+        if(r.playcount > 0) hits.push(lastfmVariantKey(v));
+      }
     }catch(err){
       // one variant failing just means one fewer place to look
+      failed = true;
     }
   }
+  const variantHits = failed ? null : hits;
   const found = Object.values(entries);
-  if(found.length === 0) return primary;
+  if(found.length === 0) return Object.assign({}, primary, {variantHits});
   return {
     playcount: found.reduce((sum, r) => sum + r.playcount, 0),
     trackCount: Math.max.apply(null, found.map(r => r.trackCount)),
-    notFound: false
+    notFound: false,
+    variantHits
   };
+}
+
+/* Incremental sync. An album's Last.fm play count only changes when you scrobble it, so a re-sync
+   reads your scrobbles since the list's last sync (usually one page) and only calls album.getinfo
+   for albums whose title shows up there, plus albums never synced. A full pass still runs every
+   FULL_SYNC_EVERY_MS (or from "Full resync"), catching plays filed under a name the title check
+   misses and scrobbles imported with old timestamps. */
+const LIST_SYNC_STATE_KEY = "ll_list_sync";   // {listId: {at, fullAt}} — sync state, rebuilt by a full pass
+const FULL_SYNC_EVERY_MS = 30 * 86400000;
+const SYNC_SCROBBLE_PAGES_MAX = 20;           // more than 4000 scrobbles since the last sync: do a full pass instead
+const SYNC_WINDOW_OVERLAP_S = 600;            // scrobbles can land a few minutes after the play
+
+function loadListSyncState(){
+  try{ return JSON.parse(localStorage.getItem(LIST_SYNC_STATE_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function syncTitleKeys(title){
+  return [normName(title), normName(spotifyBaseTitle(stripEditionSuffix(String(title || ""))))];
+}
+// Normalised album titles scrobbled since fromUnix, or null when there are too many pages to be worth it.
+async function scrobbledTitlesSince(fromUnix){
+  const toUnix = Math.floor(Date.now() / 1000);
+  const titles = new Set();
+  let page = 1, totalPages = 1;
+  do{
+    const result = await fetchRecentTracksPage(fromUnix, toUnix, page);
+    totalPages = result.totalPages;
+    if(totalPages > SYNC_SCROBBLE_PAGES_MAX) return null;
+    result.tracks.forEach(t => {
+      const album = t && t.album && t.album["#text"];
+      if(album) syncTitleKeys(album).forEach(k => titles.add(k));
+    });
+    page++;
+    if(page <= totalPages) await sleep(150);
+  }while(page <= totalPages);
+  return titles;
 }
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
-async function syncAll(){
+async function syncAll(opts){
   const btn = document.getElementById("syncBtn");
   const note = document.getElementById("syncNote");
   btn.disabled = true;
+  const listId = activeList.id;
+  const syncStartedAt = Date.now();
   const allIndices = [];
   effectiveAlbums(activeList).forEach((al, i) => { if(!entryFor(i).hidden) allIndices.push(i); });
-  const total = allIndices.length;
   let networkErrors = 0, lastNetworkError = "", noMatch = 0, authError = null;
   const spState = newSpotifyLookupState();
   const BATCH_SIZE = 6;
 
+  const prevSync = loadListSyncState()[listId] || {};
+  let fullPass = !!(opts && opts.full) || !prevSync.at || !prevSync.fullAt || syncStartedAt - prevSync.fullAt >= FULL_SYNC_EVERY_MS;
+  let scrobbled = null;
+  if(!fullPass){
+    note.textContent = "Checking scrobbles since the last sync…";
+    try{
+      scrobbled = await scrobbledTitlesSince(Math.floor(prevSync.at / 1000) - SYNC_WINDOW_OVERLAP_S);
+    }catch(err){
+      if(err.type === "auth"){
+        note.textContent = 'Stopped — Last.fm says: "' + err.detail + '". Double-check the API key in Settings.';
+        btn.disabled = false;
+        return;
+      }
+      scrobbled = null;   // couldn't read recent scrobbles: check every album instead
+    }
+    if(!scrobbled) fullPass = true;
+  }
+  const titleScrobbled = i => {
+    const titles = [lookupAlbum(i)];
+    const hit = spotifyCachedAlbum(lookupArtist(i), lookupAlbum(i));
+    if(hit && hit.title) titles.push(hit.title);
+    // A title that normalises to nothing (all punctuation) can't be checked, so look it up.
+    return titles.some(t => syncTitleKeys(t).some(k => !k || scrobbled.has(k)));
+  };
+
+  // lastfm: Last.fm + Spotify. spotifyOnly: nothing new scrobbled, but a Spotify miss is due a
+  // re-check — if Spotify matches it now, its track count and name variants justify a Last.fm call.
+  const jobs = [];
+  let unchanged = 0, lastfmChecked = 0;
+  allIndices.forEach(i => {
+    const e = entryFor(i);
+    if(fullPass || !e.syncedAt || titleScrobbled(i)){
+      jobs.push({i, lastfm: true});
+      return;
+    }
+    const artist = lookupArtist(i), album = lookupAlbum(i);
+    if(isSpotifyConnected() && spotifyNeedsLookup(artist, album)) jobs.push({i, lastfm: false});
+    else unchanged++;
+    // No network needed to pick up a track-count override or Spotify count added since.
+    if(e.playcount !== null) e.trackCount = preferredTrackCount(artist, album, spotifyCachedAlbum(artist, album), e.trackCount);
+  });
+  const total = jobs.length;
+
   for(let start = 0; start < total && !authError; start += BATCH_SIZE){
     const end = Math.min(start + BATCH_SIZE, total);
-    note.textContent = "Syncing " + end + " of " + total + "…";
+    note.textContent = fullPass
+      ? "Syncing " + end + " of " + total + "…"
+      : "Syncing " + end + " of " + total + " album" + (total === 1 ? "" : "s") + " with new scrobbles…";
 
-    const indices = allIndices.slice(start, end);
+    const batch = jobs.slice(start, end);
 
-    const results = await Promise.all(indices.map(async i => {
-      const artist = lookupArtist(i), album = lookupAlbum(i);
+    const results = await Promise.all(batch.map(async job => {
+      const i = job.i, artist = lookupArtist(i), album = lookupAlbum(i);
+      if(!job.lastfm){
+        const sp = await spotifyAlbumInfoSafe(artist, album, spState);
+        if(!(sp && sp.found)){ unchanged++; return null; }
+      }
+      lastfmChecked++;
       const [stats, sp] = await Promise.all([
         fetchAlbumStats(artist, album).then(result => ({result}), error => ({error})),
         spotifyAlbumInfoSafe(artist, album, spState)
       ]);
-      if(stats.result) stats.result = await fetchAlbumStatsAcrossVariants(artist, album, stats.result, sp);
+      const prevHits = entryFor(i).lfv;
+      const only = !fullPass && Array.isArray(prevHits) ? prevHits : null;
+      if(stats.result) stats.result = await fetchAlbumStatsAcrossVariants(artist, album, stats.result, sp, only);
       return {i, artist, album, result: stats.result || null, error: stats.error || null, sp};
     }));
 
     results.forEach(r => {
+      if(!r) return;
       if(r.error){
         if(r.error.type === "auth") authError = r.error.detail;
         else { networkErrors++; lastNetworkError = r.error.detail; }
@@ -2514,24 +2761,38 @@ async function syncAll(){
         e.playcount = r.result.playcount;
         e.trackCount = preferredTrackCount(r.artist, r.album, r.sp, r.result.trackCount);
       }
+      e.lfv = r.result.variantHits || null;
     });
 
     saveProgressFor(activeList.id, progress);
     render();
     await sleep(150);
   }
+  // Covers track-count refreshes on skipped albums, and a sync with nothing to fetch.
+  saveProgressFor(activeList.id, progress);
+  render();
 
   btn.disabled = false;
 
+  // Only move the scrobble window forward when every album got checked; otherwise the next sync
+  // re-reads the same window so a failed album isn't skipped.
+  if(!authError && networkErrors === 0){
+    const state = loadListSyncState();
+    state[listId] = {at: syncStartedAt, fullAt: fullPass ? syncStartedAt : prevSync.fullAt};
+    try{ localStorage.setItem(LIST_SYNC_STATE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+
+  const scope = fullPass ? "" : " Checked " + lastfmChecked + " album" + (lastfmChecked === 1 ? "" : "s") +
+    " with new scrobbles; " + unchanged + " unchanged since the last sync.";
   if(authError){
     note.textContent = 'Stopped — Last.fm says: "' + authError + '". Double-check the API key in Settings.';
   } else if(networkErrors > 0){
     note.textContent = networkErrors + " of " + total + " requests couldn't reach Last.fm (e.g. \"" + lastNetworkError
       + "\"). If this keeps happening, try hosting the file at a real https:// address instead of opening it locally.";
   } else if(noMatch > 0){
-    note.textContent = "Synced. " + noMatch + " album(s) had no match on Last.fm at all (left blank) — check spelling via \"fix artist/title match\" and re-sync.";
+    note.textContent = "Synced." + scope + " " + noMatch + " album(s) had no match on Last.fm at all (left blank) — check spelling via \"fix artist/title match\" and re-sync.";
   } else {
-    note.textContent = "Synced just now.";
+    note.textContent = "Synced just now." + scope;
   }
   const spNote = spotifyLookupSummary(spState);
   if(spNote && !authError) note.textContent += " " + spNote;
@@ -2972,6 +3233,14 @@ function saveSpotifyAlbumCache(){
   });
   try{ localStorage.setItem(SPOTIFY_ALBUM_CACHE_KEY, JSON.stringify(out)); }
   catch(e){ /* storage full — lookups still work for this session, they just won't persist */ }
+}
+// Last-but-one resort when storage is full (see saveUserData): misses are cheap to re-check.
+function dropSpotifyCacheMisses(){
+  const cache = loadSpotifyAlbumCache();
+  Object.keys(cache).forEach(k => {
+    if(k !== "__version" && cache[k] && !cache[k].found) delete cache[k];
+  });
+  saveSpotifyAlbumCache();
 }
 
 // Compact form. Found: {found: 1, i: id, a: [artists], t: title, k: type (omitted for "album"),
@@ -3538,7 +3807,8 @@ function loadDiscoverResults(){
   }catch(e){ return emptyDiscoverStore(); }
 }
 function saveDiscoverResults(){
-  localStorage.setItem(DISCOVER_STORE_KEY, JSON.stringify(discoverResults));
+  try{ localStorage.setItem(DISCOVER_STORE_KEY, JSON.stringify(discoverResults)); }
+  catch(e){ /* a cache: the results stay on screen, they just won't survive a reload */ }
 }
 
 async function mapLimit(items, limit, fn){
@@ -4116,7 +4386,8 @@ function loadRecentResultsFromStorage(){
   catch(e){ return null; }
 }
 function saveRecentResultsToStorage(){
-  localStorage.setItem("ll_recent_results", JSON.stringify(recentResults));
+  try{ localStorage.setItem("ll_recent_results", JSON.stringify(recentResults)); }
+  catch(e){ /* a cache: the results stay on screen, they just won't survive a reload */ }
 }
 // Persisted so it survives a full page reload (iOS often reloads a backgrounded home-screen
 // PWA), not just a tab switch — stays populated until you explicitly re-check.
@@ -4197,7 +4468,9 @@ function groupScrobblesByAlbum(tracks){
   return Object.values(groups);
 }
 
-async function fetchAlbumMeta(artist, album){
+// need: {info, tags} — This Week skips whichever call it already has the answer for.
+async function fetchAlbumMeta(artist, album, need){
+  need = need || {info: true, tags: true};
   const queryAlbum = stripEditionSuffix(album);
   const infoUrl = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
     + "&api_key=" + encodeURIComponent(settings.apiKey)
@@ -4212,23 +4485,30 @@ async function fetchAlbumMeta(artist, album){
     + "&artist=" + encodeURIComponent(artist)
     + "&album=" + encodeURIComponent(queryAlbum)
     + "&autocorrect=1&format=json";
-  const empty = {trackCount: 0, year: "", genres: []};
-  try{
-    const [infoRes, tagsRes] = await Promise.all([fetch(infoUrl), fetch(tagsUrl)]);
-    const data = await infoRes.json();
-    if(data.error || !data.album) return empty;
-    let trackCount = 0;
-    if(data.album.tracks && data.album.tracks.track){
-      const t = data.album.tracks.track;
-      trackCount = Array.isArray(t) ? t.length : 1;
+  const out = {trackCount: 0, year: "", genres: []};
+  const [infoRes, tagsRes] = await Promise.all([
+    need.info ? fetch(infoUrl).catch(() => null) : null,
+    need.tags ? fetch(tagsUrl).catch(() => null) : null
+  ]);
+  if(infoRes){
+    try{
+      const data = await infoRes.json();
+      if(!data.error && data.album){
+        if(data.album.tracks && data.album.tracks.track){
+          const t = data.album.tracks.track;
+          out.trackCount = Array.isArray(t) ? t.length : 1;
+        }
+        // releasedate looks like "6 Apr 1999, 00:00" — often blank, so just grab the year if present.
+        if(data.album.releasedate){
+          const m = data.album.releasedate.match(/\d{4}/);
+          if(m) out.year = m[0];
+        }
+      }
+    }catch(infoErr){
+      // leave track count and year empty — Spotify or a guess fills in
     }
-    // releasedate looks like "6 Apr 1999, 00:00" — often blank, so just grab the year if present.
-    let year = "";
-    if(data.album.releasedate){
-      const m = data.album.releasedate.match(/\d{4}/);
-      if(m) year = m[0];
-    }
-    let genres = [];
+  }
+  if(tagsRes){
     try{
       const tagsData = await tagsRes.json();
       if(!tagsData.error && tagsData.toptags && tagsData.toptags.tag){
@@ -4236,15 +4516,13 @@ async function fetchAlbumMeta(artist, album){
         const arr = Array.isArray(tags) ? tags : [tags];
         // Skip year/decade-style tags ("2022", "90s", "2000s") — not useful as a genre.
         const isNumericTag = n => /^\d+s?$/i.test(n.trim());
-        genres = arr.map(t => t.name).filter(n => n && !isNumericTag(n)).slice(0, 2);
+        out.genres = arr.map(t => t.name).filter(n => n && !isNumericTag(n)).slice(0, 2);
       }
     }catch(tagsErr){
       // leave genres empty if this call fails — don't let it break the rest of the result
     }
-    return {trackCount, year, genres};
-  }catch(err){
-    return empty;
   }
+  return out;
 }
 
 async function generateRecentListens(){
@@ -4307,12 +4585,17 @@ async function generateRecentListens(){
   // Preserve years already known from a previous check or "Check missing years" — Last.fm's
   // releasedate field is unreliable enough that a fresh fetch can come back blank even for an
   // album that had a real year before, and that shouldn't wipe out the good value.
-  const previousYears = {};
-  if(recentResults && recentResults.albums){
-    recentResults.albums.forEach(al => {
-      if(al.year) previousYears[al.artist.toLowerCase() + "|" + al.album.toLowerCase()] = al.year;
+  // Genres shown last check (near misses included) and the ones on your reviews are reused rather
+  // than asking Last.fm for tags again — both are already stored, so this costs no extra storage.
+  const previousYears = {}, previousGenres = {};
+  if(recentResults){
+    (recentResults.albums || []).concat(recentResults.nearMisses || []).forEach(al => {
+      const k = al.artist.toLowerCase() + "|" + al.album.toLowerCase();
+      if(al.year && recentResults.albums.indexOf(al) !== -1) previousYears[k] = al.year;
+      if(al.genres && al.genres.length) previousGenres[k] = al.genres;
     });
   }
+  const reviewsNow = loadReviews();
   const BATCH_SIZE = 6;
   const scored = [];
   const spState = newSpotifyLookupState();
@@ -4320,10 +4603,9 @@ async function generateRecentListens(){
     const batch = groupList.slice(i, i + BATCH_SIZE);
     note.textContent = "Checking track counts… " + Math.min(i + BATCH_SIZE, groupList.length) + " of " + groupList.length + " albums";
     const results = await Promise.all(batch.map(async g => {
-      const [meta, sp] = await Promise.all([
-        fetchAlbumMeta(g.artist, g.album),
-        spotifyAlbumInfoSafe(g.artist, g.album, spState)
-      ]);
+      // Spotify first (usually straight from cache): it decides whether Last.fm is needed at all.
+      const sp = await spotifyAlbumInfoSafe(g.artist, g.album, spState);
+      const scrobbleArtist = g.artist;
       // A merged multi-artist album is credited the way Spotify credits it: its first artist.
       if(g.artists && g.artists.length > 1 && sp && sp.found){
         const firstArtist = spotifyCreditedArtists(sp)[0];
@@ -4331,6 +4613,15 @@ async function generateRecentListens(){
       }
       const groupKey = g.artist.toLowerCase() + "|" + g.album.toLowerCase();
       const known = knownTrackCounts[groupKey];
+      const review = reviewsNow[reviewKey(g.artist, g.album)];
+      const savedGenres = previousGenres[groupKey] || (review && review.genres && review.genres.length ? review.genres.slice(0, 2) : null);
+      // Last.fm's album.getinfo is only here for the track count; skip it once one is settled.
+      const settledCount = preferredTrackCount(g.artist, g.album, sp, known ? known.trackCount : 0);
+      const need = {info: !settledCount, tags: !savedGenres};
+      const meta = (need.info || need.tags)
+        ? await fetchAlbumMeta(scrobbleArtist, g.album, need)
+        : {trackCount: 0, year: "", genres: []};
+      if(savedGenres) meta.genres = savedGenres.slice();
       // Manual override > Spotify's standard edition > a count Lists already synced > Last.fm.
       meta.trackCount = preferredTrackCount(g.artist, g.album, sp, known ? known.trackCount : meta.trackCount);
       // Spotify's release date is the year source; Last.fm's releasedate is usually blank, and a
