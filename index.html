@@ -23,6 +23,7 @@
     --gold:#5636a0;
     --gold-dim:#d383c8;
     --teal:#94d83b;
+    --star:#2C261C;
     --radius:10px;
     --font-display:'Fraunces',serif;
     --font-body:'IBM Plex Mono',monospace;
@@ -51,7 +52,18 @@
     background:none; border:none; color:var(--ink-dim); font-size:17px; cursor:pointer;
     padding:9px 10px; line-height:1; margin:-9px 0;
   }
-  .gear:active, .back-btn:active{color:var(--gold);}
+  .gear{display:flex; align-items:center; transition:color .15s ease;}
+  .gear:active{color:var(--teal);}
+  .back-btn:active{color:var(--gold);}
+
+  /* Lucide outline icons (ISC), inlined rather than loaded from a package so they work
+     offline and inherit currentColor — which is the whole grey/teal press state. Sizing
+     off 1em means an icon just follows the font-size of whatever button holds it. */
+  .icon{
+    width:1em; height:1em; display:block; flex:none;
+    fill:none; stroke:currentColor; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round;
+  }
   h1{
     font-family:var(--font-display); font-weight:600; font-size:20px; margin:3px 0 0;
     letter-spacing:-0.01em; line-height:1.15;
@@ -66,13 +78,16 @@
   }
   select#listSelector:focus{outline:none;}
 
-  .badge-triple{
-    display:inline-flex; align-items:center; gap:3px; background:var(--gold); color:#17140F;
-    font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:10px; letter-spacing:0.03em;
-    text-transform:uppercase; margin-left:2px; vertical-align:middle;
-  }
-  .album.triple{border-left:2px solid var(--gold); margin-left:-2px; padding-left:8px;}
   .triple-stat{color:var(--gold); font-weight:600;}
+
+  /* Listen stars: one canvas per row, painted behind everything else. Making the row's own
+     children z-index 1 is what keeps titles readable no matter where a star drifts. */
+  .album, .discover-card{position:relative;}
+  .star-layer{
+    position:absolute; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:0;
+  }
+  .album > *:not(.star-layer), .discover-card > *:not(.star-layer){position:relative; z-index:1;}
 
   .status-row{
     display:flex; align-items:center; gap:12px; margin-top:10px;
@@ -384,7 +399,10 @@
   .dash-bar{height:4px; background:var(--line); border-radius:2px; margin-top:10px; overflow:hidden;}
   .dash-bar-fill{height:100%; background:var(--gold); border-radius:2px;}
   .dash-add{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; border-style:dashed; color:var(--ink-dim);}
-  .dash-add-plus{font-size:22px; color:var(--gold);}
+  .dash-add-plus{font-size:22px; color:var(--gold); display:flex; justify-content:center;}
+  /* The folder icon follows the icon rule rather than the gold of the sibling "+". */
+  .dash-add-plus .icon{color:var(--ink-dim); transition:color .15s ease;}
+  .dash-add:active .dash-add-plus .icon{color:var(--teal);}
   .dash-add .dash-title{color:var(--ink-dim);}
   .dash-card.has-kebab .dash-card-top{padding-right:26px;}
   .dash-delete{
@@ -517,8 +535,8 @@
   <div class="eyebrow">
     <button class="back-btn hidden" id="backBtn" onclick="goDashboard()">&larr;</button>
     <span class="label">Listening Log</span>
-    <button class="gear" onclick="openBackupModal()">💾</button>
-    <button class="gear" onclick="openSettings()">⚙</button>
+    <button class="gear" onclick="openBackupModal()" aria-label="Backup and restore"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg></button>
+    <button class="gear" onclick="openSettings()" aria-label="Settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051 a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button>
   </div>
 
   <div id="dashboardHeader">
@@ -610,13 +628,13 @@
     <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/lists.png" alt=""><span>Lists</span>
   </button>
   <button id="tabDiscover" onclick="switchSection('discover')">
-    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/discover.png" alt=""><span>Discover</span>
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/discover.png" alt=""><span>New</span>
   </button>
   <button id="tabRecent" onclick="switchSection('recent')">
-    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/week.png" alt=""><span>This Week</span>
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/week.png" alt=""><span>Recents</span>
   </button>
   <button id="tabReviews" onclick="switchSection('reviews')">
-    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/reviews.png" alt=""><span>Reviews</span>
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/reviews.png" alt=""><span>Logged</span>
   </button>
   <div class="tab-ball" id="tabBall" aria-hidden="true">
     <span class="tab-ball-tail"></span><span class="tab-ball-core"></span>
@@ -629,6 +647,19 @@
 
 <div class="modal" id="settingsModal">
   <h2>Settings</h2>
+  <div class="field" style="margin-bottom:18px;">
+    <label>Listen history</label>
+    <p style="margin:4px 0 8px;">
+      Counts full album listens week by week, which is what the stars on each row show.
+      &ldquo;Check this week&rdquo; keeps this up to date going forward — this fills in the past.
+      Safe to re-run: weeks already counted are skipped.
+    </p>
+    <div class="modal-actions">
+      <button class="btn-close" id="backfillBtn" onclick="backfillListenHistory()">Catch up all history</button>
+    </div>
+    <p id="backfillStatus" style="margin:8px 0 0;"></p>
+    <p id="backfillNote" style="margin:4px 0 0;"></p>
+  </div>
   <p>
     Free API key from <a href="https://www.last.fm/api/account/create" target="_blank">last.fm/api/account/create</a>
     — any app name/description works. Nothing is sent anywhere except directly from this page to Last.fm and Spotify.
@@ -1383,6 +1414,7 @@ function getFilteredReviews(){
 function renderReviewsResultsArea(){
   const content = document.getElementById("content");
   if(section !== "reviews") return;
+  starReset();
   populateDecadeFilter();
   const filtered = getFilteredReviews();
   const total = Object.keys(loadReviews()).length;
@@ -1399,6 +1431,8 @@ function renderReviewsResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card";
     row.style.cursor = "pointer";
+    const reviewStars = starCountFor(r.artist, r.title);
+    if(reviewStars) row.setAttribute("data-stars", String(reviewStars));
     row.onclick = () => openReviewModal(r.artist, r.title, r.year, r.genres);
     row.innerHTML =
       albumCoverHtml(r.artist, r.title, String(i + 1).padStart(2, "0")) +
@@ -1422,6 +1456,7 @@ function renderReviewsResultsArea(){
   content.innerHTML = "";
   content.appendChild(wrap);
   content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+  starRegister(content);
   hydrateMissingCovers(filtered.map(r => ({artist: r.artist, title: r.title})));
 
   const saveRow = document.createElement("div");
@@ -1458,6 +1493,429 @@ function saveReviewsFilterAsList(){
   goList(id);
 }
 
+
+const ICON_FOLDER_PLUS = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+
+/* ---------- LISTEN STARS ----------
+   A star for every full listen past the first, bouncing around its own album row.
+
+   The performance shape that matters here: cost tracks the number of rows ON SCREEN, not
+   the number of rows in the list. An IntersectionObserver creates a row's canvas when it
+   scrolls into view and throws it away when it leaves, every visible row is driven by one
+   shared rAF loop, and the star shape is rasterised once into a sprite that all rows reuse.
+   A thousand-album list costs the same per frame as a ten-album one. */
+
+const STAR_MAX = 8;           // ceiling per row — past this the row is just noise anyway
+const STAR_MIN_R = 4.5, STAR_MAX_R = 8.5;
+const STAR_SPEED = 15;        // px/sec, before per-star variation
+
+let starStates = [];          // rows currently on screen and being simulated
+let starRAF = null, starLast = 0;
+let starObserver = null;
+let starSprite = null, starSpriteKey = "";
+let starColor = "";
+let starReduced = false;
+try{
+  starReduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}catch(e){}
+
+function starFillColor(){
+  if(starColor) return starColor;
+  try{
+    starColor = getComputedStyle(document.documentElement).getPropertyValue("--star").trim() || "#2C261C";
+  }catch(e){ starColor = "#2C261C"; }
+  return starColor;
+}
+
+// One sprite, shared by every row and every star. Re-rasterised only if the theme colour or
+// the display density changes — never per frame, and never per star.
+function starSpriteFor(dpr){
+  const color = starFillColor();
+  const key = color + "@" + dpr;
+  if(starSprite && starSpriteKey === key) return starSprite;
+  const r = STAR_MAX_R * dpr;
+  const pad = 1 * dpr;
+  const size = Math.ceil((r + pad) * 2);
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  const g = c.getContext("2d");
+  g.translate(size / 2, size / 2);
+  g.fillStyle = color;
+  g.beginPath();
+  // Standard 5-point star: inner radius is the outer over phi squared.
+  const INNER = 0.382;
+  for(let i = 0; i < 10; i++){
+    const rad = (i % 2 === 0) ? r : r * INNER;
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const x = Math.cos(a) * rad, y = Math.sin(a) * rad;
+    if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.closePath();
+  g.fill();
+  starSprite = c; starSpriteKey = key;
+  return c;
+}
+
+function starMeasure(st){
+  const dpr = Math.min(2, window.devicePixelRatio || 1); // capping at 2 halves fill cost on 3x phones
+  const w = st.row.clientWidth, h = st.row.clientHeight;
+  if(!w || !h) return false;
+  if(st.w !== w || st.h !== h || st.dpr !== dpr){
+    st.w = w; st.h = h; st.dpr = dpr;
+    st.canvas.width = Math.round(w * dpr);
+    st.canvas.height = Math.round(h * dpr);
+    st.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const cover = st.row.querySelector(".album-cover");
+  if(cover){
+    const rb = st.row.getBoundingClientRect(), cb = cover.getBoundingClientRect();
+    st.obstacle = {x: cb.left - rb.left, y: cb.top - rb.top, w: cb.width, h: cb.height};
+  }else{
+    st.obstacle = null;
+  }
+  return true;
+}
+
+function starInsideRect(x, y, r, ob){
+  const cx = Math.max(ob.x, Math.min(x, ob.x + ob.w));
+  const cy = Math.max(ob.y, Math.min(y, ob.y + ob.h));
+  const dx = x - cx, dy = y - cy;
+  return dx * dx + dy * dy < r * r;
+}
+
+function starSeed(st, n){
+  st.stars.length = 0;
+  for(let i = 0; i < n; i++){
+    const r = STAR_MIN_R + Math.random() * (STAR_MAX_R - STAR_MIN_R);
+    const maxX = Math.max(r + 1, st.w - r), maxY = Math.max(r + 1, st.h - r);
+    let x = 0, y = 0;
+    for(let t = 0; t < 24; t++){
+      x = r + Math.random() * Math.max(1, maxX - r);
+      y = r + Math.random() * Math.max(1, maxY - r);
+      if(!st.obstacle || !starInsideRect(x, y, r, st.obstacle)) break;
+    }
+    const a = Math.random() * Math.PI * 2;
+    const sp = STAR_SPEED * (0.55 + Math.random() * 0.9);
+    st.stars.push({
+      x: x, y: y, r: r,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      rot: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 1.7
+    });
+  }
+}
+
+// Circle vs the album art, resolved along the surface normal so a corner hit deflects
+// diagonally rather than snapping to an axis.
+function starHitRect(s, ob){
+  const cx = Math.max(ob.x, Math.min(s.x, ob.x + ob.w));
+  const cy = Math.max(ob.y, Math.min(s.y, ob.y + ob.h));
+  const dx = s.x - cx, dy = s.y - cy;
+  const d2 = dx * dx + dy * dy;
+  if(d2 >= s.r * s.r) return;
+  if(d2 > 1e-6){
+    const d = Math.sqrt(d2), nx = dx / d, ny = dy / d;
+    s.x = cx + nx * s.r; s.y = cy + ny * s.r;
+    const dot = s.vx * nx + s.vy * ny;
+    if(dot < 0){ s.vx -= 2 * dot * nx; s.vy -= 2 * dot * ny; }
+    s.vr += (s.vx * ny - s.vy * nx) * 0.012;
+  }else{
+    // Centre somehow ended up inside the art (a resize can do it) — eject via the nearest edge.
+    const left = s.x - ob.x, right = ob.x + ob.w - s.x;
+    const top = s.y - ob.y, bottom = ob.y + ob.h - s.y;
+    const m = Math.min(left, right, top, bottom);
+    if(m === left){ s.x = ob.x - s.r; s.vx = -Math.abs(s.vx); }
+    else if(m === right){ s.x = ob.x + ob.w + s.r; s.vx = Math.abs(s.vx); }
+    else if(m === top){ s.y = ob.y - s.r; s.vy = -Math.abs(s.vy); }
+    else { s.y = ob.y + ob.h + s.r; s.vy = Math.abs(s.vy); }
+  }
+}
+
+// Equal-mass elastic collision: the two swap their velocity components along the contact
+// normal. Capped at STAR_MAX stars, the naive all-pairs pass is 28 checks at its very worst.
+function starHitStar(a, b){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const rr = a.r + b.r;
+  const d2 = dx * dx + dy * dy;
+  if(d2 >= rr * rr || d2 < 1e-6) return;
+  const d = Math.sqrt(d2);
+  const nx = dx / d, ny = dy / d;
+  const push = (rr - d) / 2;
+  a.x -= nx * push; a.y -= ny * push;
+  b.x += nx * push; b.y += ny * push;
+  const sep = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+  if(sep > 0) return;                 // already moving apart; don't re-bounce
+  a.vx += sep * nx; a.vy += sep * ny;
+  b.vx -= sep * nx; b.vy -= sep * ny;
+  a.vr += sep * 0.02; b.vr -= sep * 0.02;   // glancing hits set them spinning
+}
+
+function starStep(st, dt){
+  const stars = st.stars, ob = st.obstacle, n = stars.length;
+  for(let i = 0; i < n; i++){
+    const s = stars[i];
+    s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.vr * dt;
+    if(s.x - s.r < 0){ s.x = s.r; s.vx = Math.abs(s.vx); }
+    else if(s.x + s.r > st.w){ s.x = st.w - s.r; s.vx = -Math.abs(s.vx); }
+    if(s.y - s.r < 0){ s.y = s.r; s.vy = Math.abs(s.vy); }
+    else if(s.y + s.r > st.h){ s.y = st.h - s.r; s.vy = -Math.abs(s.vy); }
+    if(ob) starHitRect(s, ob);
+  }
+  for(let i = 0; i < n; i++){
+    for(let j = i + 1; j < n; j++) starHitStar(stars[i], stars[j]);
+  }
+}
+
+function starDraw(st){
+  const ctx = st.ctx, stars = st.stars;
+  ctx.clearRect(0, 0, st.w, st.h);
+  const sprite = starSpriteFor(st.dpr);
+  const drawn = sprite.width / st.dpr;     // sprite size in CSS pixels
+  const half = drawn / 2;
+  for(let i = 0; i < stars.length; i++){
+    const s = stars[i];
+    const scale = s.r / STAR_MAX_R;
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.rot);
+    ctx.scale(scale, scale);
+    ctx.drawImage(sprite, -half, -half, drawn, drawn);
+    ctx.restore();
+  }
+}
+
+function starTick(now){
+  starRAF = null;
+  if(!starStates.length) return;
+  let dt = (now - starLast) / 1000;
+  starLast = now;
+  if(!(dt > 0)) dt = 1 / 60;
+  if(dt > 0.05) dt = 0.05;   // after a stall, step forward sanely instead of teleporting
+  for(let i = 0; i < starStates.length; i++){
+    starStep(starStates[i], dt);
+    starDraw(starStates[i]);
+  }
+  starRAF = requestAnimationFrame(starTick);
+}
+
+function starStartLoop(){
+  if(starRAF || starReduced || document.hidden || !starStates.length) return;
+  starLast = performance.now();
+  starRAF = requestAnimationFrame(starTick);
+}
+function starStopLoop(){
+  if(starRAF){ cancelAnimationFrame(starRAF); starRAF = null; }
+}
+
+function starActivate(row){
+  if(row._starState) return;
+  const n = parseInt(row.getAttribute("data-stars") || "0", 10);
+  if(!n) return;
+  const canvas = document.createElement("canvas");
+  canvas.className = "star-layer";
+  row.insertBefore(canvas, row.firstChild);
+  const st = {row: row, canvas: canvas, ctx: canvas.getContext("2d"),
+              stars: [], w: 0, h: 0, dpr: 0, obstacle: null};
+  if(!starMeasure(st)){ row.removeChild(canvas); return; }
+  starSeed(st, Math.min(STAR_MAX, n));
+  row._starState = st;
+  starStates.push(st);
+  starDraw(st);              // paint immediately so reduced-motion still shows the count
+}
+
+function starDeactivate(row){
+  const st = row._starState;
+  if(!st) return;
+  const i = starStates.indexOf(st);
+  if(i !== -1) starStates.splice(i, 1);
+  if(st.canvas.parentNode) st.canvas.parentNode.removeChild(st.canvas);
+  row._starState = null;
+  if(!starStates.length) starStopLoop();
+}
+
+function starObserverInstance(){
+  if(starObserver) return starObserver;
+  starObserver = new IntersectionObserver(function(entries){
+    for(let i = 0; i < entries.length; i++){
+      if(entries[i].isIntersecting) starActivate(entries[i].target);
+      else starDeactivate(entries[i].target);
+    }
+    starStartLoop();
+  }, {rootMargin: "120px 0px"});
+  return starObserver;
+}
+
+// Called by a renderer just before it replaces its rows: the old row elements are about to be
+// thrown away, so drop every canvas and observation rather than leaking them.
+function starReset(){
+  starStopLoop();
+  for(let i = 0; i < starStates.length; i++){
+    const st = starStates[i];
+    if(st.canvas.parentNode) st.canvas.parentNode.removeChild(st.canvas);
+    st.row._starState = null;
+  }
+  starStates = [];
+  if(starObserver) starObserver.disconnect();
+}
+
+// Called after rows are in the DOM. Only rows carrying data-stars are watched at all.
+function starRegister(container){
+  if(!container || typeof IntersectionObserver === "undefined") return;
+  const obs = starObserverInstance();
+  const rows = container.querySelectorAll("[data-stars]");
+  for(let i = 0; i < rows.length; i++) obs.observe(rows[i]);
+}
+
+let starResizeTimer = null;
+window.addEventListener("resize", function(){
+  if(starResizeTimer) clearTimeout(starResizeTimer);
+  starResizeTimer = setTimeout(function(){
+    starResizeTimer = null;
+    for(let i = 0; i < starStates.length; i++){
+      const st = starStates[i];
+      starMeasure(st);
+      // Anything the resize left stranded outside the row gets nudged back in.
+      for(let j = 0; j < st.stars.length; j++){
+        const s = st.stars[j];
+        s.x = Math.max(s.r, Math.min(st.w - s.r, s.x));
+        s.y = Math.max(s.r, Math.min(st.h - s.r, s.y));
+      }
+      starDraw(st);
+    }
+  }, 150);
+});
+
+document.addEventListener("visibilitychange", function(){
+  if(document.hidden) starStopLoop(); else starStartLoop();
+});
+
+/* ---------- LISTEN TALLY ----------
+   Cumulative full listens per album, which is what the stars count.
+
+   Stored as a per-week contribution rather than one running total, because that makes every
+   write idempotent: re-syncing a week REPLACES its numbers instead of adding to them. That's
+   what lets "check this week" be pressed repeatedly, and a back-fill be re-run, without the
+   counts inflating. Keyed with reviewKey() so a review row and a list row look up the same
+   album the same way.
+
+   A "full listen" is 80% of an album's tracklist played inside one 7-day window — the same
+   rule This Week already shows on screen, just applied per week instead of to one query. */
+const TALLY_KEY = "ll_listen_tally";
+const WEEK_SECONDS = 7 * 24 * 60 * 60;
+// Mirrors the thresholds inside generateRecentListens(); kept here at module scope so the
+// tally and the back-fill can use them without reaching into that function.
+const TALLY_MIN_TRACKS = 4;
+const TALLY_FULL_RATIO = 0.8;
+
+function listenWeek(uts){ return Math.floor(uts / WEEK_SECONDS); }
+function listenWeekStart(w){ return w * WEEK_SECONDS; }
+
+let tallyStore = null;
+let tallyTotals = null;   // flattened key -> total, rebuilt lazily after any write
+
+function loadTally(){
+  if(tallyStore) return tallyStore;
+  try{ tallyStore = JSON.parse(localStorage.getItem(TALLY_KEY)); }catch(e){ tallyStore = null; }
+  if(!tallyStore || tallyStore.v !== 1 || !tallyStore.weeks) tallyStore = {v: 1, weeks: {}};
+  return tallyStore;
+}
+
+function tallyIndex(){
+  if(tallyTotals) return tallyTotals;
+  const st = loadTally();
+  const totals = {};
+  const weeks = Object.keys(st.weeks);
+  for(let i = 0; i < weeks.length; i++){
+    const wk = st.weeks[weeks[i]];
+    const keys = Object.keys(wk);
+    for(let j = 0; j < keys.length; j++){
+      totals[keys[j]] = (totals[keys[j]] || 0) + wk[keys[j]];
+    }
+  }
+  tallyTotals = totals;
+  return totals;
+}
+
+function listensFor(artist, title){
+  if(!artist || !title) return 0;
+  return tallyIndex()[reviewKey(artist, title)] || 0;
+}
+// One star per full listen past the first, capped so a heavily-played album doesn't swarm.
+function starCountFor(artist, title){
+  return Math.max(0, Math.min(STAR_MAX, listensFor(artist, title) - 1));
+}
+
+function setTallyWeek(week, map){
+  const st = loadTally();
+  const clean = {};
+  const keys = Object.keys(map || {});
+  for(let i = 0; i < keys.length; i++){
+    if(map[keys[i]] > 0) clean[keys[i]] = map[keys[i]];
+  }
+  if(Object.keys(clean).length) st.weeks[String(week)] = clean;
+  else delete st.weeks[String(week)];
+  tallyTotals = null;
+}
+
+function saveTally(){
+  loadTally();
+  saveUserData(TALLY_KEY, JSON.stringify(tallyStore));
+  tallyTotals = null;
+}
+
+function tallyWeekCount(){ return Object.keys(loadTally().weeks).length; }
+function tallyAlbumCount(){ return Object.keys(tallyIndex()).length; }
+
+/* Split each album's plays into the 7-day buckets they landed in, and credit each bucket on
+   its own. Groups must already carry trackCount (resolved) and utsList (per-play timestamps). */
+function tallyWeeksFromGroups(groups){
+  const byWeek = {};
+  for(let i = 0; i < groups.length; i++){
+    const g = groups[i];
+    if(!g || !g.utsList || !g.utsList.length) continue;
+    const real = g.trackCount > 0;
+    const divisor = real ? g.trackCount : RECENT_TRACK_COUNT_GUESS;
+    // Same guard This Week uses: a 2-3 track single shouldn't earn a "full listen".
+    if(real && g.trackCount < TALLY_MIN_TRACKS) continue;
+    const key = reviewKey(g.artist, g.album);
+    const perWeek = {};
+    for(let j = 0; j < g.utsList.length; j++){
+      if(!g.utsList[j]) continue;
+      const w = listenWeek(g.utsList[j]);
+      perWeek[w] = (perWeek[w] || 0) + 1;
+    }
+    const weeks = Object.keys(perWeek);
+    for(let j = 0; j < weeks.length; j++){
+      const ratio = perWeek[weeks[j]] / divisor;
+      if(ratio < TALLY_FULL_RATIO) continue;
+      // 80% leniency only buys the first listen; past that it's strict floor division.
+      const listens = Math.max(1, Math.floor(ratio));
+      if(!byWeek[weeks[j]]) byWeek[weeks[j]] = {};
+      byWeek[weeks[j]][key] = (byWeek[weeks[j]][key] || 0) + listens;
+    }
+  }
+  return byWeek;
+}
+
+/* Commit those buckets, but only the ones the query window actually covered in full.
+   A rolling 7-day window clips its oldest bucket, and writing that partial count would
+   clobber a complete one recorded earlier. The in-progress current week is the deliberate
+   exception: partial is all that exists for it, and the next sync replaces it with more. */
+function commitTallyWeeks(byWeek, fromUnix, toUnix){
+  const nowWeek = listenWeek(Math.floor(Date.now() / 1000));
+  const weeks = Object.keys(byWeek);
+  let written = 0;
+  for(let i = 0; i < weeks.length; i++){
+    const w = parseInt(weeks[i], 10);
+    const start = listenWeekStart(w), end = start + WEEK_SECONDS;
+    const fullyCovered = start >= fromUnix && end <= toUnix;
+    if(!fullyCovered && w !== nowWeek) continue;
+    setTallyWeek(w, byWeek[weeks[i]]);
+    written++;
+  }
+  if(written) saveTally();
+  return written;
+}
 
 /* ---------- TAB BALL ----------
    One gold ball rides between the four tab dots. The motion is driven frame by frame
@@ -1702,12 +2160,14 @@ const THEMES = {
     label: "Vinyl Warm (default)",
     bg: "#17140F", card: "#211D17", "card-hi": "#29241C", line: "#3A3327",
     ink: "#EDE6D8", "ink-dim": "#9C9384", gold: "#5636a0", "gold-dim": "#d383c8", teal: "#94d83b",
+    star: "#2C261C",
     "font-display": "'Merriweather',serif", "font-body": "'Merriweather Sans',sans-serif"
   },
   groovy: {
     label: "Groovy",
     bg: "#2B1B12", card: "#3A2618", "card-hi": "#4A3220", line: "#5C4030",
     ink: "#F5E6C8", "ink-dim": "#C9A876", gold: "#E8823C", "gold-dim": "#F2B15C", teal: "#7CB342",
+    star: "#43301F",
     "font-display": "'Fraunces',serif", "font-body": "'IBM Plex Mono',monospace"
   }
 };
@@ -1719,6 +2179,8 @@ function applyTheme(name){
   });
   document.body.setAttribute("data-theme", THEMES[name] ? name : "vinyl");
   if(typeof syncTabBall === "function"){ ballSlots = null; syncTabBall(); }
+  // The star colour is a theme token, so the shared sprite has to be re-rasterised.
+  if(typeof starColor !== "undefined"){ starColor = ""; starSprite = null; starSpriteKey = ""; }
 }
 function loadThemeName(){
   return localStorage.getItem("ll_theme") || "vinyl";
@@ -1971,6 +2433,7 @@ let discoverInitialized = false;
 let reviewsInitialized = false;
 
 function render(){
+  starReset();   // rows are about to be replaced; drop their canvases before they're orphaned
   if(section === "discover"){
     document.getElementById("backBtn").classList.add("hidden");
     document.getElementById("dashboardHeader").classList.add("hidden");
@@ -2094,7 +2557,7 @@ function renderDashboard(){
 
   html += '<div class="dash-actions">' +
     '<div class="dash-card dash-add" onclick="openNewListModal()"><div class="dash-add-plus">+</div><div class="dash-title">New list</div></div>' +
-    '<div class="dash-card dash-add" onclick="openNewFolderPrompt()"><div class="dash-add-plus">📁</div><div class="dash-title">New folder</div></div>' +
+    '<div class="dash-card dash-add" onclick="openNewFolderPrompt()"><div class="dash-add-plus">' + ICON_FOLDER_PLUS + '</div><div class="dash-title">New folder</div></div>' +
   '</div>';
   html += '</div>';
   content.innerHTML = html;
@@ -2151,9 +2614,10 @@ function renderAlbums(){
 
     const e = entryFor(i);
     const est = estFullListens(e);
-    const isTriple = est !== null && est.value >= 3;
+    const stars = starCountFor(lookupArtist(i), lookupAlbum(i));
     const row = document.createElement("div");
-    row.className = "album" + (heardNow ? " listened" : "") + (e.manual === null && e.playcount !== null ? " auto-only" : "") + (isTriple ? " triple" : "");
+    row.className = "album" + (heardNow ? " listened" : "") + (e.manual === null && e.playcount !== null ? " auto-only" : "");
+    if(stars) row.setAttribute("data-stars", String(stars));
 
     const metaBits = [];
     metaBits.push('<span class="genre-tag">' + escapeHtml(lookupGenre(i).toLowerCase()) + '</span>');
@@ -2180,7 +2644,7 @@ function renderAlbums(){
       '<div class="album-main">' +
         '<div class="album-link">' +
           '<div class="album-artist">' + escapeHtml(lookupArtist(i)) + '</div>' +
-          '<div class="album-title">' + escapeHtml(lookupAlbum(i)) + (isTriple ? ' <span class="badge-triple">★ 3+</span>' : '') + '</div>' +
+          '<div class="album-title">' + escapeHtml(lookupAlbum(i)) + '</div>' +
         '</div>' +
         '<div class="album-meta">' + metaBits.join("") + '</div>' +
         '<div class="row-actions">' +
@@ -2207,6 +2671,7 @@ function renderAlbums(){
   content.innerHTML = "";
   content.appendChild(wrap);
   content.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+  starRegister(content);
 
   const addRow = document.createElement("div");
   addRow.className = "add-album-row";
@@ -2364,6 +2829,7 @@ function openSettings(){
   ).join("");
   themeSelect.value = loadThemeName();
   renderSpotifySettings();
+  renderBackfillStatus();
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("settingsModal").classList.add("open");
 }
@@ -2620,6 +3086,7 @@ function storageUsageGroup(key){
   if(key.indexOf("ll_discover") === 0) return "Discover results";
   if(key === "ll_recent_results") return "This Week results";
   if(key === "ll_album_reviews") return "Reviews";
+  if(key === TALLY_KEY) return "Listen history";
   if(key === "ll_custom_lists" || key === "ll_list_meta" || key === "ll_folders" || key.indexOf("ll_added_") === 0) return "Lists & folders";
   return "Settings & other";
 }
@@ -2675,7 +3142,7 @@ function gatherBackupData(){
   // status) — a sync rebuilds those.
   const data = {};
 
-  ["ll_custom_lists", "ll_list_meta", "ll_folders", "ll_album_reviews", "ll_trackcount_overrides"].forEach(key => {
+  ["ll_custom_lists", "ll_list_meta", "ll_folders", "ll_album_reviews", "ll_trackcount_overrides", "ll_listen_tally"].forEach(key => {
     const val = localStorage.getItem(key);
     if(val !== null) data[key] = val;
   });
@@ -4567,6 +5034,7 @@ function updateDiscoverHeader(){
 }
 
 function renderDiscoverResultsArea(){
+  starReset();
   if(section !== "discover") return;
   if(!discoverResults) discoverResults = loadDiscoverResults();
   updateDiscoverHeader();
@@ -4732,9 +5200,10 @@ function groupScrobblesByAlbum(tracks){
   plays.forEach(p => {
     const key = root(p.node);
     // Credited to the earliest play's artist for now; a merged album gets Spotify's first artist later.
-    if(!groups[key]) groups[key] = {artist: p.artist, album: p.album, count: 0, lastUts: 0, artists: []};
+    if(!groups[key]) groups[key] = {artist: p.artist, album: p.album, count: 0, lastUts: 0, artists: [], utsList: []};
     const g = groups[key];
     g.count++;
+    g.utsList.push(p.uts);
     if(p.uts > g.lastUts) g.lastUts = p.uts;
     if(g.artists.indexOf(p.artist) === -1) g.artists.push(p.artist);
   });
@@ -4796,6 +5265,144 @@ async function fetchAlbumMeta(artist, album, need){
     }
   }
   return out;
+}
+
+/* ---------- HISTORY BACK-FILL ----------
+   Walks backwards through aligned 7-day windows filling in the tally for weeks that were
+   never checked. Windows are aligned to the same grid the tally buckets use, so every week
+   it fetches is fully covered and gets committed rather than skipped as partial.
+
+   Track counts are the expensive half of this, so they're resolved once into a run-local
+   cache and reused for every week the album appears in. */
+const BACKFILL_MAX_WEEKS = 260;      // ~5 years, a hard ceiling on a runaway walk
+const BACKFILL_QUIET_WEEKS = 10;     // stop after this many consecutive weeks with no scrobbles
+let backfillRunning = false;
+let backfillStop = false;
+
+function backfillNote(msg){
+  const el = document.getElementById("backfillNote");
+  if(el) el.textContent = msg;
+}
+
+// Only the track count is needed here — no tags, no year — so this is a cheaper path than
+// the one This Week uses, and it leans on the same caches.
+async function backfillTrackCount(g, known, cache, spState){
+  const ck = g.artist.toLowerCase() + "|" + g.album.toLowerCase();
+  if(cache[ck] !== undefined) return cache[ck];
+  let count = 0;
+  try{
+    const sp = await spotifyAlbumInfoSafe(g.artist, g.album, spState);
+    count = preferredTrackCount(g.artist, g.album, sp, known[ck] ? known[ck].trackCount : 0);
+    if(!count){
+      const meta = await fetchAlbumMeta(g.artist, g.album, {info: true, tags: false});
+      count = preferredTrackCount(g.artist, g.album, sp, meta.trackCount || 0);
+    }
+  }catch(e){ count = 0; }
+  cache[ck] = count || 0;
+  return cache[ck];
+}
+
+async function backfillListenHistory(){
+  if(backfillRunning){ backfillStop = true; return; }
+  if(!settings.username || !settings.apiKey){
+    backfillNote("Connect Last.fm in Settings first.");
+    return;
+  }
+  backfillRunning = true;
+  backfillStop = false;
+  const btn = document.getElementById("backfillBtn");
+  if(btn) btn.textContent = "Stop catching up";
+
+  const known = buildKnownTrackCountIndex();
+  const trackCache = {};
+  const spState = newSpotifyLookupState();
+  const store = loadTally();
+  const nowWeek = listenWeek(Math.floor(Date.now() / 1000));
+
+  let quiet = 0, scanned = 0, filled = 0, addedListens = 0;
+  try{
+    for(let back = 0; back < BACKFILL_MAX_WEEKS; back++){
+      if(backfillStop){ backfillNote("Stopped after " + scanned + " weeks. Press again to carry on."); break; }
+      const w = nowWeek - back;
+      const from = listenWeekStart(w), to = from + WEEK_SECONDS;
+      scanned++;
+
+      // Already recorded, and not the in-progress week? Nothing to fetch.
+      if(store.weeks[String(w)] !== undefined && w !== nowWeek){
+        backfillNote("Week " + scanned + " — already counted, skipping.");
+        continue;
+      }
+
+      backfillNote("Week " + scanned + " of up to " + BACKFILL_MAX_WEEKS + " — fetching scrobbles…");
+      let tracks = [];
+      try{
+        let page = 1, totalPages = 1;
+        do{
+          const res = await fetchRecentTracksPage(from, to, page);
+          totalPages = res.totalPages;
+          tracks = tracks.concat(res.tracks);
+          page++;
+          await sleep(150);
+        } while(page <= totalPages && page <= 20);
+      }catch(err){
+        backfillNote("Last.fm error (" + (err.detail || "unknown") + "). Stopped after " + scanned + " weeks — press again to resume.");
+        break;
+      }
+
+      if(!tracks.length){
+        quiet++;
+        // An empty week that we've walked past the start of history into: give up after a run.
+        if(quiet >= BACKFILL_QUIET_WEEKS){
+          backfillNote("Reached " + BACKFILL_QUIET_WEEKS + " empty weeks in a row — assuming that's the start of your history.");
+          break;
+        }
+        setTallyWeek(w, {});
+        continue;
+      }
+      quiet = 0;
+
+      let groups = groupScrobblesByAlbum(tracks).filter(g => g.count >= 4);
+      for(let i = 0; i < groups.length; i++){
+        if(backfillStop) break;
+        backfillNote("Week " + scanned + " — track counts " + (i + 1) + "/" + groups.length + "…");
+        groups[i].trackCount = await backfillTrackCount(groups[i], known, trackCache, spState);
+      }
+
+      const byWeek = tallyWeeksFromGroups(groups);
+      const before = tallyIndex();
+      let beforeTotal = 0;
+      Object.keys(before).forEach(k => { beforeTotal += before[k]; });
+      commitTallyWeeks(byWeek, from, to);
+      const after = tallyIndex();
+      let afterTotal = 0;
+      Object.keys(after).forEach(k => { afterTotal += after[k]; });
+      addedListens += Math.max(0, afterTotal - beforeTotal);
+      filled++;
+      backfillNote("Week " + scanned + " — " + groups.length + " albums, " + addedListens + " listens recorded so far.");
+      await sleep(120);
+    }
+  }finally{
+    const wasStopped = backfillStop;
+    saveTally();
+    backfillRunning = false;
+    backfillStop = false;
+    if(btn) btn.textContent = "Catch up all history";
+    renderBackfillStatus();
+    if(!wasStopped){
+      backfillNote("Done — " + filled + " week" + (filled === 1 ? "" : "s") + " filled in, " +
+        tallyAlbumCount() + " album" + (tallyAlbumCount() === 1 ? "" : "s") + " now have listen counts.");
+    }
+    render();
+  }
+}
+
+function renderBackfillStatus(){
+  const el = document.getElementById("backfillStatus");
+  if(!el) return;
+  const weeks = tallyWeekCount(), albums = tallyAlbumCount();
+  el.textContent = weeks === 0
+    ? "No listen history recorded yet."
+    : weeks + " week" + (weeks === 1 ? "" : "s") + " recorded · " + albums + " album" + (albums === 1 ? "" : "s") + " with listens.";
 }
 
 async function generateRecentListens(){
@@ -4906,6 +5513,10 @@ async function generateRecentListens(){
     await sleep(150);
   }
 
+  // Feed the cumulative tally that drives the listen stars. Weeks the rolling window only
+  // partially covers are skipped inside commitTallyWeeks, so nothing complete gets clobbered.
+  commitTallyWeeks(tallyWeeksFromGroups(scored), fromUnix, toUnix);
+
   const MIN_TRACKS_FOR_ALBUM = 4; // filters out singles/EPs (2-3 track releases) — a couple scrobbles shouldn't count as a "full listen"
   // Requiring literally every track scrobbled (a strict floor(count/trackCount) >= 1) was too
   // strict for real listening — skipping an intro, or not scrobbling the last track before
@@ -4980,6 +5591,7 @@ async function checkMissingYears(){
 }
 
 function renderRecentResultsArea(){
+  starReset();
   const content = document.getElementById("content");
   if(section !== "recent") return;
   if(!recentResults || !recentResults.albums || recentResults.albums.length === 0){
