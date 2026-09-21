@@ -261,8 +261,6 @@
   .near-miss-section{margin-top:26px; border-top:1px solid var(--line); padding-top:6px;}
   .discover-section-head{padding:16px 10px 8px;}
   .discover-section-title{font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink);}
-  .discover-section-sub{font-size:10.5px; color:var(--ink-dim); margin-top:3px; line-height:1.45;}
-  .rec-because{color:var(--gold-dim);}
   .discover-cover{width:44px; height:44px; border-radius:6px; flex:none; object-fit:cover; background:var(--card-hi);}
   .discover-card.album-link{cursor:pointer;}
   .discover-stamp{font-size:10.5px; color:var(--ink-dim); padding:12px 10px 0;}
@@ -3587,9 +3585,9 @@ async function syncAll(opts){
 // Tokens live in localStorage like everything else in this app. They're deliberately left out
 // of the backup allowlist, so an exported file never carries a live token.
 const SPOTIFY_CLIENT_ID = "7886ea3d219b4863b09676af3f41b385";
-// Minimum needed: top + followed artists power "From artists you know". Catalog search and
-// artist albums need no scope at all.
-const SPOTIFY_SCOPES = ["user-top-read", "user-follow-read"];
+// None needed: the New tab only reads the public catalogue (album search and browse categories),
+// which takes no user scope. Tokens already granted with the old scopes keep working.
+const SPOTIFY_SCOPES = [];
 const SPOTIFY_API = "https://api.spotify.com/v1";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 const SPOTIFY_AUTH_KEY = "ll_spotify_auth";   // {access_token, refresh_token, scope, expires_at}
@@ -4552,15 +4550,10 @@ const DISCOVER_WINDOW_KEY = "ll_discover_window";
 const DISCOVER_WINDOWS = [7, 28];
 const DISCOVER_NEW_TAG_PAGES = 20;    // 10 results per page is the search maximum now
 const DISCOVER_YEAR_PAGES = 15;       // 4-week window only: tag:new stops at two weeks
-const DISCOVER_ARTIST_CHECKS = 25;    // album lookups for top/followed Spotify artists
-const DISCOVER_SEED_SEARCHES = 12;    // name searches for artists you rated highly
-const DISCOVER_SIMILAR_SEARCHES = 8;  // name searches for the most-suggested similar artists
-const DISCOVER_ENRICH_MAX = 45;       // Last.fm listener/tag lookups per refresh
-const DISCOVER_STORE_MAX = 60;        // stored per section (the 7-day view can be cut from 28-day data)
-const DISCOVER_SHOW = {big: 20, known: 25, maybe: 15};
-const REC_SEED_ROTATIONS = ["In rotation", "Will come back to it"];
-const REC_SIMILAR_SEEDS = 8;
-const REC_SIMILAR_PER_SEED = 15;
+const DISCOVER_ENRICH_MAX = 90;       // Last.fm listener/tag lookups per refresh — every row shown gets one
+const DISCOVER_STORE_MAX = 80;        // stored per window (the 7-day view can be cut from 28-day data)
+const DISCOVER_SHOW = 40;
+const DISCOVER_MIN_LISTENERS = 100;   // below this nobody is listening yet — not worth a row
 const DISCOVER_SKIP_TITLE = /\b(remaster(ed)?|anniversary|deluxe|expanded|sped[\s-]?up|slowed|karaoke|instrumentals)\b/i;
 const DISCOVER_LINKS = [
   {label: "Album of the Year — releases this week", url: "https://www.albumoftheyear.org/releases/this-week/"},
@@ -4569,23 +4562,47 @@ const DISCOVER_LINKS = [
   {label: "Bandcamp Daily", url: "https://daily.bandcamp.com/"}
 ];
 
-let discoverResults = null;   // {version: 1, windows: {"7": result, "28": result}}
+/* --- Spotify's own new-release pages, by genre --- */
+// Spotify publishes no endpoint that enumerates these, so the list is hand-checked: every id
+// below was opened and confirmed. Where Spotify keeps a genre-specific "new releases" page it
+// wins over the genre hub; the rest are hubs, which open on that genre's new releases.
+// (The browse-categories endpoint isn't a substitute — it mixes in moods, podcasts and Made For You.)
+const SPOTIFY_GENRE_PAGE = "https://open.spotify.com/genre/";
+const SPOTIFY_GENRE_LINKS = [
+  {name: "All new releases", id: "0JQ5DAqbMKFGaKcChsSgUO"},
+  {name: "Alternative", id: "0JQ5IMCbQBLrk4lETRXWtE"},
+  {name: "Country", id: "0JQ5DAqbMKFKLfwjuJMoNC"},
+  {name: "Dance/Electronic", id: "0JQ5DAqbMKFHOzuVTgTizF"},
+  {name: "Folk & Acoustic", id: "0JQ5DAqbMKFy78wprEpAjl"},
+  {name: "Hip-Hop", id: "0JQ5DAqbMKFQ00XGBls6ym"},
+  {name: "Indie", id: "0JQ5IMCbQBLBuzLsl90sks"},
+  {name: "Jazz", id: "0JQ5IMCbQBLt0tfLSldKGG"},
+  {name: "K-Pop", id: "0JQ5DAqbMKFGvOw3O4nLAf"},
+  {name: "Latin", id: "0JQ5DAqbMKFxXaXKP7zcDp"},
+  {name: "Metal", id: "0JQ5IMCbQBLw6iUaLgzA8X"},
+  {name: "Pop", id: "0JQ5IMCbQBLyjAcESOTeAo"},
+  {name: "Punk", id: "0JQ5DAqbMKFAjfauKLOZiv"},
+  {name: "R&B", id: "0JQ5IMCbQBLqAUj6H8RfSo"},
+  {name: "Reggae", id: "0JQ5DAqbMKFJKoGyUMo2hE"},
+  {name: "Rock", id: "0JQ5DAqbMKFDXXwE9BDJAr"},
+  {name: "Every genre", id: "0JQ5DArNBzkmxXHCqFLx3b"}
+];
+
+let discoverResults = null;   // {version: 2, windows: {"7": result, "28": result}}
 let discoverWindow = parseInt(localStorage.getItem(DISCOVER_WINDOW_KEY), 10) === 28 ? 28 : 7;
 let discoverBusy = false;
 
-function emptyDiscoverStore(){ return {version: 1, windows: {}}; }
+function emptyDiscoverStore(){ return {version: 2, windows: {}}; }
 function loadDiscoverResults(){
   // Caches from the Apple-chart / MusicBrainz versions have a different shape — drop them.
   localStorage.removeItem("ll_discover_results");
   localStorage.removeItem("ll_discover_v2");
   try{
     const s = JSON.parse(localStorage.getItem(DISCOVER_STORE_KEY));
-    if(!s || s.version !== 1 || !s.windows || typeof s.windows !== "object") return emptyDiscoverStore();
+    if(!s || s.version !== 2 || !s.windows || typeof s.windows !== "object") return emptyDiscoverStore();
     Object.keys(s.windows).forEach(k => {
       const w = s.windows[k];
-      if(!w || !w.generatedAt || !Array.isArray(w.big) || !Array.isArray(w.known) || !Array.isArray(w.maybe)){
-        delete s.windows[k];
-      }
+      if(!w || !w.generatedAt || !Array.isArray(w.albums)) delete s.windows[k];
     });
     return s;
   }catch(e){ return emptyDiscoverStore(); }
@@ -4717,146 +4734,6 @@ async function fetchNewReleasePool(days, note){
   return Array.from(pool.values());
 }
 
-/* --- taste signals --- */
-async function fetchSpotifyTaste(note, warnings){
-  const byId = new Map();   // insertion order doubles as priority: short-term top first
-  const touch = (a, signal) => {
-    if(!a || !a.id || !a.name) return;
-    const entry = byId.get(a.id) || {id: a.id, name: a.name, signals: {}};
-    entry.signals[signal] = true;
-    byId.set(a.id, entry);
-  };
-  note.textContent = "Reading your top artists…";
-  try{
-    for(const [range, signal] of [["short_term", "topShort"], ["medium_term", "topMedium"]]){
-      const data = await spotifyGet("/me/top/artists", {time_range: range, limit: 50});
-      ((data && data.items) || []).forEach(a => touch(a, signal));
-    }
-  }catch(err){
-    if(err.type === "reauth" || err.type === "rate") throw err;
-    warnings.push("top artists unavailable: " + spotifyErrorText(err));
-  }
-  note.textContent = "Reading artists you follow…";
-  try{
-    let after = null;
-    for(let p = 0; p < 4; p++){
-      const query = {type: "artist", limit: 50};
-      if(after) query.after = after;
-      const data = await spotifyGet("/me/following", query);
-      const page = data && data.artists;
-      ((page && page.items) || []).forEach(a => touch(a, "followed"));
-      after = page && page.cursors && page.cursors.after;
-      if(!after || !page.next) break;
-    }
-  }catch(err){
-    if(err.type === "reauth" || err.type === "rate") throw err;
-    warnings.push("followed artists unavailable: " + spotifyErrorText(err));
-  }
-  return byId;
-}
-
-function reviewTaste(){
-  const all = loadReviews();
-  const seeds = Object.values(all)
-    .filter(r => r && r.artist && REC_SEED_ROTATIONS.indexOf(r.rotation) !== -1)
-    .sort((a, b) => (REC_SEED_ROTATIONS.indexOf(a.rotation) - REC_SEED_ROTATIONS.indexOf(b.rotation))
-      || ((b.reviewedAt || 0) - (a.reviewedAt || 0)));
-  const artists = new Map();   // normName -> strongest review for that artist
-  const genres = new Map();    // normalised genre -> display label
-  seeds.forEach(r => {
-    const k = normName(r.artist);
-    if(k && !artists.has(k)) artists.set(k, r);
-    (r.genres || []).forEach(g => {
-      const gk = normName(g);
-      if(gk && !genres.has(gk)) genres.set(gk, String(g).toLowerCase());
-    });
-  });
-  return {artists, genres, reviewedKeys: new Set(Object.keys(all)), seedCount: seeds.length};
-}
-
-async function fetchSimilarArtists(artist, limit){
-  const url = "https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar"
-    + "&api_key=" + encodeURIComponent(settings.apiKey)
-    + "&artist=" + encodeURIComponent(artist)
-    + "&limit=" + limit + "&autocorrect=1&format=json";
-  try{
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.error || !data.similarartists) return [];
-    const arr = data.similarartists.artist;
-    return (Array.isArray(arr) ? arr : [arr]).map(a => a && a.name).filter(Boolean);
-  }catch(e){ return []; }
-}
-async function buildSimilarMap(taste, note){
-  const similar = new Map();   // normName -> {name, via: review, hits}
-  if(!settings.apiKey) return similar;
-  const seeds = Array.from(taste.artists.values()).slice(0, REC_SIMILAR_SEEDS);
-  for(let i = 0; i < seeds.length; i++){
-    note.textContent = "Finding artists like " + seeds[i].artist + "…";
-    const names = await fetchSimilarArtists(seeds[i].artist, REC_SIMILAR_PER_SEED);
-    names.forEach(name => {
-      const k = normName(name);
-      if(!k || taste.artists.has(k)) return;   // already an artist you rated
-      const e = similar.get(k);
-      if(e) e.hits++;
-      else similar.set(k, {name, via: seeds[i], hits: 1});
-    });
-    await sleep(120);
-  }
-  return similar;
-}
-
-/* --- direct checks: new albums from specific artists, even if search never surfaced them --- */
-async function albumsByArtistName(name, cutoff){
-  const q = 'artist:"' + name.replace(/"/g, "") + '" ' + yearFilterFor(cutoff);
-  const data = await spotifyGet("/search", {q: q, type: "album", limit: 10});
-  const target = normName(name);
-  return ((data && data.albums && data.albums.items) || [])
-    .filter(a => a && (a.artists || []).some(x => x && normName(x.name) === target));
-}
-async function albumsByArtistId(id){
-  const data = await spotifyGet("/artists/" + encodeURIComponent(id) + "/albums", {include_groups: "album,single", limit: 10});
-  return (data && data.items) || [];
-}
-
-async function collectCandidates(pool, taste, spotifyArtists, similar, days, note, warnings){
-  const cutoff = discoverCutoff(days);
-  const today = localDateStr(new Date());
-  const candidates = new Map();
-  pool.forEach(al => candidates.set(discoverKey(al), al));
-  const consider = raw => {
-    const al = normalizeSpotifyAlbum(raw);
-    if(!al || !isDiscoverWorthy(al) || !inDiscoverWindow(al, cutoff, today)) return;
-    const key = discoverKey(al);
-    if(!candidates.has(key)) candidates.set(key, al);
-  };
-
-  const seedJobs = Array.from(taste.artists.values()).slice(0, DISCOVER_SEED_SEARCHES)
-    .map(r => () => albumsByArtistName(r.artist, cutoff));
-  const idJobs = Array.from(spotifyArtists.values())
-    .filter(a => !taste.artists.has(normName(a.name)))   // those are already covered by seedJobs
-    .slice(0, DISCOVER_ARTIST_CHECKS)
-    .map(a => () => albumsByArtistId(a.id));
-  const similarJobs = Array.from(similar.values()).sort((a, b) => b.hits - a.hits)
-    .slice(0, DISCOVER_SIMILAR_SEARCHES)
-    .map(s => () => albumsByArtistName(s.name, cutoff));
-  const jobs = seedJobs.concat(idJobs, similarJobs);
-
-  let done = 0, failed = 0;
-  await mapLimit(jobs, 2, async job => {
-    try{
-      (await job()).forEach(consider);
-    }catch(err){
-      if(err.type === "reauth" || err.type === "rate") throw err;
-      failed++;
-    }
-    done++;
-    note.textContent = "Checking artists you care about… " + done + "/" + jobs.length;
-  });
-  if(failed) warnings.push(failed + " artist lookup" + (failed === 1 ? "" : "s") + " failed");
-  return Array.from(candidates.values());
-}
-
 /* --- Last.fm: listener counts (the popularity signal Spotify no longer exposes) + tags --- */
 async function fetchLastfmBuzz(artist, title){
   const base = "https://ws.audioscrobbler.com/2.0/?api_key=" + encodeURIComponent(settings.apiKey)
@@ -4885,43 +4762,13 @@ function discoverMomentum(al){
   return (al.listeners || 0) / Math.sqrt(daysSinceRelease(al.releaseDate) + 1);
 }
 
-/* --- scoring --- */
-function personalReasons(al, taste, spotifyArtists, similar){
-  const reasons = [];
-  al.artistNames.forEach(n => {
-    const k = normName(n);
-    const seed = taste.artists.get(k);
-    if(seed){
-      reasons.push(seed.rotation === "In rotation"
-        ? {w: 10, known: true, text: "you have " + seed.title + " in rotation"}
-        : {w: 8, known: true, text: "you'll come back to " + seed.title});
-    }
-    const sim = similar.get(k);
-    if(sim) reasons.push({w: 4, known: false, text: "like " + sim.via.artist + " (" + sim.via.title + ")"});
-  });
-  al.artistIds.forEach(id => {
-    const a = spotifyArtists.get(id);
-    if(!a) return;
-    if(a.signals.topShort) reasons.push({w: 7, known: true, text: "one of your top artists lately"});
-    else if(a.signals.topMedium) reasons.push({w: 6, known: true, text: "one of your top artists"});
-    if(a.signals.followed) reasons.push({w: 5, known: true, text: "you follow " + a.name});
-  });
-  if(al.tags && al.tags.length && taste.genres.size){
-    const matched = al.tags.filter(t => taste.genres.has(normName(t))).slice(0, 2);
-    if(matched.length) reasons.push({w: 2 * matched.length, known: false, text: "fits your " + matched.join(" / ") + " favorites"});
-  }
-  return reasons.sort((a, b) => b.w - a.w);
-}
-function toDiscoverItem(al, reasons){
-  const texts = [];
-  (reasons || []).forEach(r => { if(texts.indexOf(r.text) === -1) texts.push(r.text); });
+/* --- shape for storage --- */
+function toDiscoverItem(al){
   return {
     id: al.id, artist: al.artist, artistLine: al.artistLine, title: al.title,
     releaseDate: al.releaseDate, tracks: al.tracks, kind: discoverKind(al),
     image: al.image, url: al.url,
-    listeners: al.listeners || 0, tags: al.tags || [],
-    reason: texts.slice(0, 2).join(" · "),
-    score: (reasons || []).reduce((sum, r) => sum + r.w, 0)
+    listeners: al.listeners || 0, tags: al.tags || []
   };
 }
 
@@ -4938,64 +4785,37 @@ async function generateDiscover(){
   const warnings = [];
   try{
     const pool = await fetchNewReleasePool(days, note);
-    const taste = reviewTaste();
-    const spotifyArtists = await fetchSpotifyTaste(note, warnings);
-    const similar = await buildSimilarMap(taste, note);
-    const candidates = await collectCandidates(pool, taste, spotifyArtists, similar, days, note, warnings);
 
+    let albums;
     if(settings.apiKey){
-      // Personal matches first (their tags feed genre matching), then the pool in search order.
-      const toEnrich = [];
-      const picked = new Set();
-      const take = al => {
-        if(toEnrich.length < DISCOVER_ENRICH_MAX && !picked.has(al)){ picked.add(al); toEnrich.push(al); }
-      };
-      candidates.filter(al => personalReasons(al, taste, spotifyArtists, similar).length).slice(0, 20).forEach(take);
-      pool.slice().sort((a, b) => a.searchRank - b.searchRank).forEach(take);
+      // Every row needs listeners (to rank and to clear the floor) and tags (the genre label),
+      // so enrich in Spotify's search order and keep what clears the bar.
+      const toEnrich = pool.slice().sort((a, b) => a.searchRank - b.searchRank).slice(0, DISCOVER_ENRICH_MAX);
       let n = 0;
       await mapLimit(toEnrich, 3, async al => {
         const buzz = await fetchLastfmBuzz(al.artist, al.title);
         al.listeners = buzz.listeners;
         al.tags = buzz.tags;
-        al.enriched = true;
         n++;
         note.textContent = "Checking listener counts on Last.fm… " + n + "/" + toEnrich.length;
         await sleep(150);
       });
+      const kept = toEnrich.filter(al => al.listeners >= DISCOVER_MIN_LISTENERS);
+      const dropped = toEnrich.length - kept.length;
+      // An album Last.fm can't match reads as 0 listeners, so it goes too — we can't vouch for it.
+      if(dropped) warnings.push(dropped + " hidden (under " + DISCOVER_MIN_LISTENERS + " listeners or not on Last.fm)");
+      albums = kept.sort((a, b) => (discoverMomentum(b) - discoverMomentum(a)) || (a.searchRank - b.searchRank));
     }else{
-      warnings.push("add a Last.fm key in Settings to rank by listeners");
+      // No key, so no listener counts to filter or rank on — fall back to Spotify's own order.
+      warnings.push("add a Last.fm key in Settings to rank by listeners and hide the unheard");
+      albums = pool.slice().sort((a, b) => a.searchRank - b.searchRank);
     }
+    albums = albums.slice(0, DISCOVER_STORE_MAX).map(toDiscoverItem);
 
-    const big = pool.slice().sort((a, b) => {
-      if(!!a.enriched !== !!b.enriched) return a.enriched ? -1 : 1;
-      return (discoverMomentum(b) - discoverMomentum(a)) || (a.searchRank - b.searchRank);
-    }).slice(0, DISCOVER_STORE_MAX).map(al => toDiscoverItem(al, null));
-
-    const known = [], maybe = [];
-    candidates.forEach(al => {
-      if(taste.reviewedKeys.has(reviewKey(al.artist, al.title)) || taste.reviewedKeys.has(discoverKey(al))) return;
-      const reasons = personalReasons(al, taste, spotifyArtists, similar);
-      if(reasons.length === 0) return;
-      (reasons.some(r => r.known) ? known : maybe).push(toDiscoverItem(al, reasons));
-    });
-    const byScore = (a, b) => (b.score - a.score) || (b.listeners - a.listeners) || (a.releaseDate < b.releaseDate ? 1 : -1);
-    known.sort(byScore);
-    maybe.sort(byScore);
-
-    discoverResults.windows[days] = {
-      generatedAt: Date.now(),
-      days: days,
-      big: big,
-      known: known.slice(0, DISCOVER_STORE_MAX),
-      maybe: maybe.slice(0, DISCOVER_STORE_MAX),
-      seedCount: taste.seedCount,
-      spotifyArtistCount: spotifyArtists.size
-    };
+    discoverResults.windows[days] = {generatedAt: Date.now(), days: days, albums: albums};
     saveDiscoverResults();
 
-    const bits = [big.length + " new", known.length + " from artists you know", maybe.length + " might be your thing"];
-    if(taste.seedCount === 0) bits.push("rate albums “In rotation” or “Will come back to it” for better picks");
-    note.textContent = bits.concat(warnings).join(" · ");
+    note.textContent = [albums.length + " new albums"].concat(warnings).join(" · ");
   }catch(err){
     note.textContent = "Couldn't load new releases: " + spotifyErrorText(err);
   }finally{
@@ -5018,15 +4838,12 @@ function resultsForWindow(days){
   const wide = discoverResults.windows[28];
   if(days < 28 && wide && (!own || wide.generatedAt > own.generatedAt)){
     const cutoff = discoverCutoff(days);
-    const keep = al => al.releaseDate >= cutoff;
-    return Object.assign({}, wide, {
-      big: wide.big.filter(keep), known: wide.known.filter(keep), maybe: wide.maybe.filter(keep), derived: true
-    });
+    return Object.assign({}, wide, {albums: wide.albums.filter(al => al.releaseDate >= cutoff), derived: true});
   }
   return own || null;
 }
-function discoverSectionItems(res, kind){
-  return (res && res[kind] ? res[kind] : []).slice(0, DISCOVER_SHOW[kind]);
+function discoverItems(res){
+  return (res && res.albums ? res.albums : []).slice(0, DISCOVER_SHOW);
 }
 
 function formatListeners(n){
@@ -5041,30 +4858,31 @@ function releaseAgeLabel(dateStr){
   const pretty = parseLocalDate(dateStr).toLocaleDateString(undefined, {month: "short", day: "numeric"});
   return pretty + " · " + (d === 0 ? "today" : d === 1 ? "yesterday" : d + "d ago");
 }
-function discoverCardHtml(al, extra){
+function discoverCardHtml(al){
   const cover = al.image
     ? '<img class="discover-cover" src="' + escapeHtml(al.image) + '" alt="" loading="lazy">'
     : '<div class="discover-cover"></div>';
   const meta = ['<span>' + escapeHtml(releaseAgeLabel(al.releaseDate)) + '</span>'];
   if(al.kind === "EP") meta.push('<span>EP</span>');
   if(al.listeners) meta.push('<span>' + formatListeners(al.listeners) + '</span>');
-  if(al.tags && al.tags.length) meta.push('<span class="genre-tag">' + escapeHtml(al.tags.slice(0, 2).join(" / ")) + '</span>');
+  if(al.tags && al.tags.length) meta.push('<span class="genre-tag">' + escapeHtml(al.tags.slice(0, 3).join(" / ")) + '</span>');
   return cover +
     '<div class="discover-main">' +
       '<div class="discover-artist">' + escapeHtml(al.artistLine || al.artist) + '</div>' +
       '<div class="discover-title">' + escapeHtml(al.title) + '</div>' +
-      (extra ? '<div class="discover-meta">' + extra + '</div>' : '') +
       '<div class="discover-meta">' + meta.join("") + '</div>' +
     '</div>';
 }
-function discoverLinksHtml(){
-  return '<div class="discover-section-head">' +
-      '<div class="discover-section-title">What critics are saying</div>' +
-      '<div class="discover-section-sub">Spotify has no critic signal — these fill that gap</div>' +
-    '</div>' +
+function linkListHtml(title, links){
+  return '<div class="discover-section-head"><div class="discover-section-title">' + title + '</div></div>' +
     '<div class="discover-links">' +
-      DISCOVER_LINKS.map(l => '<a href="' + l.url + '" target="_blank" rel="noopener">' + escapeHtml(l.label) + '</a>').join("") +
+      links.map(l => '<a href="' + escapeHtml(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.label) + '</a>').join("") +
     '</div>';
+}
+function discoverLinksHtml(){
+  return linkListHtml("New releases by genre",
+      SPOTIFY_GENRE_LINKS.map(g => ({label: g.name, url: SPOTIFY_GENRE_PAGE + g.id}))) +
+    linkListHtml("Publications", DISCOVER_LINKS);
 }
 
 function updateDiscoverHeader(){
@@ -5085,14 +4903,16 @@ function renderDiscoverResultsArea(){
   const content = document.getElementById("content");
   if(!isSpotifyConnected()){
     content.innerHTML = '<div class="empty-hint">Connect Spotify to see new releases, ranked by how many people are ' +
-      'actually listening, plus picks from your top and followed artists and the albums you keep in rotation.</div>' +
-      discoverLinksHtml();
+      'actually listening.</div>' + discoverLinksHtml();
     return;
   }
   const res = resultsForWindow(discoverWindow);
-  if(!res){
-    content.innerHTML = '<div class="empty-hint">Tap Refresh to load ' +
-      (discoverWindow === 7 ? "this week's" : "the last four weeks of") + ' new releases.</div>' + discoverLinksHtml();
+  const items = discoverItems(res);
+  if(items.length === 0){
+    content.innerHTML = '<div class="empty-hint">' + (res
+      ? "No new albums turned up in this window. Try the 4-week view or refresh later."
+      : "Tap Refresh to load " + (discoverWindow === 7 ? "this week's" : "the last four weeks of") + " new releases.") +
+      '</div>' + discoverLinksHtml();
     return;
   }
 
@@ -5103,58 +4923,33 @@ function renderDiscoverResultsArea(){
     (res.derived ? " · cut from your 4-week refresh" : "");
   frag.appendChild(stamp);
 
-  let shown = 0;
-  const addSection = (kind, label, sub, extraFor) => {
-    const items = discoverSectionItems(res, kind);
-    if(items.length === 0) return;
-    shown += items.length;
-    const head = document.createElement("div");
-    head.className = "discover-section-head";
-    head.innerHTML = '<div class="discover-section-title">' + label + '</div>' +
-      '<div class="discover-section-sub">' + sub + '</div>';
-    frag.appendChild(head);
-    items.forEach(al => {
-      const row = document.createElement("div");
-      row.className = "discover-card album-link";
-      row.innerHTML = discoverCardHtml(al, extraFor ? extraFor(al) : "");
-      row.onclick = () => al.url ? openSpotifyUrl(al.url) : openSpotifySearch(al.artist, al.title);
-      frag.appendChild(row);
-    });
-    const saveRow = document.createElement("div");
-    saveRow.className = "add-album-row";
-    saveRow.innerHTML = '<button class="sync-btn save-discover-btn" onclick="saveDiscoverAsList(\'' + kind + '\')">Save these ' + items.length + ' as a list</button>';
-    frag.appendChild(saveRow);
-  };
-
-  addSection("big", "The big ones",
-    "New albums people are actually playing — ranked by Last.fm listeners, adjusted for how long they've been out");
-  addSection("known", "From artists you know",
-    "Your top and followed artists on Spotify, and artists you rated In rotation or Will come back to it",
-    al => '<span class="rec-because">' + escapeHtml(al.reason) + '</span>');
-  addSection("maybe", "Might be your thing",
-    "Similar to artists you keep in rotation, or in genres you rate highly",
-    al => '<span class="rec-because">' + escapeHtml(al.reason) + '</span>');
+  items.forEach(al => {
+    const row = document.createElement("div");
+    row.className = "discover-card album-link";
+    row.innerHTML = discoverCardHtml(al);
+    row.onclick = () => al.url ? openSpotifyUrl(al.url) : openSpotifySearch(al.artist, al.title);
+    frag.appendChild(row);
+  });
+  const saveRow = document.createElement("div");
+  saveRow.className = "add-album-row";
+  saveRow.innerHTML = '<button class="sync-btn save-discover-btn" onclick="saveDiscoverAsList()">Save these ' + items.length + ' as a list</button>';
+  frag.appendChild(saveRow);
 
   content.innerHTML = "";
-  if(shown === 0){
-    content.innerHTML = '<div class="empty-hint">No new albums turned up in this window. Try the 4-week view or refresh later.</div>' + discoverLinksHtml();
-    return;
-  }
   content.appendChild(frag);
   content.insertAdjacentHTML("beforeend", discoverLinksHtml());
 }
 
-function saveDiscoverAsList(kind){
-  const items = discoverSectionItems(resultsForWindow(discoverWindow), kind);
+function saveDiscoverAsList(){
+  const items = discoverItems(resultsForWindow(discoverWindow));
   if(items.length === 0) return;
   const stamp = new Date().toLocaleDateString(undefined, {month: "short", day: "numeric", year: "numeric"});
-  const prefix = {big: "New & big", known: "New from artists you know", maybe: "New & might be your thing"}[kind];
-  const label = prefix + " — " + stamp;
+  const label = "New albums — " + stamp;
   const albums = items.map(al => ({
     a: al.artist,
     t: al.title,
     y: al.releaseDate ? al.releaseDate.slice(0, 4) : "",
-    g: al.tags ? al.tags.slice(0, 2).join(" / ") : ""
+    g: al.tags ? al.tags.slice(0, 3).join(" / ") : ""
   }));
   let id = slugify(label);
   const existingIds = new Set(getAllLists().map(l => l.id));
