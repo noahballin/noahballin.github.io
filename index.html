@@ -131,14 +131,62 @@
     flex:1; background:none; border:none; color:var(--ink-dim);
     font-family:var(--font-body); font-size:10.5px; letter-spacing:0.03em;
     padding:10px 4px 8px; display:flex; flex-direction:column; align-items:center; gap:3px;
-    cursor:pointer;
+    cursor:pointer; transition:color .22s ease;
   }
-  .tab-bar button .tab-icon{font-size:19px;}
   .tab-bar button .tab-icon-img{width:26px; height:26px; display:none; border-radius:50%; padding:2px; box-sizing:border-box;}
-  body[data-theme="groovy"] .tab-bar button .tab-icon{display:none;}
   body[data-theme="groovy"] .tab-bar button .tab-icon-img{display:block;}
   body[data-theme="groovy"] .tab-bar button.active .tab-icon-img{box-shadow:0 0 0 2px var(--gold);}
   .tab-bar button.active{color:var(--gold);}
+
+
+  /* Ball nav: every tab is a grey dot, and one gold ball flies between them.
+     Groovy keeps its own picture icons, so the dots and the ball sit out that theme. */
+  .tab-bar button .tab-dot-slot{height:26px; display:flex; align-items:center; justify-content:center;}
+  .tab-bar button .tab-dot{
+    width:9px; height:9px; border-radius:50%;
+    background:var(--ink-dim); opacity:0.5;
+  }
+  body[data-theme="groovy"] .tab-bar button .tab-dot-slot{display:none;}
+  body[data-theme="groovy"] .tab-ball{display:none;}
+
+  .tab-ball{
+    position:absolute; left:0; top:0; width:12px; height:12px;
+    margin:-6px 0 0 -6px; pointer-events:none; z-index:2;
+    opacity:0; /* stays hidden until it has been measured and placed */
+  }
+  .tab-ball.ready{opacity:1;}
+  .tab-ball-core{
+    position:absolute; inset:0; border-radius:50%; background:var(--gold);
+    box-shadow:0 0 10px -1px var(--gold), 0 1px 2px rgba(0,0,0,0.45);
+    will-change:transform;
+  }
+  /* Anchored so its right edge sits on the ball's centre; scaleX stretches it away,
+     and a negative scaleX flips it to the other side when the ball travels left. */
+  .tab-ball-tail{
+    position:absolute; top:50%; left:50%;
+    width:46px; height:12px; margin:-6px 0 0 -46px;
+    border-radius:6px; transform-origin:100% 50%;
+    background:linear-gradient(to right, rgba(0,0,0,0), var(--gold));
+    filter:blur(2.5px); opacity:0; transform:scaleX(0);
+    will-change:transform, opacity;
+  }
+
+  /* Secondary action: the dot the ball shoves off from takes the recoil,
+     and the label it lands on gets bumped by the impact. */
+  @keyframes tabDotRecoil{
+    0%{transform:scale(1);}
+    22%{transform:scale(0.62);}
+    55%{transform:scale(1.16);}
+    100%{transform:scale(1);}
+  }
+  @keyframes tabLabelLand{
+    0%,60%{transform:translateY(0);}
+    74%{transform:translateY(2px);}
+    88%{transform:translateY(-1px);}
+    100%{transform:translateY(0);}
+  }
+  .tab-bar button .tab-dot.recoil{animation:tabDotRecoil .34s cubic-bezier(.3,.7,.3,1);}
+  .tab-bar button.landing > span:last-child{animation:tabLabelLand .42s ease-out;}
 
   /* discover */
   .week-picker{display:flex; gap:6px; margin-top:16px;}
@@ -457,6 +505,9 @@
 
   @media (prefers-reduced-motion: reduce){
     *{transition:none !important;}
+    .tab-ball-tail{display:none;}
+    .tab-bar button .tab-dot.recoil,
+    .tab-bar button.landing > span:last-child{animation:none;}
   }
 </style>
 </head>
@@ -556,17 +607,20 @@
 
 <div class="tab-bar">
   <button id="tabLists" class="active" onclick="switchSection('lists')">
-    <span class="tab-icon">📚</span><img class="tab-icon-img" src="groovy/lists.png" alt=""><span>Lists</span>
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/lists.png" alt=""><span>Lists</span>
   </button>
   <button id="tabDiscover" onclick="switchSection('discover')">
-    <span class="tab-icon">🧭</span><img class="tab-icon-img" src="groovy/discover.png" alt=""><span>Discover</span>
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/discover.png" alt=""><span>Discover</span>
   </button>
   <button id="tabRecent" onclick="switchSection('recent')">
-    <span class="tab-icon">🔁</span><img class="tab-icon-img" src="groovy/week.png" alt=""><span>This Week</span>
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/week.png" alt=""><span>This Week</span>
   </button>
   <button id="tabReviews" onclick="switchSection('reviews')">
-    <span class="tab-icon">📝</span><img class="tab-icon-img" src="groovy/reviews.png" alt=""><span>Reviews</span>
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/reviews.png" alt=""><span>Reviews</span>
   </button>
+  <div class="tab-ball" id="tabBall" aria-hidden="true">
+    <span class="tab-ball-tail"></span><span class="tab-ball-core"></span>
+  </div>
 </div>
 
 <main id="content"></main>
@@ -1405,6 +1459,243 @@ function saveReviewsFilterAsList(){
 }
 
 
+/* ---------- TAB BALL ----------
+   One gold ball rides between the four tab dots. The motion is driven frame by frame
+   rather than left to a CSS transition so the squash, stretch and tail can follow the
+   ball's actual velocity, which is what makes a three-tab jump read differently from a
+   one-tab hop without authoring a separate animation for every pair of tabs. */
+const TAB_ORDER = ["lists", "discover", "recent", "reviews"];
+const TAB_BTN_ID = {lists:"tabLists", discover:"tabDiscover", recent:"tabRecent", reviews:"tabReviews"};
+
+const BALL_TRAVEL = 250;        // ms to reach the target — the duration you actually feel
+const BALL_SETTLE = 110;        // ms of follow-through once it's there
+const BALL_TOTAL = BALL_TRAVEL + BALL_SETTLE;
+const BALL_WINDUP = 0.15;       // share of the travel spent pulling back (anticipation)
+// The wind-up and the overshoot are capped in pixels, not scaled with the trip: a
+// three-tab jump is three times as long as a one-tab hop, but it should not pull back
+// or sail past the dot three times as far, or it stops reading as the same ball.
+const BALL_WINDUP_PX = 7;
+const BALL_OVERSHOOT_PX = 5;
+
+// Cubic-bezier evaluator, the same curve shape CSS uses, so every ease stays tunable
+// by four numbers instead of by hand-written maths.
+function bezierEase(p1x, p1y, p2x, p2y){
+  const cx = 3 * p1x, bx = 3 * (p2x - p1x) - cx, ax = 1 - cx - bx;
+  const cy = 3 * p1y, by = 3 * (p2y - p1y) - cy, ay = 1 - cy - by;
+  const solveX = t => ((ax * t + bx) * t + cx) * t;
+  const slopeX = t => (3 * ax * t + 2 * bx) * t + cx;
+  return function(x){
+    if(x <= 0) return 0;
+    if(x >= 1) return 1;
+    let t = x;
+    for(let i = 0; i < 8; i++){
+      const err = solveX(t) - x;
+      if(Math.abs(err) < 1e-5) break;
+      const d = slopeX(t);
+      if(Math.abs(d) < 1e-6) break;
+      t -= err / d;
+    }
+    return ((ay * t + by) * t + cy) * t;
+  };
+}
+const easeWindup = bezierEase(0.36, 0.00, 0.30, 1.00); // eases out of the old dot and stops
+const easeLaunch = bezierEase(0.30, 0.00, 0.18, 1.00); // quick shove, long glide in
+const easeSettle = bezierEase(0.22, 0.65, 0.28, 1.00); // overshoot easing back onto the mark
+
+// Signed progress along the trip: negative while winding up, past 1 on the overshoot.
+// `back` and `over` arrive as fractions of this particular trip, so the shape of the
+// curve stays the same while its extremes stay a fixed size on screen.
+function ballProgress(ms, back, over){
+  if(ms >= BALL_TOTAL) return 1;
+  if(ms < BALL_TRAVEL){
+    const u = ms / BALL_TRAVEL;
+    if(u < BALL_WINDUP) return -back * easeWindup(u / BALL_WINDUP);
+    const e = easeLaunch((u - BALL_WINDUP) / (1 - BALL_WINDUP));
+    return -back + (over + back) * e;
+  }
+  const e = easeSettle((ms - BALL_TRAVEL) / BALL_SETTLE);
+  return over + (1 - over) * e;
+}
+
+let ballSection = "lists";
+let ballFrame = null;
+let ballSlots = null;
+let ballAt = null; // where the ball actually is right now, so an interrupted trip resumes from it
+
+function ballReducedMotion(){
+  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+function ballHidden(){
+  return document.body.getAttribute("data-theme") === "groovy";
+}
+
+// Centre of each dot in coordinates local to the tab bar. Re-measured whenever the bar
+// could have moved: resize, rotation, font load, theme change.
+function measureBallSlots(){
+  const bar = document.querySelector(".tab-bar");
+  if(!bar) return null;
+  const barBox = bar.getBoundingClientRect();
+  // Absolutely-positioned children resolve against the padding box while
+  // getBoundingClientRect reports the border box; clientTop/Left is that difference.
+  const originX = barBox.left + bar.clientLeft, originY = barBox.top + bar.clientTop;
+  const slots = TAB_ORDER.map(name => {
+    const btn = document.getElementById(TAB_BTN_ID[name]);
+    const dot = btn && btn.querySelector(".tab-dot");
+    if(!dot) return null;
+    const box = dot.getBoundingClientRect();
+    return {x: box.left - originX + box.width / 2, y: box.top - originY + box.height / 2};
+  });
+  if(slots.some(v => !v || (v.x === 0 && v.y === 0))) return null; // not laid out yet
+  ballSlots = slots;
+  return slots;
+}
+function ballSlotFor(name){
+  const slots = ballSlots || measureBallSlots();
+  if(!slots) return null;
+  const i = TAB_ORDER.indexOf(name);
+  return i < 0 ? null : slots[i];
+}
+
+function paintBall(x, y, scaleX, scaleY, tailLen, tailAlpha){
+  const ball = document.getElementById("tabBall");
+  if(!ball) return;
+  ballAt = {x: x, y: y};
+  ball.style.transform = "translate(" + x.toFixed(2) + "px," + y.toFixed(2) + "px)";
+  ball.classList.add("ready");
+  const core = ball.querySelector(".tab-ball-core");
+  if(core) core.style.transform = "scale(" + scaleX.toFixed(3) + "," + scaleY.toFixed(3) + ")";
+  const tail = ball.querySelector(".tab-ball-tail");
+  if(tail){
+    tail.style.transform = "scaleX(" + tailLen.toFixed(3) + ")";
+    tail.style.opacity = tailAlpha.toFixed(3);
+  }
+}
+
+function placeBall(name){
+  const slot = ballSlotFor(name);
+  if(!slot) return false;
+  if(ballFrame){ cancelAnimationFrame(ballFrame); ballFrame = null; }
+  paintBall(slot.x, slot.y, 1, 1, 0, 0);
+  return true;
+}
+
+function animateBall(from, to){
+  let target = ballSlotFor(to);
+  if(!target) return false;
+  // Start from wherever the ball currently is, so tapping a third tab mid-flight
+  // redirects it instead of teleporting it back to the tab it left.
+  const origin = (ballFrame && ballAt) ? ballAt : ballSlotFor(from);
+  if(!origin) return placeBall(to);
+
+  let dx = target.x - origin.x, dy = target.y - origin.y;
+  const dist = Math.hypot(dx, dy);
+  if(dist < 1) return placeBall(to);
+  let retargeted = false;
+
+  // Exaggeration: the longer the jump, the harder it throws itself and the harder it lands.
+  const arcLift = Math.min(7, 2 + dist * 0.011);    // arcs — it doesn't travel dead flat
+  const squashMax = Math.min(0.26, 0.10 + dist * 0.0006);
+  const along = dx >= 0 ? 1 : -1;
+  const back = Math.min(BALL_WINDUP_PX, dist * 0.055) / dist;
+  const over = 1 + Math.min(BALL_OVERSHOOT_PX, dist * 0.04) / dist;
+
+  const start = performance.now();
+  let prevP = ballProgress(0, back, over), prevT = start;
+
+  function frame(now){
+    // The caller re-renders the page right after kicking this off, which can nudge the
+    // bar's metrics. The first frame runs after that layout, so re-aim there.
+    if(!retargeted){
+      retargeted = true;
+      ballSlots = null;
+      const fresh = ballSlotFor(to);
+      if(fresh){ target = fresh; dx = target.x - origin.x; dy = target.y - origin.y; }
+    }
+    const ms = Math.min(BALL_TOTAL, now - start);
+    const p = ballProgress(ms, back, over);
+
+    // Speed in px/ms read straight off the curve, so the deformation always matches
+    // what the eye is seeing rather than a guess baked in ahead of time.
+    const dt = Math.max(1, now - prevT);
+    const step = p - prevP;
+    const speed = Math.abs(step) / dt * dist;
+    const heading = step === 0 ? 0 : (step > 0 ? 1 : -1);
+    prevP = p; prevT = now;
+
+    const x = origin.x + dx * p;
+    const clamped = Math.max(0, Math.min(1, p));
+    const y = origin.y + dy * p - arcLift * Math.sin(Math.PI * clamped);
+
+    // Squash and stretch: drawn out along the direction of travel with the cross axis
+    // pinched to hold roughly the same volume. The landing squash takes over as speed dies.
+    const stretch = Math.min(0.70, speed * 0.16);
+    const squash = ms < BALL_TRAVEL ? 0 : squashMax * (1 - easeSettle((ms - BALL_TRAVEL) / BALL_SETTLE));
+    const scaleX = Math.max(0.35, 1 + stretch - squash);
+    const scaleY = Math.max(0.35, 1 - stretch * 0.72 + squash * 0.95);
+
+    // Drag: the tail lags behind the ball, and flips to the other side during the wind-up
+    // because the ball is briefly travelling backwards.
+    const tailLen = Math.min(1, speed * 0.20) * along * heading;
+    const tailAlpha = Math.min(0.85, speed * 0.42);
+
+    paintBall(x, y, scaleX, scaleY, tailLen, tailAlpha);
+
+    if(ms < BALL_TOTAL){
+      ballFrame = requestAnimationFrame(frame);
+    }else{
+      ballFrame = null;
+      paintBall(target.x, target.y, 1, 1, 0, 0);
+    }
+  }
+  if(ballFrame) cancelAnimationFrame(ballFrame);
+  ballFrame = requestAnimationFrame(frame);
+  return true;
+}
+
+function setActiveTab(name){
+  TAB_ORDER.forEach(other => {
+    const btn = document.getElementById(TAB_BTN_ID[other]);
+    if(!btn) return;
+    btn.classList.toggle("active", other === name);
+    btn.classList.remove("landing");
+  });
+
+  const from = ballSection;
+  ballSection = name;
+  if(ballHidden()) return;
+  if(from === name && !ballFrame){ placeBall(name); return; }
+  if(ballReducedMotion()){ placeBall(name); return; }
+
+  measureBallSlots();
+  if(!animateBall(from, name)) return;
+
+  // Secondary action: the dot it shoved off from takes the recoil, and the label it
+  // lands on gets bumped by the impact. Removing the class and forcing a reflow first
+  // is what lets the same animation replay on a rapid second tap.
+  const oldDot = document.querySelector("#" + TAB_BTN_ID[from] + " .tab-dot");
+  if(oldDot){
+    oldDot.classList.remove("recoil");
+    void oldDot.offsetWidth;
+    oldDot.classList.add("recoil");
+  }
+  const newBtn = document.getElementById(TAB_BTN_ID[name]);
+  if(newBtn){
+    newBtn.classList.remove("landing");
+    void newBtn.offsetWidth;
+    newBtn.classList.add("landing");
+  }
+}
+
+function syncTabBall(){
+  if(ballHidden()) return;
+  measureBallSlots();
+  placeBall(ballSection);
+}
+window.addEventListener("resize", syncTabBall);
+window.addEventListener("orientationchange", syncTabBall);
+window.addEventListener("load", syncTabBall);
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(syncTabBall);
+
 /* ---------- THEMES ---------- */
 const THEMES = {
   vinyl: {
@@ -1427,6 +1718,7 @@ function applyTheme(name){
     if(key !== "label") root.setProperty("--" + key, theme[key]);
   });
   document.body.setAttribute("data-theme", THEMES[name] ? name : "vinyl");
+  if(typeof syncTabBall === "function"){ ballSlots = null; syncTabBall(); }
 }
 function loadThemeName(){
   return localStorage.getItem("ll_theme") || "vinyl";
@@ -1722,10 +2014,7 @@ function render(){
 function switchSection(s){
   section = s;
   window.scrollTo(0, 0);
-  document.getElementById("tabLists").classList.toggle("active", s === "lists");
-  document.getElementById("tabDiscover").classList.toggle("active", s === "discover");
-  document.getElementById("tabRecent").classList.toggle("active", s === "recent");
-  document.getElementById("tabReviews").classList.toggle("active", s === "reviews");
+  setActiveTab(s);
   if(s === "discover" && !discoverInitialized){
     discoverInitialized = true;
     discoverResults = loadDiscoverResults(); // restore whatever was last generated
@@ -1746,10 +2035,7 @@ function goList(id){
   const found = getAllLists().find(l => l.id === id);
   if(!found) return;
   section = "lists";
-  document.getElementById("tabLists").classList.add("active");
-  document.getElementById("tabDiscover").classList.remove("active");
-  document.getElementById("tabRecent").classList.remove("active");
-  document.getElementById("tabReviews").classList.remove("active");
+  setActiveTab("lists");
   activeList = found;
   progress = getProgressFor(activeList.id);
   filter = "all";
@@ -4851,6 +5137,7 @@ function drawStillFrame(canvas, url){
 /* ---------- INIT ---------- */
 populateListSelector();
 render();
+syncTabBall();
 handleSpotifyCallback();
 </script>
 </body>
