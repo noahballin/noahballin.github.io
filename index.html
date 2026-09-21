@@ -1505,9 +1505,9 @@ const ICON_FOLDER_PLUS = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="tru
    shared rAF loop, and the star shape is rasterised once into a sprite that all rows reuse.
    A thousand-album list costs the same per frame as a ten-album one. */
 
-const STAR_MAX = 8;           // ceiling per row — past this the row is just noise anyway
-const STAR_MIN_R = 4.5, STAR_MAX_R = 8.5;
-const STAR_SPEED = 15;        // px/sec, before per-star variation
+const STAR_MAX = 16;           // ceiling per row — past this the row is just noise anyway
+const STAR_MIN_R = 5.5, STAR_MAX_R = 9.5;
+const STAR_SPEED = 20;        // px/sec, before per-star variation
 const STAR_INNER = 0.382;     // inner/outer radius of a standard 5-point star (1/phi^2)
 const STAR_SEG = Math.PI / 5; // angular span from an outer point to the next inner corner
 
