@@ -2637,8 +2637,8 @@ function animateBall(from, to){
 // The moon whips round just after a tab switch and coasts back down to its normal
 // pace. Driving the pair by playbackRate rather than swapping the CSS duration means
 // the orbit speeds up from wherever it happens to be, with no jump in position.
-const MOON_BOOST = 5.5;      // multiplier the instant a tab is tapped
-const MOON_BOOST_MS = 1200;  // how long it takes to bleed back to 1x
+const MOON_BOOST = 11;       // multiplier the instant a tab is tapped
+const MOON_BOOST_MS = 1800;  // how long it takes to bleed back to 1x
 let moonBoostFrame = null;
 
 function moonAnimations(){
