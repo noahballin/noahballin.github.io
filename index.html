@@ -279,7 +279,7 @@
   .divider-line{height:1px; background:var(--line); margin:20px 0;}
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
-  .vibe-wall{border:1.5px solid var(--line);}
+  .vibe-wall{border:1.5px solid var(--teal);}
   .rating-icons{display:inline-flex; align-items:center; gap:6px;}
   .rating-icon{display:block; width:18px; height:18px; flex:none;}
   .rating-rotation{color:var(--teal);}
@@ -528,7 +528,7 @@
   }
   .album.listened .check{background:var(--teal); border-color:var(--teal); color:#17140F;}
   .album.auto-only .check{box-shadow:0 0 0 3px rgba(79,143,134,0.18);}
-  .vibe-check{width:30px; height:30px; border-radius:50%; margin-top:2px; border:1.5px solid var(--line);}
+  .vibe-check{width:30px; height:30px; border-radius:50%; margin-top:2px; border:1.5px solid var(--teal);}
 
   .row-actions{display:flex; gap:12px; margin-top:6px;}
   .del-link{color:var(--ink-dim);}
@@ -1627,7 +1627,8 @@ function renderReviewsResultsArea(){
           '</span>' +
         '</div>' +
       '</div>' +
-      (vibe ? '<canvas class="vibe-still vibe-wall" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '');
+      (vibe ? '<canvas class="vibe-still' + (reviewStars ? ' vibe-wall' : '') +
+        '" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '');
     wireAlbumCover(row, r.artist, r.title);
     wrap.appendChild(row);
   });
