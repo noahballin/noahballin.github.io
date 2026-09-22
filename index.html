@@ -478,7 +478,6 @@
     font-size:10.5px; color:var(--ink-dim); margin-top:5px; display:flex; gap:8px; flex-wrap:wrap;
   }
   .genre-tag{color:var(--gold-dim);}
-  .playcount{color:var(--teal);}
   .no-match{color:#B5654F;}
   .no-scrobbles{color:var(--ink-dim); opacity:0.7;}
   .edit-link{color:var(--ink-dim); text-decoration:underline; cursor:pointer; font-size:10px; margin-top:5px;}
@@ -1030,11 +1029,111 @@ try{
   }
 }catch(e){}
 
-function loadReviews(){
-  try{ return JSON.parse(localStorage.getItem("ll_album_reviews")) || {}; }
-  catch(e){ return {}; }
+/* Reviews are stored compactly: the three rating axes are one of five fixed sentences each,
+   so only their index is written, and the vibe is identified by the tail of its id rather than
+   the whole 26-character ULID. That takes a record from ~282 characters to ~120 without losing
+   anything. In memory the old shape is rebuilt exactly, so nothing downstream changes.
+
+   An axis value that ISN'T one of the known options is written through as a literal string, so
+   a legacy or hand-edited answer survives rather than being silently dropped. */
+const REVIEWS_FORMAT = 2;
+const REVIEW_EPOCH_MS = 1000;   // seconds on disk; sorting and the CSV export still see ms
+
+function reviewAxisPack(axisKey, value){
+  if(value === null || value === undefined || value === "") return undefined;
+  const i = RATING_AXES[axisKey].options.indexOf(value);
+  return i === -1 ? value : i;   // unknown answer: keep the text
 }
-function saveReviewsStore(obj){ return saveUserData("ll_album_reviews", JSON.stringify(obj)); }
+function reviewAxisUnpack(axisKey, v){
+  if(v === undefined || v === null) return null;
+  if(typeof v === "number") return RATING_AXES[axisKey].options[v] || null;
+  return v;
+}
+function reviewVibePack(id){
+  if(!id) return undefined;
+  // The tail is unique across the emote list, and unlike an index it doesn't break if the
+  // list is ever reordered. An id that isn't in the list is stored whole.
+  return VIBE_EMOTES.some(v => v.id === id) ? id.slice(-4) : id;
+}
+function reviewVibeUnpack(code){
+  if(!code) return null;
+  const hit = VIBE_EMOTES.find(v => v.id === code || v.id.slice(-4) === code);
+  return hit ? hit.id : code;
+}
+
+function compactReview(r){
+  const out = {};
+  if(r.artist) out.a = r.artist;
+  if(r.title) out.t = r.title;
+  const y = parseInt(r.year, 10);
+  if(/^\d{4}$/.test(String(r.year || "")) && !isNaN(y)) out.y = y;
+  if(r.genres && r.genres.length) out.g = r.genres.slice();
+  const rot = reviewAxisPack("rotation", r.rotation);
+  if(rot !== undefined) out.r = rot;
+  const dis = reviewAxisPack("distinctiveness", r.distinctiveness);
+  if(dis !== undefined) out.d = dis;
+  const pul = reviewAxisPack("pull", r.pull);
+  if(pul !== undefined) out.p = pul;
+  const vib = reviewVibePack(r.vibe);
+  if(vib !== undefined) out.v = vib;
+  if(r.reviewedAt) out.w = Math.floor(r.reviewedAt / REVIEW_EPOCH_MS);
+  return out;
+}
+function expandReview(c){
+  if(!c || typeof c !== "object") return null;
+  // An untouched pre-format-2 record still has its long field names; pass it straight through.
+  if(c.artist !== undefined || c.rotation !== undefined || c.reviewedAt !== undefined){
+    return Object.assign({genres: []}, c);
+  }
+  return {
+    artist: c.a || "",
+    title: c.t || "",
+    year: c.y ? String(c.y) : "",
+    genres: Array.isArray(c.g) ? c.g.slice() : [],
+    rotation: reviewAxisUnpack("rotation", c.r),
+    distinctiveness: reviewAxisUnpack("distinctiveness", c.d),
+    pull: reviewAxisUnpack("pull", c.p),
+    vibe: reviewVibeUnpack(c.v),
+    reviewedAt: c.w ? c.w * REVIEW_EPOCH_MS : 0
+  };
+}
+function expandReviewsRaw(raw){
+  const out = {};
+  if(!raw || typeof raw !== "object") return out;
+  Object.keys(raw).forEach(k => {
+    if(k === "__v") return;
+    const r = expandReview(raw[k]);
+    if(r) out[k] = r;
+  });
+  return out;
+}
+function loadReviews(){
+  let raw;
+  try{ raw = JSON.parse(localStorage.getItem("ll_album_reviews")); }
+  catch(e){ raw = null; }
+  return expandReviewsRaw(raw);
+}
+function saveReviewsStore(obj){
+  const out = {__v: REVIEWS_FORMAT};
+  Object.keys(obj || {}).forEach(k => {
+    if(k === "__v") return;
+    if(obj[k]) out[k] = compactReview(obj[k]);
+  });
+  return saveUserData("ll_album_reviews", JSON.stringify(out));
+}
+// One-time: rewrite reviews saved before the compact format. Reading already handles both,
+// so this only exists to shrink what's already on disk without waiting for the next edit.
+(function compactStoredReviews(){
+  const FLAG = "ll_format_reviews";
+  if(localStorage.getItem(FLAG) === String(REVIEWS_FORMAT)) return;
+  if(localStorage.getItem("ll_album_reviews") === null){
+    try{ localStorage.setItem(FLAG, String(REVIEWS_FORMAT)); }catch(e){}
+    return;
+  }
+  if(saveReviewsStore(loadReviews())){
+    try{ localStorage.setItem(FLAG, String(REVIEWS_FORMAT)); }catch(e){}
+  }
+})();
 function reviewKey(artist, title){ return (artist + "|||" + title).toLowerCase().trim(); }
 
 let reviewingKey = null;
@@ -2586,15 +2685,42 @@ const DEFAULT_TRACK_COUNT_GUESS = 10; // used only when Last.fm doesn't return a
 // characters, most of it nulls); loading fills the rest back in, so everything else can keep
 // testing e.playcount === null and friends. lfv = Last.fm name variants that had plays last sync.
 const PROGRESS_DEFAULTS = {manual:null, playcount:null, trackCount:null, syncedAt:null, ov_a:null, ov_t:null, ov_y:null, ov_g:null, notFound:null, hidden:false, lfv:null};
-function getProgressFor(listId){
-  let raw;
-  try{ raw = JSON.parse(localStorage.getItem("ll_progress_" + listId)) || {}; }
-  catch(e){ raw = {}; }
+/* On disk the field names are single letters and syncedAt is minutes-since-2020 rather than a
+   13-digit millisecond stamp — together roughly half the characters per album. syncedAt stays
+   PER ALBUM: the incremental sync tests `!e.syncedAt` to decide whether an album needs
+   re-checking at all, so collapsing it to one value per list would force a full re-sync every
+   time. In memory every field keeps its original name and type. */
+const PROGRESS_FIELD_SHORT = {manual:"m", playcount:"p", trackCount:"c", syncedAt:"s",
+  ov_a:"A", ov_t:"T", ov_y:"Y", ov_g:"G", notFound:"n", hidden:"h", lfv:"v"};
+const PROGRESS_SYNC_EPOCH = 1577836800000;   // 2020-01-01, so the stored number stays small
+
+function expandProgressEntry(raw){
+  const e = Object.assign({}, PROGRESS_DEFAULTS);
+  if(!raw || typeof raw !== "object") return e;
+  Object.keys(PROGRESS_FIELD_SHORT).forEach(f => {
+    const short = PROGRESS_FIELD_SHORT[f];
+    const v = raw[f] !== undefined ? raw[f] : raw[short];
+    if(v === undefined || v === null) return;
+    if(f === "manual") e.manual = !!v;
+    else if(f === "hidden" || f === "notFound") e[f] = !!v;
+    else if(f === "syncedAt") e.syncedAt = v > 1e11 ? v : v * 60000 + PROGRESS_SYNC_EPOCH;
+    else e[f] = v;
+  });
+  return e;
+}
+function expandProgressRaw(raw){
   const prog = {};
+  if(!raw || typeof raw !== "object") return prog;
   Object.keys(raw).forEach(i => {
-    if(raw[i] && typeof raw[i] === "object") prog[i] = Object.assign({}, PROGRESS_DEFAULTS, raw[i]);
+    if(raw[i] && typeof raw[i] === "object") prog[i] = expandProgressEntry(raw[i]);
   });
   return prog;
+}
+function getProgressFor(listId){
+  let raw;
+  try{ raw = JSON.parse(localStorage.getItem("ll_progress_" + listId)); }
+  catch(e){ raw = null; }
+  return expandProgressRaw(raw);
 }
 function compactProgress(prog){
   const out = {};
@@ -2602,11 +2728,17 @@ function compactProgress(prog){
     const e = prog[i];
     if(!e) return;
     const c = {};
-    Object.keys(e).forEach(f => {
+    Object.keys(PROGRESS_FIELD_SHORT).forEach(f => {
       const v = e[f];
       if(v === null || v === undefined) return;
       if((f === "hidden" || f === "notFound") && v === false) return;
-      c[f] = v;
+      const short = PROGRESS_FIELD_SHORT[f];
+      // manual:false means "explicitly not heard" and has to survive, so it's 0 not dropped.
+      if(f === "manual") c[short] = v ? 1 : 0;
+      else if(f === "hidden" || f === "notFound") c[short] = 1;
+      // Never let the rounding produce 0: that would read back as "never synced".
+      else if(f === "syncedAt") c[short] = Math.max(1, Math.round((v - PROGRESS_SYNC_EPOCH) / 60000));
+      else c[short] = v;
     });
     if(Object.keys(c).length) out[i] = c;
   });
@@ -2618,14 +2750,14 @@ function saveProgressFor(listId, prog){
 // One-time: rewrite progress saved before entries were compacted.
 (function compactStoredProgress(){
   const FLAG = "ll_format_progress";   // deliberately not under the ll_progress_ prefix
-  if(localStorage.getItem(FLAG) === "2") return;
+  if(localStorage.getItem(FLAG) === "3") return;
   const ids = [];
   for(let i = 0; i < localStorage.length; i++){
     const key = localStorage.key(i);
     if(key && key.indexOf("ll_progress_") === 0) ids.push(key.slice("ll_progress_".length));
   }
   if(ids.every(id => saveProgressFor(id, getProgressFor(id)))){
-    try{ localStorage.setItem(FLAG, "2"); }catch(e){}
+    try{ localStorage.setItem(FLAG, "3"); }catch(e){}
   }
 })();
 function entryForIn(prog, i){
@@ -2871,7 +3003,6 @@ function renderAlbums(){
     displayNum++;
 
     const e = entryFor(i);
-    const est = estFullListens(e);
     const stars = starCountFor(lookupArtist(i), lookupAlbum(i));
     const row = document.createElement("div");
     row.className = "album" + (heardNow ? " listened" : "") + (e.manual === null && e.playcount !== null ? " auto-only" : "");
@@ -2886,14 +3017,6 @@ function renderAlbums(){
     const metaBits = [];
     metaBits.push('<span class="genre-tag">' + escapeHtml(lookupGenre(i).toLowerCase()) + '</span>');
     metaBits.push('<span>' + escapeHtml(lookupYear(i)) + '</span>');
-    if(e.playcount !== null && e.playcount > 0){
-      metaBits.push('<span class="playcount">' + e.playcount + ' scrobble' + (e.playcount === 1 ? "" : "s") + '</span>');
-      if(est !== null && est.value >= 1){
-        metaBits.push('<span class="playcount">~' + est.value + ' full listen' + (est.value === 1 ? "" : "s") + (est.guessed ? ' (guessed track count)' : '') + '</span>');
-      } else if(est !== null && est.value === 0){
-        metaBits.push('<span class="no-match">below full-album threshold' + (est.guessed ? ' (guessed track count)' : '') + '</span>');
-      }
-    }
     if(e.notFound){
       metaBits.push('<span class="no-match">no Last.fm match — try editing the title</span>');
     } else if(e.syncedAt && e.playcount === 0){
@@ -3451,7 +3574,7 @@ function mergeRestoredProgress(local, restored, includesManual){
   const out = {};
   new Set(Object.keys(local).concat(Object.keys(restored || {}))).forEach(i => {
     const e = Object.assign({}, PROGRESS_DEFAULTS, local[i]);
-    const r = (restored && restored[i]) || {};
+    const r = expandProgressEntry((restored && restored[i]) || {});   // backup may be either format
     const renamed = (r.ov_a || null) !== (e.ov_a || null) || (r.ov_t || null) !== (e.ov_t || null);
     fields.forEach(f => { e[f] = r[f] !== undefined ? r[f] : PROGRESS_DEFAULTS[f]; });
     if(renamed) Object.assign(e, {playcount: null, trackCount: null, syncedAt: null, notFound: null, lfv: null});
@@ -3463,7 +3586,8 @@ function mergeRestoredProgress(local, restored, includesManual){
 // the more recently saved copy wins.
 function mergeRestoredReviews(local, restored){
   const out = Object.assign({}, local);
-  Object.keys(restored || {}).forEach(k => {
+  restored = expandReviewsRaw(restored);   // a backup may be in either format
+  Object.keys(restored).forEach(k => {
     const r = restored[k];
     if(r && (!out[k] || (r.reviewedAt || 0) > (out[k].reviewedAt || 0))) out[k] = r;
   });
