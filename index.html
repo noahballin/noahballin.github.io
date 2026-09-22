@@ -23,7 +23,7 @@
     --gold:#5636a0;
     --gold-dim:#d383c8;
     --teal:#94d83b;
-    --star:#6A5C44;   /* same hue/saturation as the bg family, 20 points lighter — stars read clearly, text over them still clears AA */
+    --star:#6A5C44;   /* matches THEMES.vinyl.star, which overrides this at runtime; 20 lightness points above the old #2C261C */
     --radius:10px;
     --font-display:'Fraunces',serif;
     --font-body:'IBM Plex Mono',monospace;
@@ -83,8 +83,11 @@
   /* Listen stars: one canvas per row, painted behind everything else. Making the row's own
      children z-index 1 is what keeps titles readable no matter where a star drifts. */
   .album, .discover-card{position:relative;}
+  /* Overhangs the row by STAR_WALL_PAD each side so the bowed side walls can be drawn out
+     past the row edge, into main's gutter, without being clipped. */
   .star-layer{
-    position:absolute; inset:0; width:100%; height:100%;
+    position:absolute; top:0; bottom:0; left:-12px; right:-12px;
+    width:auto; height:100%;
     pointer-events:none; z-index:0;
   }
   .album > *:not(.star-layer), .discover-card > *:not(.star-layer){position:relative; z-index:1;}
@@ -134,6 +137,7 @@
   .filters button.active{background:var(--gold); color:#17140F; border-color:var(--gold); font-weight:600;}
 
   main{padding:14px 14px 20px;}
+  main.flush-top{padding-top:0;}
 
   /* tab bar */
   .tab-bar{
@@ -489,7 +493,7 @@
   }
   .album.listened .check{background:var(--teal); border-color:var(--teal); color:#17140F;}
   .album.auto-only .check{box-shadow:0 0 0 3px rgba(79,143,134,0.18);}
-  .vibe-check{width:30px; height:30px; border-radius:50%; margin-top:2px;}
+  .vibe-check{width:30px; height:30px; border-radius:50%; margin-top:2px; border:1.5px solid var(--line);}
 
   .row-actions{display:flex; gap:12px; margin-top:6px;}
   .del-link{color:var(--ink-dim);}
@@ -1668,12 +1672,64 @@ function starRadiusAt(s, dir){
   return (R * r * Math.sin(STAR_SEG)) / (R * Math.sin(t) + r * Math.sin(STAR_SEG - t));
 }
 
+/* How far the outline reaches in a world direction — the support function, which is what a
+   flat wall actually contacts. starRadiusAt measures along a ray, and a star's leftmost point
+   is usually NOT the one straight out to the left, so a ray measurement lets a tip cross the
+   wall before the bounce fires. The tips always out-reach the inner corners (0.809r at worst
+   vs 0.382r), so the furthest point in any direction is a tip: r * cos(angle to nearest tip).
+   Exact, and one cos instead of two sines. */
+function starSupport(s, dir){
+  const span = 2 * STAR_SEG;
+  let t = (dir - s.rot + Math.PI / 2) % span;
+  if(t < 0) t += span;
+  if(t > STAR_SEG) t = span - t;
+  return s.r * Math.cos(t);
+}
+
+/* ---------- ROW WALLS ----------
+   The sides aren't straight. Each row is closed by a curve that leaves the hairline above it,
+   bows out past the row edge toward the screen, and returns to the hairline below.
+
+   Drawn as a quadratic Bezier from (0,0) to (0,h) with its control point at (-2*BULGE, h/2).
+   Because the control point's y is exactly h/2, that curve's y is linear in t — so t = y/h and
+   its x reduces to the parabola below. The outline on screen and the surface stars bounce off
+   are therefore the same curve, not one approximating the other. */
+const STAR_WALL_BULGE = 10;   // how far past the row edge the curve reaches, at mid-height
+const STAR_WALL_PAD = 12;     // canvas overhang each side; must exceed the bulge (see .star-layer)
+
+function starWallOffset(st, y){
+  const t = st.h > 0 ? y / st.h : 0.5;
+  return STAR_WALL_BULGE * 4 * t * (1 - t);
+}
+// d(offset)/dy — the curve's tilt, which is what makes a glancing hit deflect along it.
+function starWallSlope(st, y){
+  const t = st.h > 0 ? y / st.h : 0.5;
+  return STAR_WALL_BULGE * 4 * (1 - 2 * t) / (st.h || 1);
+}
+// side = -1 for the left wall, +1 for the right.
+function starHitSideWall(st, s, side){
+  const off = starWallOffset(st, s.y);
+  const wx = side < 0 ? -off : st.w + off;
+  const slope = starWallSlope(st, s.y);
+  const inv = 1 / Math.sqrt(1 + slope * slope);
+  const nx = -side * inv, ny = slope * inv;      // unit normal, pointing back into the row
+  const dist = (s.x - wx) * nx;                  // perpendicular distance to the curve
+  const reach = starSupport(s, Math.atan2(-ny, -nx));
+  if(dist >= reach) return;
+  const push = reach - dist;
+  s.x += nx * push; s.y += ny * push;
+  const dot = s.vx * nx + s.vy * ny;
+  if(dot < 0){ s.vx -= 2 * dot * nx; s.vy -= 2 * dot * ny; }
+  s.vr += (s.vx * ny - s.vy * nx) * 0.012;
+}
+
 let starStates = [];          // rows currently on screen and being simulated
 let starRAF = null, starLast = 0;
 let starObserver = null;
 let starSprites = new Map();   // colour -> rasterised star; hues are quantised so this stays small
 let starSpriteDpr = 0;
 let starColor = "";
+let starLineColor = "";
 let starReduced = false;
 try{
   starReduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -1685,6 +1741,14 @@ function starFillColor(){
     starColor = getComputedStyle(document.documentElement).getPropertyValue("--star").trim() || "#6A5C44";
   }catch(e){ starColor = "#6A5C44"; }
   return starColor;
+}
+// The side curves continue the row hairlines, so they're stroked in the same token.
+function starLineFillColor(){
+  if(starLineColor) return starLineColor;
+  try{
+    starLineColor = getComputedStyle(document.documentElement).getPropertyValue("--line").trim() || "#3A3327";
+  }catch(e){ starLineColor = "#3A3327"; }
+  return starLineColor;
 }
 
 // Sprites are rasterised once per colour and shared by every row and star using it. Album
@@ -1722,20 +1786,37 @@ function starMeasure(st){
   if(!w || !h) return false;
   if(st.w !== w || st.h !== h || st.dpr !== dpr){
     st.w = w; st.h = h; st.dpr = dpr;
-    st.canvas.width = Math.round(w * dpr);
+    // The canvas is wider than the row on both sides; the transform puts x=0 back on the row's
+    // own left edge, so every coordinate below stays row-relative.
+    st.canvas.width = Math.round((w + STAR_WALL_PAD * 2) * dpr);
     st.canvas.height = Math.round(h * dpr);
-    st.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    st.ctx.setTransform(dpr, 0, 0, dpr, STAR_WALL_PAD * dpr, 0);
   }
+  const rb = st.row.getBoundingClientRect();
   const cover = st.row.querySelector(".album-cover");
   if(cover){
-    const rb = st.row.getBoundingClientRect(), cb = cover.getBoundingClientRect();
+    const cb = cover.getBoundingClientRect();
     st.obstacle = {x: cb.left - rb.left, y: cb.top - rb.top, w: cb.width, h: cb.height};
   }else{
     st.obstacle = null;
   }
+  // The tick and the vibe emote are the same 30px disc — whichever the row is showing.
+  const puck = st.row.querySelector(".check, .vibe-check");
+  if(puck){
+    const pb = puck.getBoundingClientRect();
+    st.disc = {x: pb.left - rb.left + pb.width / 2,
+               y: pb.top - rb.top + pb.height / 2,
+               r: pb.width / 2};
+  }else{
+    st.disc = null;
+  }
   return true;
 }
 
+function starInsideDisc(x, y, r, d){
+  const dx = x - d.x, dy = y - d.y, sum = r + d.r;
+  return dx * dx + dy * dy < sum * sum;
+}
 function starInsideRect(x, y, r, ob){
   const cx = Math.max(ob.x, Math.min(x, ob.x + ob.w));
   const cy = Math.max(ob.y, Math.min(y, ob.y + ob.h));
@@ -1752,7 +1833,8 @@ function starSeed(st, n){
     for(let t = 0; t < 24; t++){
       x = r + Math.random() * Math.max(1, maxX - r);
       y = r + Math.random() * Math.max(1, maxY - r);
-      if(!st.obstacle || !starInsideRect(x, y, r, st.obstacle)) break;
+      if((!st.obstacle || !starInsideRect(x, y, r, st.obstacle)) &&
+         (!st.disc || !starInsideDisc(x, y, r, st.disc))) break;
     }
     const a = Math.random() * Math.PI * 2;
     const sp = STAR_SPEED * (0.55 + Math.random() * 0.9);
@@ -1777,7 +1859,7 @@ function starHitRect(s, ob){
   if(d2 > 1e-6){
     const d = Math.sqrt(d2), nx = dx / d, ny = dy / d;
     // How far the outline actually reaches toward the art, along this contact normal.
-    const reach = starRadiusAt(s, Math.atan2(-ny, -nx));
+    const reach = starSupport(s, Math.atan2(-ny, -nx));
     if(d >= reach) return;
     s.x = cx + nx * reach; s.y = cy + ny * reach;
     const dot = s.vx * nx + s.vy * ny;
@@ -1793,6 +1875,26 @@ function starHitRect(s, ob){
     else if(m === top){ s.y = ob.y - s.r; s.vy = -Math.abs(s.vy); }
     else { s.y = ob.y + ob.h + s.r; s.vy = Math.abs(s.vy); }
   }
+}
+
+// The tick / vibe emote is a disc, so contact is simply along the line of centres — no
+// closest-point clamp like the rectangular album art needs.
+function starHitDisc(s, d){
+  const dx = s.x - d.x, dy = s.y - d.y;
+  const d2 = dx * dx + dy * dy;
+  const bound = s.r + d.r;
+  if(d2 >= bound * bound) return;          // cheap reject before any trig
+  if(d2 < 1e-6){                           // dead centre: eject straight up, no normal to use
+    s.y = d.y - d.r - s.r; s.vy = -Math.abs(s.vy);
+    return;
+  }
+  const dist = Math.sqrt(d2), nx = dx / dist, ny = dy / dist;
+  const reach = d.r + starSupport(s, Math.atan2(-ny, -nx));
+  if(dist >= reach) return;
+  s.x = d.x + nx * reach; s.y = d.y + ny * reach;
+  const dot = s.vx * nx + s.vy * ny;
+  if(dot < 0){ s.vx -= 2 * dot * nx; s.vy -= 2 * dot * ny; }
+  s.vr += (s.vx * ny - s.vy * nx) * 0.012;
 }
 
 // Equal-mass elastic collision: the two swap their velocity components along the contact
@@ -1822,27 +1924,27 @@ function starHitStar(a, b){
 }
 
 function starStep(st, dt){
-  const stars = st.stars, ob = st.obstacle, n = stars.length;
+  const stars = st.stars, ob = st.obstacle, disc = st.disc, n = stars.length;
   for(let i = 0; i < n; i++){
     const s = stars[i];
     s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.vr * dt;
-    // Walls: the bounding-circle test is only a trigger — the star is placed by how far
-    // its outline actually reaches that way, so it rests a tip on the wall, not a gap.
-    if(s.x - s.r < 0){
-      const reach = starRadiusAt(s, Math.PI);
-      if(s.x - reach < 0){ s.x = reach; s.vx = Math.abs(s.vx); }
-    }else if(s.x + s.r > st.w){
-      const reach = starRadiusAt(s, 0);
-      if(s.x + reach > st.w){ s.x = st.w - reach; s.vx = -Math.abs(s.vx); }
-    }
+    // Walls: the bounding-circle test is only a trigger — the star is then placed by its
+    // support distance, the furthest its outline reaches that way, so a tip lands ON the wall
+    // instead of crossing it and bouncing a frame or two late.
+    //
+    // Sides bow outward, so a star fully inside the straight box can't be touching one — which
+    // makes the same cheap trigger a correct reject for the curve too.
+    if(s.x - s.r < 0) starHitSideWall(st, s, -1);
+    else if(s.x + s.r > st.w) starHitSideWall(st, s, 1);
     if(s.y - s.r < 0){
-      const reach = starRadiusAt(s, -Math.PI / 2);
+      const reach = starSupport(s, -Math.PI / 2);
       if(s.y - reach < 0){ s.y = reach; s.vy = Math.abs(s.vy); }
     }else if(s.y + s.r > st.h){
-      const reach = starRadiusAt(s, Math.PI / 2);
+      const reach = starSupport(s, Math.PI / 2);
       if(s.y + reach > st.h){ s.y = st.h - reach; s.vy = -Math.abs(s.vy); }
     }
     if(ob) starHitRect(s, ob);
+    if(disc) starHitDisc(s, disc);
   }
   for(let i = 0; i < n; i++){
     for(let j = i + 1; j < n; j++) starHitStar(stars[i], stars[j]);
@@ -1851,7 +1953,17 @@ function starStep(st, dt){
 
 function starDraw(st){
   const ctx = st.ctx, stars = st.stars;
-  ctx.clearRect(0, 0, st.w, st.h);
+  ctx.clearRect(-STAR_WALL_PAD, 0, st.w + STAR_WALL_PAD * 2, st.h);
+  // The walls the stars are bouncing off, drawn as the same curve the collision uses: out of
+  // the hairline above, a bow toward the screen edge, back to the hairline below.
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = starLineFillColor();
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(-2 * STAR_WALL_BULGE, st.h / 2, 0, st.h);
+  ctx.moveTo(st.w, 0);
+  ctx.quadraticCurveTo(st.w + 2 * STAR_WALL_BULGE, st.h / 2, st.w, st.h);
+  ctx.stroke();
   const sprite = starSpriteFor(st.color || starFillColor(), st.dpr);
   const drawn = sprite.width / st.dpr;     // sprite size in CSS pixels
   const half = drawn / 2;
@@ -1898,7 +2010,7 @@ function starActivate(row){
   canvas.className = "star-layer";
   row.insertBefore(canvas, row.firstChild);
   const st = {row: row, canvas: canvas, ctx: canvas.getContext("2d"),
-              stars: [], w: 0, h: 0, dpr: 0, obstacle: null,
+              stars: [], w: 0, h: 0, dpr: 0, obstacle: null, disc: null,
               color: starColorForPacked(row.getAttribute("data-star-hue"))};
   if(!starMeasure(st)){ row.removeChild(canvas); return; }
   starSeed(st, Math.min(STAR_MAX, n));
@@ -2522,14 +2634,14 @@ const THEMES = {
     label: "Vinyl Warm (default)",
     bg: "#17140F", card: "#211D17", "card-hi": "#29241C", line: "#3A3327",
     ink: "#EDE6D8", "ink-dim": "#9C9384", gold: "#5636a0", "gold-dim": "#d383c8", teal: "#94d83b",
-    star: "#2C261C",
+    star: "#6A5C44",
     "font-display": "'Merriweather',serif", "font-body": "'Merriweather Sans',sans-serif"
   },
   groovy: {
     label: "Groovy",
     bg: "#2B1B12", card: "#3A2618", "card-hi": "#4A3220", line: "#5C4030",
     ink: "#F5E6C8", "ink-dim": "#C9A876", gold: "#E8823C", "gold-dim": "#F2B15C", teal: "#7CB342",
-    star: "#43301F",
+    star: "#89623F",
     "font-display": "'Fraunces',serif", "font-body": "'IBM Plex Mono',monospace"
   }
 };
@@ -2545,6 +2657,7 @@ function applyTheme(name){
   // has to be recomputed against the new palette.
   if(typeof starColor !== "undefined"){
     starColor = "";
+    starLineColor = "";
     starBaseHsl = null;
     starSprites.clear();
     for(let i = 0; i < starStates.length; i++){
@@ -2842,6 +2955,9 @@ let reviewsInitialized = false;
 
 function render(){
   starReset();   // rows are about to be replaced; drop their canvases before they're orphaned
+  // Only the album list runs flush to the header: its first row's top wall is that hairline,
+  // and a gap there would put the bounce below the line you can see.
+  document.getElementById("content").classList.toggle("flush-top", section === "lists" && mode === "albums");
   if(section === "discover"){
     document.getElementById("backBtn").classList.add("hidden");
     document.getElementById("dashboardHeader").classList.add("hidden");
