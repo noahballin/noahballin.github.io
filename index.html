@@ -279,6 +279,7 @@
   .divider-line{height:1px; background:var(--line); margin:20px 0;}
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
+  .vibe-wall{border:1.5px solid var(--line);}
   .rating-icons{display:inline-flex; align-items:center; gap:6px;}
   .rating-icon{display:block; width:18px; height:18px; flex:none;}
   .rating-rotation{color:var(--teal);}
@@ -1626,7 +1627,7 @@ function renderReviewsResultsArea(){
           '</span>' +
         '</div>' +
       '</div>' +
-      (vibe ? '<canvas class="vibe-still" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '');
+      (vibe ? '<canvas class="vibe-still vibe-wall" width="44" height="44" data-vibe-url="' + vibe.url + '"></canvas>' : '');
     wireAlbumCover(row, r.artist, r.title);
     wrap.appendChild(row);
   });
@@ -1837,6 +1838,16 @@ function starMeasure(st){
   }else{
     st.obstacle = null;
   }
+  // Reviews show the vibe as a 26px rounded square, not the album list's disc, so it takes the
+  // rectangular path the album art already uses. The 6px corner rounding is small enough that a
+  // plain rect reads right; a disc would either clip the corners or hold stars off the flats.
+  const block = st.row.querySelector(".vibe-wall");
+  if(block){
+    const bb = block.getBoundingClientRect();
+    st.vibeRect = {x: bb.left - rb.left, y: bb.top - rb.top, w: bb.width, h: bb.height};
+  }else{
+    st.vibeRect = null;
+  }
   // The tick and the vibe emote are the same 30px disc — whichever the row is showing.
   const puck = st.row.querySelector(".check, .vibe-check");
   if(puck){
@@ -1871,6 +1882,7 @@ function starSeed(st, n){
       x = r + Math.random() * Math.max(1, maxX - r);
       y = r + Math.random() * Math.max(1, maxY - r);
       if((!st.obstacle || !starInsideRect(x, y, r, st.obstacle)) &&
+         (!st.vibeRect || !starInsideRect(x, y, r, st.vibeRect)) &&
          (!st.disc || !starInsideDisc(x, y, r, st.disc))) break;
     }
     const a = Math.random() * Math.PI * 2;
@@ -1961,7 +1973,7 @@ function starHitStar(a, b){
 }
 
 function starStep(st, dt){
-  const stars = st.stars, ob = st.obstacle, disc = st.disc, n = stars.length;
+  const stars = st.stars, ob = st.obstacle, vr = st.vibeRect, disc = st.disc, n = stars.length;
   for(let i = 0; i < n; i++){
     const s = stars[i];
     s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.vr * dt;
@@ -1981,6 +1993,7 @@ function starStep(st, dt){
       if(s.y + reach > st.h){ s.y = st.h - reach; s.vy = -Math.abs(s.vy); }
     }
     if(ob) starHitRect(s, ob);
+    if(vr) starHitRect(s, vr);
     if(disc) starHitDisc(s, disc);
   }
   for(let i = 0; i < n; i++){
@@ -2047,7 +2060,7 @@ function starActivate(row){
   canvas.className = "star-layer";
   row.insertBefore(canvas, row.firstChild);
   const st = {row: row, canvas: canvas, ctx: canvas.getContext("2d"),
-              stars: [], w: 0, h: 0, dpr: 0, obstacle: null, disc: null,
+              stars: [], w: 0, h: 0, dpr: 0, obstacle: null, vibeRect: null, disc: null,
               color: starColorForPacked(row.getAttribute("data-star-hue"))};
   if(!starMeasure(st)){ row.removeChild(canvas); return; }
   starSeed(st, Math.min(STAR_MAX, n));
@@ -3033,9 +3046,13 @@ let reviewsInitialized = false;
 
 function render(){
   starReset();   // rows are about to be replaced; drop their canvases before they're orphaned
-  // Only the album list runs flush to the header: its first row's top wall is that hairline,
-  // and a gap there would put the bounce below the line you can see.
-  document.getElementById("content").classList.toggle("flush-top", section === "lists" && mode === "albums");
+  // Every view that draws stars runs flush to the header. Each row's side curves start on the
+  // hairline above it — for all but the first row that's the previous row's own border, and for
+  // the first row it has to be the header's. A gap there leaves that curve starting in mid-air
+  // and puts the top bounce below the line you can see. The dashboard, Discover and Past Week
+  // draw no stars, so they keep their breathing room.
+  const starredView = section === "reviews" || (section === "lists" && mode === "albums");
+  document.getElementById("content").classList.toggle("flush-top", starredView);
   if(section === "discover"){
     document.getElementById("backBtn").classList.add("hidden");
     document.getElementById("dashboardHeader").classList.add("hidden");
