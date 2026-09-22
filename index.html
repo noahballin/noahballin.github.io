@@ -279,7 +279,9 @@
   .divider-line{height:1px; background:var(--line); margin:20px 0;}
   .reviewed-badge{color:var(--teal); font-size:10px; margin-left:8px;}
   .vibe-still{width:26px; height:26px; border-radius:6px; flex:none; align-self:center;}
-  .vibe-wall{border:1.5px solid var(--teal);}
+  /* Grey in Reviews, where every row is reviewed and a bright ring would say nothing. The teal
+     ring is the Lists tab's own signal, matching the listened cover outline there. */
+  .vibe-wall{border:1.5px solid var(--line);}
   .rating-icons{display:inline-flex; align-items:center; gap:6px;}
   .rating-icon{display:block; width:18px; height:18px; flex:none;}
   .rating-rotation{color:var(--teal);}
