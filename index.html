@@ -23,7 +23,7 @@
     --gold:#5636a0;
     --gold-dim:#d383c8;
     --teal:#94d83b;
-    --star:#2C261C;
+    --star:#6A5C44;   /* same hue/saturation as the bg family, 20 points lighter — stars read clearly, text over them still clears AA */
     --radius:10px;
     --font-display:'Fraunces',serif;
     --font-body:'IBM Plex Mono',monospace;
@@ -1113,12 +1113,27 @@ function loadReviews(){
   catch(e){ raw = null; }
   return expandReviewsRaw(raw);
 }
+/* Reviewing an album IS a check-off: the row swaps its tick for the review's vibe emote, and
+   there's no tick left to press. So a reviewed album has to read as listened everywhere the
+   tick does — the teal cover outline, the row count, the dashboard card. Memoized like the
+   tally index, since the list and dashboard views ask once per album. */
+let reviewedKeys = null;
+function reviewedIndex(){
+  if(!reviewedKeys) reviewedKeys = loadReviews();
+  return reviewedKeys;
+}
+function isReviewed(artist, title){
+  if(!artist || !title) return false;
+  return !!reviewedIndex()[reviewKey(artist, title)];
+}
+
 function saveReviewsStore(obj){
   const out = {__v: REVIEWS_FORMAT};
   Object.keys(obj || {}).forEach(k => {
     if(k === "__v") return;
     if(obj[k]) out[k] = compactReview(obj[k]);
   });
+  reviewedKeys = null;   // any row showing a vibe emote counts as listened; re-read that next time
   return saveUserData("ll_album_reviews", JSON.stringify(out));
 }
 // One-time: rewrite reviews saved before the compact format. Reading already handles both,
@@ -1667,8 +1682,8 @@ try{
 function starFillColor(){
   if(starColor) return starColor;
   try{
-    starColor = getComputedStyle(document.documentElement).getPropertyValue("--star").trim() || "#2C261C";
-  }catch(e){ starColor = "#2C261C"; }
+    starColor = getComputedStyle(document.documentElement).getPropertyValue("--star").trim() || "#6A5C44";
+  }catch(e){ starColor = "#6A5C44"; }
   return starColor;
 }
 
@@ -2789,8 +2804,11 @@ function estFullListensIn(e){
   const divisor = hasRealTrackCount ? e.trackCount : DEFAULT_TRACK_COUNT_GUESS;
   return {value: Math.floor(e.playcount / divisor), guessed: !hasRealTrackCount};
 }
-function isListenedIn(prog, i){
+function isListenedIn(list, prog, i){
   const e = entryForIn(prog, i);
+  // Checked ahead of the manual flag on purpose: while the emote is what the row shows in
+  // place of the tick, there's no way to un-tick it, so "reviewed" can't mean "unheard".
+  if(isReviewed(lookupArtistIn(list, prog, i), lookupAlbumIn(list, prog, i))) return true;
   if(e.manual !== null) return e.manual;
   const est = estFullListensIn(e);
   return est !== null && est.value >= 1;
@@ -2810,7 +2828,7 @@ let progress = activeList ? getProgressFor(activeList.id) : {};
 
 /* wrappers scoped to the active list, used by the album view */
 function entryFor(i){ return entryForIn(progress, i); }
-function isListened(i){ return isListenedIn(progress, i); }
+function isListened(i){ return isListenedIn(activeList, progress, i); }
 function lookupArtist(i){ return lookupArtistIn(activeList, progress, i); }
 function lookupAlbum(i){ return lookupAlbumIn(activeList, progress, i); }
 function lookupYear(i){ return lookupYearIn(activeList, progress, i); }
@@ -2960,7 +2978,7 @@ function renderListCardHtml(list){
   albums.forEach((al, i) => {
     if(entryForIn(prog, i).hidden) return;
     visibleTotal++;
-    if(isListenedIn(prog, i)) heard++;
+    if(isListenedIn(list, prog, i)) heard++;
   });
   const pct = visibleTotal ? Math.round((heard / visibleTotal) * 100) : 0;
   return '<div class="dash-card has-kebab" onclick="goList(\'' + list.id + '\')">' +
