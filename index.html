@@ -155,7 +155,7 @@
   .tab-bar button .tab-icon-img{width:26px; height:26px; display:none; border-radius:50%; padding:2px; box-sizing:border-box;}
   body[data-theme="groovy"] .tab-bar button .tab-icon-img{display:block;}
   body[data-theme="groovy"] .tab-bar button.active .tab-icon-img{box-shadow:0 0 0 2px var(--gold);}
-  .tab-bar button.active{color:var(--gold);}
+  .tab-bar button.active{color:var(--gold-dim);}
 
 
   /* Ball nav: every tab is a grey dot, and one gold ball flies between them.
@@ -199,7 +199,10 @@
      cleanly and the moon is simply hidden behind the ball on the far half of the trip. */
   .tab-ball-orbit{
     position:absolute; inset:0; transform-style:preserve-3d;
-    transform:rotateX(-20deg);
+    /* rotateZ rolls the whole ellipse in the screen plane, so the moon climbs
+       from the lower left to the upper right. It turns about the centre, so the
+       orbit stays centred on the ball. */
+    transform:rotateZ(-25deg) rotateX(-20deg);
   }
   .tab-ball-spin{
     position:absolute; inset:0; transform-style:preserve-3d;
@@ -217,8 +220,8 @@
     to{transform:rotateY(360deg);}
   }
   @keyframes tabMoonFace{
-    from{transform:translateZ(12px) rotateY(0deg) rotateX(20deg);}
-    to{transform:translateZ(12px) rotateY(-360deg) rotateX(20deg);}
+    from{transform:translateZ(12px) rotateY(0deg) rotateX(20deg) rotateZ(25deg);}
+    to{transform:translateZ(12px) rotateY(-360deg) rotateX(20deg) rotateZ(25deg);}
   }
 
   /* Secondary action: the dot the ball shoves off from takes the recoil,
@@ -578,7 +581,7 @@
     .tab-bar button.landing > span:last-child{animation:none;}
     /* Parked mid-orbit rather than removed, so the ball still reads the same. */
     .tab-ball-spin{animation:none; transform:rotateY(58deg);}
-    .tab-ball-moon{animation:none; transform:translateZ(12px) rotateY(-58deg) rotateX(20deg);}
+    .tab-ball-moon{animation:none; transform:translateZ(12px) rotateY(-58deg) rotateX(20deg) rotateZ(25deg);}
   }
 </style>
 </head>
@@ -2618,6 +2621,46 @@ function animateBall(from, to){
   return true;
 }
 
+// The moon whips round just after a tab switch and coasts back down to its normal
+// pace. Driving the pair by playbackRate rather than swapping the CSS duration means
+// the orbit speeds up from wherever it happens to be, with no jump in position.
+const MOON_BOOST = 5.5;      // multiplier the instant a tab is tapped
+const MOON_BOOST_MS = 1200;  // how long it takes to bleed back to 1x
+let moonBoostFrame = null;
+
+function moonAnimations(){
+  const ball = document.getElementById("tabBall");
+  if(!ball || !ball.getAnimations) return null;
+  const spin = ball.querySelector(".tab-ball-spin");
+  const moon = ball.querySelector(".tab-ball-moon");
+  if(!spin || !moon) return null;
+  const a = spin.getAnimations()[0], b = moon.getAnimations()[0];
+  return (a && b) ? [a, b] : null;
+}
+
+function boostMoon(){
+  if(ballReducedMotion() || ballHidden()) return;
+  const anims = moonAnimations();
+  if(!anims) return;
+  const start = performance.now();
+  if(moonBoostFrame) cancelAnimationFrame(moonBoostFrame);
+  function step(now){
+    // rAF hands back the frame's start time, which can predate `start` by a hair;
+    // clamping low as well as high keeps the first frame at exactly MOON_BOOST.
+    const u = Math.max(0, Math.min(1, (now - start) / MOON_BOOST_MS));
+    const rate = 1 + (MOON_BOOST - 1) * Math.pow(1 - u, 2.2); // lands exactly on 1x
+    // The spinner and the moon's counter-rotation are two separate animations, so
+    // they get stamped to a single clock every frame or the moon drifts off-axis.
+    const t = anims[0].currentTime;
+    anims.forEach(an => {
+      an.playbackRate = rate;
+      if(t !== null) an.currentTime = t;
+    });
+    moonBoostFrame = u < 1 ? requestAnimationFrame(step) : null;
+  }
+  moonBoostFrame = requestAnimationFrame(step);
+}
+
 function setActiveTab(name){
   TAB_ORDER.forEach(other => {
     const btn = document.getElementById(TAB_BTN_ID[other]);
@@ -2632,6 +2675,7 @@ function setActiveTab(name){
   if(from === name && !ballFrame){ placeBall(name); return; }
   if(ballReducedMotion()){ placeBall(name); return; }
 
+  boostMoon();
   measureBallSlots();
   if(!animateBall(from, name)) return;
 
