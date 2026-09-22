@@ -169,9 +169,12 @@
   body[data-theme="groovy"] .tab-ball{display:none;}
 
   .tab-ball{
-    position:absolute; left:0; top:0; width:12px; height:12px;
-    margin:-6px 0 0 -6px; pointer-events:none; z-index:2;
+    position:absolute; left:0; top:0; width:16px; height:16px;
+    margin:-8px 0 0 -8px; pointer-events:none; z-index:2;
     opacity:0; /* stays hidden until it has been measured and placed */
+    /* A shallow camera plus preserve-3d is what lets the moon pass behind the core
+       instead of just sliding over it. The grey dots keep their own size. */
+    perspective:64px; transform-style:preserve-3d;
   }
   .tab-ball.ready{opacity:1;}
   .tab-ball-core{
@@ -183,11 +186,39 @@
      and a negative scaleX flips it to the other side when the ball travels left. */
   .tab-ball-tail{
     position:absolute; top:50%; left:50%;
-    width:46px; height:12px; margin:-6px 0 0 -46px;
-    border-radius:6px; transform-origin:100% 50%;
+    width:46px; height:16px; margin:-8px 0 0 -46px;
+    border-radius:8px; transform-origin:100% 50%;
     background:linear-gradient(to right, rgba(0,0,0,0), var(--gold));
     filter:blur(2.5px); opacity:0; transform:scaleX(0);
     will-change:transform, opacity;
+  }
+
+  /* A moon on a tilted orbit. The ring is tilted once, a spinner turns inside it,
+     and the moon counter-rotates by the same amounts so it always faces the screen --
+     that keeps its plane parallel to the core's, so the browser can depth-sort them
+     cleanly and the moon is simply hidden behind the ball on the far half of the trip. */
+  .tab-ball-orbit{
+    position:absolute; inset:0; transform-style:preserve-3d;
+    transform:rotateX(-20deg);
+  }
+  .tab-ball-spin{
+    position:absolute; inset:0; transform-style:preserve-3d;
+    animation:tabMoonSpin 3.4s linear infinite;
+  }
+  .tab-ball-moon{
+    position:absolute; top:50%; left:50%;
+    width:5.5px; height:5.5px; margin:-2.75px 0 0 -2.75px;
+    border-radius:50%; background:var(--gold-dim);
+    box-shadow:0 0 5px -1px var(--gold-dim);
+    animation:tabMoonFace 3.4s linear infinite;
+  }
+  @keyframes tabMoonSpin{
+    from{transform:rotateY(0deg);}
+    to{transform:rotateY(360deg);}
+  }
+  @keyframes tabMoonFace{
+    from{transform:translateZ(12px) rotateY(0deg) rotateX(20deg);}
+    to{transform:translateZ(12px) rotateY(-360deg) rotateX(20deg);}
   }
 
   /* Secondary action: the dot the ball shoves off from takes the recoil,
@@ -545,6 +576,9 @@
     .tab-ball-tail{display:none;}
     .tab-bar button .tab-dot.recoil,
     .tab-bar button.landing > span:last-child{animation:none;}
+    /* Parked mid-orbit rather than removed, so the ball still reads the same. */
+    .tab-ball-spin{animation:none; transform:rotateY(58deg);}
+    .tab-ball-moon{animation:none; transform:translateZ(12px) rotateY(-58deg) rotateX(20deg);}
   }
 </style>
 </head>
@@ -656,7 +690,7 @@
     <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/reviews.png" alt=""><span>Logged</span>
   </button>
   <div class="tab-ball" id="tabBall" aria-hidden="true">
-    <span class="tab-ball-tail"></span><span class="tab-ball-core"></span>
+    <span class="tab-ball-tail"></span><span class="tab-ball-core"></span><span class="tab-ball-orbit"><span class="tab-ball-spin"><span class="tab-ball-moon"></span></span></span>
   </div>
 </div>
 
