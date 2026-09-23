@@ -47,7 +47,6 @@
     font-size:10px; letter-spacing:0.18em; text-transform:uppercase;
     color:var(--gold); font-weight:600; display:flex; justify-content:space-between; align-items:center; gap:10px;
   }
-  .eyebrow .label{flex:1;}
   .gear, .back-btn{
     background:none; border:none; color:var(--ink-dim); font-size:17px; cursor:pointer;
     padding:9px 10px; line-height:1; margin:-9px 0;
@@ -67,6 +66,30 @@
   h1{
     font-family:var(--font-display); font-weight:600; font-size:20px; margin:3px 0 0;
     letter-spacing:-0.01em; line-height:1.15;
+    /* Gold at the baseline rising into the ink colour at the top. inline-block keeps the
+       gradient sized to the words rather than the full header width. */
+    display:inline-block;
+    background:linear-gradient(to top, var(--gold), var(--ink));
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent;
+  }
+
+  /* Header starfield: stands in for the "Listening Log" label, filling the eyebrow up to the
+     save button. Stars never move — each one sits dark most of its cycle and only briefly
+     fades up, so at any moment just a few are lit. Positions, colours and timings are set
+     per star by buildHeaderStars(). */
+  .header-stars{flex:1; position:relative; align-self:stretch; min-height:18px; overflow:hidden;}
+  /* The same 5-point star as the album listen stars (inner radius 0.382 of outer). */
+  .header-star{
+    position:absolute; width:var(--size, 10px); height:var(--size, 10px);
+    transform:translate(-50%, -50%) rotate(var(--rot, 0deg));
+    background:currentColor; opacity:0;
+    clip-path:polygon(50% 0, 61.2% 34.5%, 97.6% 34.5%, 68.2% 55.9%, 79.4% 90.5%, 50% 69.1%, 20.6% 90.5%, 31.8% 55.9%, 2.4% 34.5%, 38.8% 34.5%);
+    animation:header-twinkle var(--dur, 9s) ease-in-out var(--delay, 0s) infinite;
+  }
+  @keyframes header-twinkle{
+    0%, 70%, 100%{opacity:0;}
+    82%{opacity:var(--peak, 0.9);}
   }
   select#listSelector{
     appearance:none; -webkit-appearance:none; width:100%; margin-top:6px;
@@ -349,8 +372,7 @@
   .storage-sub{margin-top:8px; overflow-wrap:anywhere;}
   .recent-btn-row{display:flex; gap:8px; align-items:stretch;}
   .recent-btn-row .sync-btn{margin-top:12px;}
-  .recent-btn-row #recentGenerateBtn{flex:2; min-width:0;}
-  .recent-btn-row #checkYearsBtn{flex:1; min-width:0;}
+  .recent-btn-row #recentGenerateBtn{flex:1; min-width:0;}
   .near-miss-toggle-row{padding:22px 10px 8px; text-align:center;}
   .near-miss-toggle-link{
     background:none; border:none; color:var(--ink-dim); opacity:0.6; cursor:pointer;
@@ -585,6 +607,7 @@
     /* Parked mid-orbit rather than removed, so the ball still reads the same. */
     .tab-ball-spin{animation:none; transform:rotateY(58deg);}
     .tab-ball-moon{animation:none; transform:translateZ(12px) rotateY(-58deg) rotateX(20deg) rotateZ(25deg);}
+    .header-star{animation:none; opacity:0.25;}
   }
 </style>
 </head>
@@ -593,13 +616,13 @@
 <header>
   <div class="eyebrow">
     <button class="back-btn hidden" id="backBtn" onclick="goDashboard()">&larr;</button>
-    <span class="label">Listening Log</span>
+    <span class="header-stars" id="headerStars" role="img" aria-label="Listening Log"></span>
     <button class="gear" onclick="openBackupModal()" aria-label="Backup and restore"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg></button>
     <button class="gear" onclick="openSettings()" aria-label="Settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051 a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button>
   </div>
 
   <div id="dashboardHeader">
-    <h1>Your Lists</h1>
+    <h1>Lists</h1>
   </div>
 
   <div id="listHeader" class="hidden">
@@ -624,7 +647,7 @@
   </div>
 
   <div id="discoverHeader" class="hidden">
-    <h1>Discover</h1>
+    <h1>New Releases</h1>
     <div class="week-picker">
       <button class="week-btn" id="discoverWin7" onclick="setDiscoverWindow(7)">
         <span class="week-label">This week</span><span class="week-range">last 7 days</span>
@@ -637,16 +660,15 @@
     <div class="sync-note" id="discoverNote"></div>
   </div>
   <div id="recentHeader" class="hidden">
-    <h1>Past Week</h1>
+    <h1>Recent Listens</h1>
     <div class="recent-btn-row">
       <button class="sync-btn" id="recentGenerateBtn" onclick="generateRecentListens()">Check this week</button>
-      <button class="sync-btn secondary-btn" id="checkYearsBtn" onclick="checkMissingYears()">Years</button>
     </div>
     <div class="sync-note" id="recentNote"></div>
   </div>
   <div id="reviewsHeader" class="hidden">
     <div class="reviews-top-row">
-      <h1>Reviews</h1>
+      <h1>Logs</h1>
       <span class="reviews-count-inline" id="reviewsCount"></span>
     </div>
     <div class="reviews-controls-row">
@@ -658,9 +680,9 @@
       <div class="reviews-filter-row" id="reviewsSortRow">
         <label>Sort by</label>
         <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
-          <option value="recent">Most recently reviewed</option>
-          <option value="oldest">Oldest reviewed</option>
-          <option value="rotation">Rotation (highest first)</option>
+          <option value="recent">Recent logs</option>
+          <option value="rotation">Personal scores</option>
+          <option value="listens">Listen count</option>
           <option value="artist">Artist A–Z</option>
           <option value="album">Album A–Z</option>
           <option value="yearNewest">Year (newest first)</option>
@@ -1569,15 +1591,20 @@ function getFilteredReviews(){
       r.artist.toLowerCase().indexOf(reviewsSearch) !== -1 ||
       r.title.toLowerCase().indexOf(reviewsSearch) !== -1)
   );
-  // Unset values sort to the end rather than the top.
-  const rotationRank = r => {
-    const i = ROTATION_OPTIONS.indexOf(r.rotation);
+  // Unset values sort to the end rather than the top. Option lists run strongest first.
+  const axisRank = (r, axisKey) => {
+    const i = RATING_AXES[axisKey].options.indexOf(r[axisKey]);
     return i === -1 ? 999 : i;
   };
+  const byRecent = (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0);
   const sorters = {
-    recent: (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0),
-    oldest: (a, b) => (a.reviewedAt || 0) - (b.reviewedAt || 0),
-    rotation: (a, b) => rotationRank(a) - rotationRank(b),
+    recent: byRecent,
+    // Personal scores: rotation first, pull breaks ties, then distinctiveness.
+    rotation: (a, b) =>
+      axisRank(a, "rotation") - axisRank(b, "rotation") ||
+      axisRank(a, "pull") - axisRank(b, "pull") ||
+      axisRank(a, "distinctiveness") - axisRank(b, "distinctiveness"),
+    listens: (a, b) => listensFor(b.artist, b.title) - listensFor(a.artist, a.title) || byRecent(a, b),
     artist: (a, b) => a.artist.localeCompare(b.artist),
     album: (a, b) => a.title.localeCompare(b.title),
     yearNewest: (a, b) => (b.year || "0") - (a.year || "0"),
@@ -2759,6 +2786,7 @@ function applyTheme(name){
       st.color = starColorForPacked(st.row.getAttribute("data-star-hue"));
       starDraw(st);
     }
+    if(typeof recolorHeaderStars === "function") recolorHeaderStars();
   }
 }
 function loadThemeName(){
@@ -2769,6 +2797,55 @@ function setTheme(name){
   applyTheme(name);
 }
 applyTheme(loadThemeName());
+
+/* Scatters fixed listen stars across the header strip. Each one borrows the cover hue of an
+   album you've fully listened to (one pick per listen, so heavy rotation shows up more), run
+   through the same starColorForPacked() as the row stars. Albums whose cover hue hasn't been
+   read yet, or a fresh install with no listens, fall back to the theme's plain star colour.
+   Each star is lit for ~30% of a long, randomly offset cycle, so only a handful show at once. */
+const HEADER_STAR_COUNT = 30;
+function listenedCoverHues(){
+  const hues = [];
+  const totals = tallyIndex();
+  Object.keys(totals).forEach(k => {
+    const parts = k.split("|||");
+    if(parts.length !== 2) return;
+    const hue = cachedCoverHue(parts[0], parts[1]);
+    if(hue === null || hue === HUE_GREY) return;
+    for(let n = Math.min(totals[k], STAR_MAX); n > 0; n--) hues.push(hue);
+  });
+  return hues;
+}
+function recolorHeaderStars(){
+  const field = document.getElementById("headerStars");
+  if(!field) return;
+  field.querySelectorAll(".header-star").forEach(s => {
+    s.style.color = starColorForPacked(s.dataset.hue);
+  });
+}
+function buildHeaderStars(){
+  const field = document.getElementById("headerStars");
+  if(!field) return;
+  const hues = listenedCoverHues();
+  let html = "";
+  for(let i = 0; i < HEADER_STAR_COUNT; i++){
+    const dur = 6 + Math.random() * 10;
+    const hue = hues.length ? hues[Math.floor(Math.random() * hues.length)] : "";
+    html += '<span class="header-star" data-hue="' + hue + '" style="' +
+      'left:' + (1 + Math.random() * 98).toFixed(1) + '%;' +
+      'top:' + (15 + Math.random() * 70).toFixed(1) + '%;' +
+      '--size:' + (STAR_MIN_R + Math.random() * (STAR_MAX_R - STAR_MIN_R)).toFixed(1) + 'px;' +
+      '--rot:' + Math.round(Math.random() * 72) + 'deg;' +
+      '--dur:' + dur.toFixed(2) + 's;' +
+      '--delay:' + (-Math.random() * dur).toFixed(2) + 's;' +
+      '--peak:' + (0.6 + Math.random() * 0.4).toFixed(2) + ';"></span>';
+  }
+  field.innerHTML = html;
+  recolorHeaderStars();
+}
+// Deferred to DOMContentLoaded: the Spotify cache that holds cover hues is declared further
+// down this script, so reading it here at load time would hit it before it exists.
+document.addEventListener("DOMContentLoaded", buildHeaderStars);
 
 function loadSettings(){
   try{
@@ -5988,40 +6065,6 @@ async function generateRecentListens(){
   const spNote = spotifyLookupSummary(spState);
   if(spNote) note.textContent += " " + spNote;
   saveSpotifyAlbumCache();
-  renderRecentResultsArea();
-}
-
-// Separate, on-demand step: retries Spotify for whatever's showing without a year — albums
-// checked before Spotify was connected, or ones it didn't match last time.
-async function checkMissingYears(){
-  if(!recentResults || !recentResults.albums || recentResults.albums.length === 0) return;
-  const note = document.getElementById("recentNote");
-  const missing = recentResults.albums.filter(g => !g.year);
-  if(missing.length === 0){
-    note.textContent = "Every album already has a year.";
-    return;
-  }
-  if(!isSpotifyConnected()){
-    note.textContent = "Connect Spotify in Settings to fill in years.";
-    openSettings();
-    return;
-  }
-  const btn = document.getElementById("checkYearsBtn");
-  btn.disabled = true;
-  const spState = newSpotifyLookupState();
-  for(let i = 0; i < missing.length && !spState.stop; i++){
-    note.textContent = "Checking missing years… " + (i + 1) + " of " + missing.length;
-    const sp = await spotifyAlbumInfoSafe(missing[i].artist, missing[i].album, spState, {force: true});
-    if(sp && sp.found && sp.year) missing[i].year = sp.year;
-  }
-  saveSpotifyAlbumCache();
-  btn.disabled = false;
-  const filled = missing.filter(g => g.year).length;
-  if(spState.stop) note.textContent = "Spotify stopped: " + spState.stop + ".";
-  else note.textContent = filled > 0
-    ? "Filled in " + filled + " of " + missing.length + " missing year" + (missing.length === 1 ? "" : "s") + "."
-    : "Spotify doesn't have a year for any of the " + missing.length + " missing album" + (missing.length === 1 ? "" : "s") + ".";
-  saveRecentResultsToStorage();
   renderRecentResultsArea();
 }
 
