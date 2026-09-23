@@ -2303,7 +2303,8 @@ const COVER_COLOR_MAX = 3;
 
 // Stored by index. Reordering or removing one shifts every reading, so it has to go with a
 // COVER_COLORS_VERSION bump (which drops them all); appending doesn't. Tan was removed in v7:
-// it was mostly cream paper or light brown, which now read as white or brown.
+// it was mostly cream paper or light brown, which now read as white or brown. Maroon was
+// folded into red in v8.
 const COVER_COLORS = [
   {id: "red", label: "Red", hex: "#D0453C"},
   {id: "orange", label: "Orange", hex: "#E58A33"},
@@ -2316,15 +2317,14 @@ const COVER_COLORS = [
   {id: "black", label: "Black", hex: "#111111"},
   {id: "white", label: "White", hex: "#F1EEE6"},
   {id: "grey", label: "Grey", hex: "#8D8B87"},
-  {id: "teal", label: "Teal", hex: "#2FA3A0"},
-  {id: "maroon", label: "Maroon", hex: "#7A2231"}
+  {id: "teal", label: "Teal", hex: "#2FA3A0"}
 ];
-const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, BLACK: 8, WHITE: 9, GREY: 10, TEAL: 11, MAROON: 12};
+const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, BLACK: 8, WHITE: 9, GREY: 10, TEAL: 11};
 const COVER_NEUTRALS = [CC.BLACK, CC.WHITE, CC.GREY];
 
 // Bump whenever the rules below change what a cover would be called. Every stored reading is
 // then dropped once, and covers are read again under the new rules as they're next seen.
-const COVER_COLORS_VERSION = 7;
+const COVER_COLORS_VERSION = 8;
 let coverColorsChecked = false;
 function checkCoverColorsVersion(){
   coverColorsChecked = true;
@@ -2403,12 +2403,13 @@ function coverPixelColor(r, g, b){
   if(h >= 193 && h < 255) return CC.BLUE;   // sky and navy sit just past teal
   if(h >= 345 || h < 12){
     if(l > 0.68 || (l > 0.55 && c < 0.4)) return CC.PINK;   // flushed skin and dusty rose read pink
-    return l < 0.33 ? CC.MAROON : CC.RED;
+    return CC.RED;   // dark reds included: too dark to hold colour at all is already black
   }
   if(h < 45){
     if(l < 0.36) return CC.BROWN;
-    // Not very vivid: kraft paper and wood are brown, cream is white. Vivid is orange, pale or not.
-    if(c < 0.3) return pale ? CC.WHITE : CC.BROWN;
+    // Not very vivid (and pale shades can carry a fair bit of chroma before they read orange):
+    // kraft paper, wood and classic tan are brown, cream is white.
+    if(c < 0.3 || (l > 0.62 && c < 0.42)) return pale ? CC.WHITE : CC.BROWN;
     return CC.ORANGE;
   }
   if(h < 68){
@@ -2417,7 +2418,7 @@ function coverPixelColor(r, g, b){
   }
   if(h < 160) return CC.GREEN;
   if(h < 290 || (h < 320 && l < 0.55)) return CC.PURPLE;   // violet and magenta shadows read purple
-  if(l < 0.35) return h >= 325 ? CC.MAROON : CC.PURPLE;   // deep wine reads as maroon, not purple
+  if(l < 0.35) return h >= 325 ? CC.RED : CC.PURPLE;   // deep wine reads as red, not purple
   return CC.PINK;
 }
 
