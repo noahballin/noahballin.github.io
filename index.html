@@ -275,6 +275,7 @@
 
   /* stats */
   .count-picker.stats-span{margin:0 0 12px;}
+  #statsColors{display:flow-root;}   /* keeps the last card's margin inside, so its held height is exact */
   .stats-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:12px 12px 10px; margin-bottom:12px;}
   .stats-card-head{display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:26px;}
   .stats-card-title{font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink);}
@@ -2300,7 +2301,9 @@ const COVER_COLOR_MIN_SHARE = 0.10;   // a colour has to hold this much of the c
 const COVER_ACCENT_SHARE = 0.06;      // …or this much, for a real colour filling a spare slot
 const COVER_COLOR_MAX = 3;
 
-// Stored by index: only ever append to this list.
+// Stored by index. Reordering or removing one shifts every reading, so it has to go with a
+// COVER_COLORS_VERSION bump (which drops them all); appending doesn't. Tan was removed in v7:
+// it was mostly cream paper or light brown, which now read as white or brown.
 const COVER_COLORS = [
   {id: "red", label: "Red", hex: "#D0453C"},
   {id: "orange", label: "Orange", hex: "#E58A33"},
@@ -2310,19 +2313,18 @@ const COVER_COLORS = [
   {id: "purple", label: "Purple", hex: "#7D52B8"},
   {id: "pink", label: "Pink", hex: "#E38BB8"},
   {id: "brown", label: "Brown", hex: "#7B4F2E"},
-  {id: "tan", label: "Tan", hex: "#CFB38D"},
   {id: "black", label: "Black", hex: "#111111"},
   {id: "white", label: "White", hex: "#F1EEE6"},
   {id: "grey", label: "Grey", hex: "#8D8B87"},
   {id: "teal", label: "Teal", hex: "#2FA3A0"},
   {id: "maroon", label: "Maroon", hex: "#7A2231"}
 ];
-const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, TAN: 8, BLACK: 9, WHITE: 10, GREY: 11, TEAL: 12, MAROON: 13};
+const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, BLACK: 8, WHITE: 9, GREY: 10, TEAL: 11, MAROON: 12};
 const COVER_NEUTRALS = [CC.BLACK, CC.WHITE, CC.GREY];
 
 // Bump whenever the rules below change what a cover would be called. Every stored reading is
 // then dropped once, and covers are read again under the new rules as they're next seen.
-const COVER_COLORS_VERSION = 6;
+const COVER_COLORS_VERSION = 7;
 let coverColorsChecked = false;
 function checkCoverColorsVersion(){
   coverColorsChecked = true;
@@ -2394,8 +2396,9 @@ function coverPixelColor(r, g, b){
   if(l > 0.8 && (h >= 330 || h < 25)) return CC.PINK;   // blush and peach tints read pink
   // Dark yellow: the golden end stays yellow, the olive end reads green.
   if(h >= 45 && h < 68 && l < 0.3) return h < 52 ? CC.YELLOW : CC.GREEN;
-  if(h >= 68 && h < 90 && c < 0.2) return l < 0.6 ? CC.GREEN : CC.TAN;   // grass and moss
-  if(c < 0.16 && h >= 12 && h < 65) return l < 0.4 ? CC.BROWN : CC.TAN;   // muted warm
+  const pale = l >= 0.72;   // light enough that a muted warm tint reads as cream, i.e. white
+  if(h >= 68 && h < 90 && c < 0.2) return pale ? CC.WHITE : CC.GREEN;   // grass and moss
+  if(c < 0.16 && h >= 12 && h < 65) return pale ? CC.WHITE : CC.BROWN;   // muted warm: cream or brown
   if(h >= 160 && h < 193) return CC.TEAL;
   if(h >= 193 && h < 255) return CC.BLUE;   // sky and navy sit just past teal
   if(h >= 345 || h < 12){
@@ -2404,12 +2407,12 @@ function coverPixelColor(r, g, b){
   }
   if(h < 45){
     if(l < 0.36) return CC.BROWN;
-    // Pale and not very vivid is tan (think kraft paper), even with a fair bit of chroma.
-    if(c < 0.3 || (l > 0.62 && c < 0.42)) return l < 0.5 ? CC.BROWN : CC.TAN;
+    // Not very vivid: kraft paper and wood are brown, cream is white. Vivid is orange, pale or not.
+    if(c < 0.3) return pale ? CC.WHITE : CC.BROWN;
     return CC.ORANGE;
   }
   if(h < 68){
-    if(c < 0.3 && l > 0.55) return CC.TAN;
+    if(c < 0.3 && l > 0.55) return pale ? CC.WHITE : CC.BROWN;   // parchment and khaki
     return CC.YELLOW;
   }
   if(h < 160) return CC.GREEN;
@@ -2487,7 +2490,8 @@ function classifyCoverColors(img){
       const d = Math.abs(((f[0] - COVER_COLOR_HUES[i]) % 360 + 540) % 360 - 180);
       if(d < gap){ gap = d; best = i; }
     });
-    weight[best] += f[1];
+    // A greyed-out orange is brown, not orange: faint warm paper shouldn't make a cover orange.
+    weight[best === CC.ORANGE ? CC.BROWN : best] += f[1];
   });
   const ranked = Array.from(weight, (w, i) => ({i: i, share: w / total}))
     .sort((a, b) => b.share - a.share);
@@ -3976,6 +3980,10 @@ const STATS_EXAMPLES = 6;
 function fillStatsColors(){
   const host = document.getElementById("statsColors");
   if(!host) return;
+  // Never let the cards get shorter while you're on the page: picking a colour with fewer
+  // combos under it would otherwise pull the page up under your finger. Blank space at the
+  // bottom is the better trade. renderStats makes a fresh host, which starts over.
+  host.style.minHeight = Math.max(host.offsetHeight, parseFloat(host.style.minHeight) || 0) + "px";
   const reviews = Object.values(loadReviews());
   const idx = statsColorIndex(reviews);
   const readout = statsCatProgress
