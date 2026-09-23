@@ -683,7 +683,7 @@
       <button class="filters-toggle-btn" id="filtersToggleBtn" onclick="toggleReviewsFilters()">Filters</button>
     </div>
     <div class="reviews-filters hidden" id="reviewsFiltersPanel">
-      <div class="reviews-filter-row" id="reviewsSortRow">
+      <div class="reviews-filter-row" id="reviewsSortRow" data-star-floor>
         <label>Sort by</label>
         <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
           <option value="recent">Recent logs</option>
@@ -2875,8 +2875,15 @@ function layoutHeaderStars(){
   headerStarRAF = 0;
   const header = document.querySelector("header");
   if(!header || !headerStarField) return;
-  const w = headerStarField.clientWidth, h = headerStarField.clientHeight;
+  const w = headerStarField.clientWidth;
+  let h = headerStarField.clientHeight;
   const origin = headerStarField.getBoundingClientRect();
+  // A visible [data-star-floor] element caps the field at its bottom edge — used on the Sort By
+  // row so the busy range/vibe filters under it stay star-free.
+  header.querySelectorAll("[data-star-floor]").forEach(el => {
+    if(el.getClientRects().length === 0) return;
+    h = Math.min(h, el.getBoundingClientRect().bottom - origin.top + HSTAR_EDGE);
+  });
   const obstacles = headerStarObstacles(header, origin);
   const target = Math.max(4, Math.round(w * h / HSTAR_AREA_PER));
 
