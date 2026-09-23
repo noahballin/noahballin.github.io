@@ -473,7 +473,7 @@
   .range-filter-value{font-size:10.5px; color:var(--teal); text-align:right; line-height:1.35; flex:1;}
   .range-filter-value.is-all{color:var(--ink-dim); opacity:0.7;}
   .range-dots{
-    display:flex; gap:10px; align-items:center; touch-action:none; user-select:none;
+    display:flex; width:max-content; gap:10px; align-items:center; touch-action:none; user-select:none;
     -webkit-user-select:none; padding:6px 0;
   }
   .range-dot{
@@ -1684,10 +1684,10 @@ function renderReviewsColorFilter(){
   if(!el) return;
   const sel = reviewsFilter.colors;
   el.innerHTML = '<button class="color-pick-all' + (!sel.length ? ' active' : '') + '" onclick="toggleReviewsColorFilter(-1)">All</button>' +
-    COVER_COLORS.map((c, i) =>
+    COVER_COLOR_ORDER.map(i => { const c = COVER_COLORS[i]; return (
       '<button class="color-pick' + (sel.indexOf(i) !== -1 ? ' active' : '') + '" style="background:' + c.hex +
       '" title="' + c.label + '" aria-label="' + c.label + '" aria-pressed="' + (sel.indexOf(i) !== -1) +
-      '" onclick="toggleReviewsColorFilter(' + i + ')"></button>').join("");
+      '" onclick="toggleReviewsColorFilter(' + i + ')"></button>'); }).join("");
 }
 function toggleReviewsColorFilter(i){
   const sel = reviewsFilter.colors;
@@ -2340,6 +2340,10 @@ const COVER_COLORS = [
 ];
 const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, BLACK: 8, WHITE: 9, GREY: 10, TEAL: 11};
 const COVER_NEUTRALS = [CC.BLACK, CC.WHITE, CC.GREY];
+// The order colours are shown in: round the colour wheel, then brown, then black to white.
+// Separate from the stored indexes, so reordering here never means re-reading covers.
+const COVER_COLOR_ORDER = [CC.RED, CC.ORANGE, CC.YELLOW, CC.GREEN, CC.TEAL, CC.BLUE,
+                           CC.PURPLE, CC.PINK, CC.BROWN, CC.BLACK, CC.GREY, CC.WHITE];
 
 // Bump whenever the rules below change what a cover would be called. Every stored reading is
 // then dropped once, and covers are read again under the new rules as they're next seen.
@@ -4014,7 +4018,8 @@ function fillStatsColors(){
 
   // Main colours: the familiar strip and bar rows.
   const mains = COVER_COLORS.map((c, i) => ({idxs: [i], key: String(i), b: idx.sets[String(i)]}))
-    .filter(x => x.b).sort((a, c) => c.b.albums - a.b.albums || a.idxs[0] - c.idxs[0]);
+    .filter(x => x.b).sort((a, c) => c.b.albums - a.b.albums ||
+      COVER_COLOR_ORDER.indexOf(a.idxs[0]) - COVER_COLOR_ORDER.indexOf(c.idxs[0]));
   let html = '<div class="stats-card">' +
     '<div class="stats-card-head">' +
       '<span class="stats-card-title">Cover colors</span>' +
@@ -4037,10 +4042,10 @@ function fillStatsColors(){
       '<span class="stats-card-title">Combos</span>' +
       (sel ? '<button class="stats-clear" onclick="setStatsColors(\'\')">Clear</button>' : '') +
     '</div>' +
-    '<div class="color-picks stats-color-picks" style="grid-template-columns:repeat(' + Math.ceil(COVER_COLORS.length / 2) + ', 1fr)">' + COVER_COLORS.map((c, i) =>
+    '<div class="color-picks stats-color-picks" style="grid-template-columns:repeat(' + Math.ceil(COVER_COLOR_ORDER.length / 2) + ', 1fr)">' + COVER_COLOR_ORDER.map(i => { const c = COVER_COLORS[i]; return (
       '<button class="color-pick' + (statsColorSel.indexOf(i) !== -1 ? ' active' : '') + '" style="background:' + c.hex +
       '" title="' + c.label + '" aria-label="' + c.label + '" aria-pressed="' + (statsColorSel.indexOf(i) !== -1) +
-      '" onclick="toggleStatsColor(' + i + ')"></button>').join("") + '</div>';
+      '" onclick="toggleStatsColor(' + i + ')"></button>'); }).join("") + '</div>';
 
   if(!sel){
     // Nothing picked: the most common combinations of two or three.
