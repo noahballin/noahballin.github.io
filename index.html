@@ -196,6 +196,9 @@
   }
   body[data-theme="groovy"] .tab-bar button .tab-dot-slot{display:none;}
   body[data-theme="groovy"] .tab-ball{display:none;}
+  /* A tab with no Groovy picture yet keeps its dot there, so its label stays level with the rest. */
+  body[data-theme="groovy"] .tab-bar button.no-icon-img .tab-dot-slot{display:flex;}
+  body[data-theme="groovy"] .tab-bar button.no-icon-img .tab-icon-img{display:none;}
 
   .tab-ball{
     position:absolute; left:0; top:0; width:16px; height:16px;
@@ -269,6 +272,49 @@
   }
   .tab-bar button .tab-dot.recoil{animation:tabDotRecoil .34s cubic-bezier(.3,.7,.3,1);}
   .tab-bar button.landing > span:last-child{animation:tabLabelLand .42s ease-out;}
+
+  /* stats */
+  .stats-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:12px 12px 10px; margin-bottom:12px;}
+  .stats-card-head{display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:26px;}
+  .stats-card-title{font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink);}
+  .stats-seg{display:inline-flex; border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+  .stats-seg button{background:none; border:none; color:var(--ink-dim); font-family:var(--font-body); font-size:11px; padding:5px 11px; cursor:pointer;}
+  .stats-seg button.active{background:var(--card-hi); color:var(--ink);}
+  .stats-readout{font-size:11px; color:var(--ink-dim); white-space:nowrap;}
+  .stats-readout b{color:var(--ink); font-weight:600;}
+  .stats-legend{display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:8px; font-size:11px; color:var(--ink-dim);}
+  .stats-legend span{display:inline-flex; align-items:center; gap:5px;}
+  .stats-legend b{color:var(--ink); font-weight:600;}
+  .stats-key{width:8px; height:8px; border-radius:50%; flex:none;}
+  .stats-chart{margin-top:8px; cursor:pointer;}
+  .stats-chart svg{display:block; width:100%; height:auto; overflow:visible;}
+  .stats-chart text{font-family:var(--font-body); font-size:9.5px; fill:var(--ink-dim);}
+  .stats-chart text.picked{fill:var(--ink); font-weight:600;}
+  .stats-grid{stroke:var(--line); stroke-width:1;}
+  .stats-bar{fill:var(--ink-dim); opacity:0.55;}
+  .stats-bar.picked{fill:var(--ink); opacity:1;}
+  .stats-guide{stroke:var(--ink-dim); stroke-width:1; stroke-dasharray:2 3;}
+  .stats-line{fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round;}
+  .stats-dot{stroke:var(--card); stroke-width:2;}
+  .stats-empty{font-size:11px; color:var(--ink-dim); padding:18px 0; text-align:center;}
+  .color-strip{display:flex; gap:2px; height:14px; margin-top:12px; border-radius:4px; overflow:hidden;}
+  .color-strip span{display:block; min-width:3px; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);}
+  .color-rows{margin-top:12px;}
+  .color-row-head, .color-row{display:grid; grid-template-columns:84px 1fr 34px; align-items:center; gap:10px;}
+  .color-row-head{font-size:9.5px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.06em; padding-bottom:5px;}
+  .color-row-head span:last-child, .color-avg{text-align:right;}
+  .color-row{padding:7px 0; border-top:1px solid var(--line); font-size:12px; color:var(--ink); cursor:pointer;}
+  .color-name{display:flex; align-items:center; gap:7px; min-width:0;}
+  .color-swatch{width:12px; height:12px; border-radius:50%; flex:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18);}
+  .color-bar-cell{display:flex; align-items:center; gap:6px; min-width:0;}
+  .color-bar{height:8px; border-radius:0 4px 4px 0; min-width:2px; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);}
+  .color-count{font-size:11px; color:var(--ink-dim); flex:none;}
+  .color-avg{font-weight:600;}
+  .color-examples{display:grid; grid-template-columns:repeat(6, 1fr); gap:6px; padding:0 0 9px;}
+  .color-example{aspect-ratio:1; border:none; padding:0; border-radius:4px; overflow:hidden; background:var(--card-hi); cursor:pointer;}
+  .color-example img{display:block; width:100%; height:100%; object-fit:cover;}
+  .color-detail{padding:0 0 8px;}
+  .color-detail .stats-legend{margin-top:0;}
 
   /* discover */
   .week-picker{display:flex; gap:6px; margin-top:16px;}
@@ -708,6 +754,16 @@
       </div>
     </div>
   </div>
+  <div id="statsHeader" class="hidden">
+    <div class="reviews-top-row">
+      <h1>Stats</h1>
+      <span class="reviews-count-inline" id="statsCount"></span>
+    </div>
+    <div class="count-picker">
+      <button class="count-btn" id="statsSpanYear" onclick="setStatsSpan('year')">Year</button>
+      <button class="count-btn" id="statsSpanDecade" onclick="setStatsSpan('decade')">Decade</button>
+    </div>
+  </div>
 </header>
 
 <div class="tab-bar">
@@ -722,6 +778,9 @@
   </button>
   <button id="tabReviews" onclick="switchSection('reviews')">
     <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/reviews.png" alt=""><span>Logged</span>
+  </button>
+  <button id="tabStats" onclick="switchSection('stats')">
+    <span class="tab-dot-slot"><span class="tab-dot"></span></span><img class="tab-icon-img" src="groovy/stats.png" alt="" onerror="this.parentNode.classList.add('no-icon-img')"><span>Stats</span>
   </button>
   <div class="tab-ball" id="tabBall" aria-hidden="true">
     <span class="tab-ball-tail"></span><span class="tab-ball-core"></span><span class="tab-ball-orbit"><span class="tab-ball-spin"><span class="tab-ball-moon"></span></span></span>
@@ -2215,21 +2274,24 @@ function hexToHsl(hex){
    Pixels are weighted by saturation squared and by how mid-toned they are, so a cover that's
    mostly black with one red band reads as red rather than as black. Anything too grey, too
    dark or too blown out doesn't vote on hue at all — it just counts toward "this is greyscale". */
-function extractCoverHue(img){
+function coverSamplePixels(img){
   if(!hueCanvas){
     hueCanvas = document.createElement("canvas");
     hueCanvas.width = hueCanvas.height = HUE_SAMPLE;
     // Read back every time we use it, so the software path is the right one here.
     hueCtx = hueCanvas.getContext("2d", {willReadFrequently: true});
   }
-  let px;
   try{
     hueCtx.clearRect(0, 0, HUE_SAMPLE, HUE_SAMPLE);
     hueCtx.drawImage(img, 0, 0, HUE_SAMPLE, HUE_SAMPLE);
-    px = hueCtx.getImageData(0, 0, HUE_SAMPLE, HUE_SAMPLE).data;
+    return hueCtx.getImageData(0, 0, HUE_SAMPLE, HUE_SAMPLE).data;
   }catch(e){
     return null;   // tainted canvas: the CDN refused CORS for this one
   }
+}
+function extractCoverHue(img){
+  const px = coverSamplePixels(img);
+  if(!px) return null;
 
   const bins = new Float64Array(HUE_BUCKETS);
   const satSum = new Float64Array(HUE_BUCKETS);
@@ -2325,6 +2387,86 @@ function starHueAttr(artist, title){
   return h === null ? "" : String(h);
 }
 
+/* ---------- COVER COLOURS ----------
+   The hue above is tuned for tinting stars, so it ignores black, white and grey and can't tell
+   tan from orange. Stats wants the colour a cover reads as, so every sampled pixel is named
+   and the name with the most weight wins. Stored as an index: only ever append to this list. */
+const COVER_COLORS = [
+  {id: "red", label: "Red", hex: "#D0453C"},
+  {id: "orange", label: "Orange", hex: "#E58A33"},
+  {id: "yellow", label: "Yellow", hex: "#E6C63F"},
+  {id: "green", label: "Green", hex: "#4E9F4B"},
+  {id: "blue", label: "Blue", hex: "#3E73C6"},
+  {id: "purple", label: "Purple", hex: "#7D52B8"},
+  {id: "pink", label: "Pink", hex: "#E38BB8"},
+  {id: "brown", label: "Brown", hex: "#7B4F2E"},
+  {id: "tan", label: "Tan", hex: "#CFB38D"},
+  {id: "black", label: "Black", hex: "#111111"},
+  {id: "white", label: "White", hex: "#F1EEE6"},
+  {id: "grey", label: "Grey", hex: "#8D8B87"}
+];
+const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, TAN: 8, BLACK: 9, WHITE: 10, GREY: 11};
+
+// Chroma (max - min) rather than HSL saturation, since HSL calls near-black pixels saturated.
+function coverPixelColor(r, g, b){
+  const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
+  const c = mx - mn, l = (mx + mn) / 2;
+  if(l < 0.12 || (c < 0.1 && l < 0.2)) return CC.BLACK;
+  if(c < 0.1) return l > 0.8 ? CC.WHITE : CC.GREY;
+  if(l > 0.9) return CC.WHITE;
+  const h = rgbToHsl(r, g, b)[0];
+  if(c < 0.16){   // muted: warm reads as tan or brown, anything else as grey
+    if(h >= 12 && h < 65) return l < 0.4 ? CC.BROWN : CC.TAN;
+    return l > 0.8 ? CC.WHITE : CC.GREY;
+  }
+  if(h >= 345 || h < 12) return l > 0.68 ? CC.PINK : CC.RED;
+  if(h < 45){
+    if(l < 0.36) return CC.BROWN;
+    // Pale and not very vivid is tan (think kraft paper), even with a fair bit of chroma.
+    if(c < 0.3 || (l > 0.62 && c < 0.42)) return l < 0.5 ? CC.BROWN : CC.TAN;
+    return CC.ORANGE;
+  }
+  if(h < 68){
+    if(l < 0.3) return h < 55 ? CC.BROWN : CC.GREEN;
+    if(c < 0.3 && l > 0.55) return CC.TAN;
+    return CC.YELLOW;
+  }
+  if(h < 165) return CC.GREEN;
+  if(h < 255) return CC.BLUE;
+  if(h < 290) return CC.PURPLE;
+  return l < 0.35 ? CC.PURPLE : CC.PINK;
+}
+
+// Index into COVER_COLORS, or null if the cover couldn't be read. Colour gets a small boost
+// over neutrals so a vivid subject on a plain background still counts for something.
+function classifyCoverColor(img){
+  const px = coverSamplePixels(img);
+  if(!px) return null;
+  const weight = new Float64Array(COVER_COLORS.length);
+  let counted = 0;
+  for(let i = 0; i < px.length; i += 4){
+    if(px[i + 3] < 128) continue;
+    counted++;
+    const r = px[i], g = px[i + 1], b = px[i + 2];
+    const chroma = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+    weight[coverPixelColor(r, g, b)] += 1 + chroma;
+  }
+  if(!counted) return null;
+  let best = 0;
+  for(let k = 1; k < weight.length; k++) if(weight[k] > weight[best]) best = k;
+  return best;
+}
+function cachedCoverCat(artist, title){
+  const hit = coverCacheEntry(artist, title);
+  return hit && typeof hit.cat === "number" && COVER_COLORS[hit.cat] ? hit.cat : null;
+}
+function storeCoverCat(artist, title, cat){
+  const entry = coverCacheEntry(artist, title);
+  if(!entry) return;
+  entry.cat = cat;
+  scheduleSpotifyCacheSave();
+}
+
 /* Covers arrive two ways — in the initial render, and patched in later by paintCover — and
    `load` doesn't bubble. One capture-phase listener on the document catches both without any
    per-row wiring, and fires for cached images too. */
@@ -2339,6 +2481,11 @@ document.addEventListener("load", function(ev){
   const artist = row.dataset.hueArtist, title = row.dataset.hueTitle;
   if(!artist || !title) return;
 
+  // Only logged albums are named: Stats is the only reader, and it only counts those.
+  if(isReviewed(artist, title) && cachedCoverCat(artist, title) === null){
+    const cat = classifyCoverColor(img);
+    if(cat !== null) storeCoverCat(artist, title, cat);
+  }
   let packed = cachedCoverHue(artist, title);
   if(packed === null){
     packed = extractCoverHue(img);
@@ -2482,12 +2629,12 @@ function commitTallyWeeks(byWeek, fromUnix, toUnix){
 }
 
 /* ---------- TAB BALL ----------
-   One gold ball rides between the four tab dots. The motion is driven frame by frame
+   One gold ball rides between the tab dots. The motion is driven frame by frame
    rather than left to a CSS transition so the squash, stretch and tail can follow the
    ball's actual velocity, which is what makes a three-tab jump read differently from a
    one-tab hop without authoring a separate animation for every pair of tabs. */
-const TAB_ORDER = ["lists", "discover", "recent", "reviews"];
-const TAB_BTN_ID = {lists:"tabLists", discover:"tabDiscover", recent:"tabRecent", reviews:"tabReviews"};
+const TAB_ORDER = ["lists", "discover", "recent", "reviews", "stats"];
+const TAB_BTN_ID = {lists:"tabLists", discover:"tabDiscover", recent:"tabRecent", reviews:"tabReviews", stats:"tabStats"};
 
 const BALL_TRAVEL = 250;        // ms to reach the target — the duration you actually feel
 const BALL_SETTLE = 110;        // ms of follow-through once it's there
@@ -3214,7 +3361,7 @@ function lookupGenre(i){ return lookupGenreIn(activeList, progress, i); }
 function estFullListens(e){ return estFullListensIn(e); }
 
 /* ---------- NAVIGATION ---------- */
-let section = "lists"; // "lists" | "discover" | "recent" | "reviews"
+let section = "lists"; // "lists" | "discover" | "recent" | "reviews" | "stats"
 let discoverInitialized = false;
 let reviewsInitialized = false;
 
@@ -3227,6 +3374,17 @@ function render(){
   // draw no stars, so they keep their breathing room.
   const starredView = section === "reviews" || (section === "lists" && mode === "albums");
   document.getElementById("content").classList.toggle("flush-top", starredView);
+  document.getElementById("statsHeader").classList.toggle("hidden", section !== "stats");
+  if(section === "stats"){
+    document.getElementById("backBtn").classList.add("hidden");
+    document.getElementById("dashboardHeader").classList.add("hidden");
+    document.getElementById("listHeader").classList.add("hidden");
+    document.getElementById("discoverHeader").classList.add("hidden");
+    document.getElementById("recentHeader").classList.add("hidden");
+    document.getElementById("reviewsHeader").classList.add("hidden");
+    renderStats();
+    return;
+  }
   if(section === "discover"){
     document.getElementById("backBtn").classList.add("hidden");
     document.getElementById("dashboardHeader").classList.add("hidden");
@@ -3313,6 +3471,426 @@ function populateListSelector(){
     sel.appendChild(opt);
   });
 }
+
+/* ---------- STATS ----------
+   Everything here is derived from the logged albums on every render — nothing new is stored
+   except each cover's named colour, which rides on the cover cache like its hue does. */
+const STATS_AXES = [
+  {key: "rotation", label: "Rotation", color: "var(--teal)"},
+  {key: "distinctiveness", label: "Distinctiveness", color: "var(--gold)"},
+  {key: "pull", label: "Pull", color: "var(--gold-dim)"}
+];
+let statsSpan = "year";          // "year" | "decade"
+let statsMetric = "listens";     // "listens" | "albums"
+let statsPick = null;            // the year or decade both timeline charts are pointing at
+let statsColorPick = null;       // the colour row that's open
+try{
+  if(localStorage.getItem("ll_stats_span") === "decade") statsSpan = "decade";
+}catch(e){}
+
+function setStatsSpan(span){
+  statsSpan = span;
+  statsPick = null;
+  try{ localStorage.setItem("ll_stats_span", span); }catch(e){}
+  renderStats();
+}
+function setStatsMetric(metric){
+  statsMetric = metric;
+  renderStats();
+}
+function toggleStatsColor(i){
+  statsColorPick = statsColorPick === i ? null : i;
+  fillStatsColors();
+}
+
+// 1 = weakest … 5 = strongest, or null when that axis wasn't rated.
+function statsAxisLevel(r, axisKey){
+  const opts = RATING_AXES[axisKey].options;
+  const i = opts.indexOf(r[axisKey]);
+  return i === -1 ? null : opts.length - i;
+}
+function statsComposite(r){
+  const levels = STATS_AXES.map(a => statsAxisLevel(r, a.key)).filter(v => v !== null);
+  return levels.length ? levels.reduce((a, b) => a + b, 0) / levels.length : null;
+}
+function statsNewBucket(){
+  const b = {albums: 0, listens: 0, sum: {}, n: {}};
+  STATS_AXES.forEach(a => { b.sum[a.key] = 0; b.n[a.key] = 0; });
+  return b;
+}
+function statsAddToBucket(b, r){
+  b.albums++;
+  b.listens += listensFor(r.artist, r.title);
+  STATS_AXES.forEach(a => {
+    const v = statsAxisLevel(r, a.key);
+    if(v !== null){ b.sum[a.key] += v; b.n[a.key]++; }
+  });
+}
+function statsAvg(b, axisKey){
+  return b.n[axisKey] ? b.sum[axisKey] / b.n[axisKey] : null;
+}
+function statsFmt(v){ return v === null ? "–" : v.toFixed(1); }
+
+function statsPeriodOf(r){
+  if(!/^\d{4}$/.test(r.year || "")) return null;
+  const y = parseInt(r.year, 10);
+  return statsSpan === "decade" ? Math.floor(y / 10) * 10 : y;
+}
+function statsPeriodLabel(p){ return statsSpan === "decade" ? p + "s" : String(p); }
+function statsAxisTickLabel(p){ return statsSpan === "decade" ? "'" + String(p).slice(2) + "s" : String(p); }
+
+// Every year (or decade) from the first to the last, gaps included, so the x axis is real time.
+function statsPeriods(reviews){
+  const map = {};
+  reviews.forEach(r => {
+    const p = statsPeriodOf(r);
+    if(p === null) return;
+    statsAddToBucket(map[p] || (map[p] = statsNewBucket()), r);
+  });
+  const keys = Object.keys(map).map(Number);
+  if(!keys.length) return [];
+  const step = statsSpan === "decade" ? 10 : 1;
+  const out = [];
+  for(let p = Math.min.apply(null, keys); p <= Math.max.apply(null, keys); p += step){
+    out.push(Object.assign({p: p}, map[p] || statsNewBucket()));
+  }
+  return out;
+}
+
+function statsNiceMax(v){
+  if(v <= 4) return 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+}
+
+// Shared horizontal layout, so a year sits at the same x in both charts.
+const STATS_PAD = {l: 30, r: 6};
+function statsBands(W, count){
+  const plotW = W - STATS_PAD.l - STATS_PAD.r;
+  const band = plotW / Math.max(1, count);
+  return {band: band, x: i => STATS_PAD.l + band * i, cx: i => STATS_PAD.l + band * (i + 0.5)};
+}
+// Label every Nth period so ticks never crowd, on round numbers.
+function statsTickEvery(band){
+  const steps = [1, 2, 5, 10, 20, 50];
+  for(let i = 0; i < steps.length; i++) if(band * steps[i] >= 36) return steps[i];
+  return 100;
+}
+function statsXTicks(periods, bands, y){
+  const every = statsTickEvery(bands.band);
+  const unit = statsSpan === "decade" ? 10 : 1;
+  let out = "";
+  periods.forEach((b, i) => {
+    const picked = b.p === statsPick;
+    if(!picked && (b.p / unit) % every !== 0) return;
+    // Don't let a round-number tick sit on top of the picked one.
+    if(!picked && statsPick !== null){
+      const pi = periods.findIndex(q => q.p === statsPick);
+      if(pi !== -1 && Math.abs(bands.cx(pi) - bands.cx(i)) < 34) return;
+    }
+    out += '<text x="' + bands.cx(i).toFixed(1) + '" y="' + y + '" text-anchor="middle"' +
+      (picked ? ' class="picked"' : '') + '>' + statsAxisTickLabel(b.p) + '</text>';
+  });
+  return out;
+}
+function statsRoundTopBar(x, y, w, h){
+  const r = Math.min(4, w / 2, h);
+  return 'M' + x.toFixed(1) + ',' + (y + h).toFixed(1) +
+    'V' + (y + r).toFixed(1) + 'Q' + x.toFixed(1) + ',' + y.toFixed(1) + ' ' + (x + r).toFixed(1) + ',' + y.toFixed(1) +
+    'H' + (x + w - r).toFixed(1) + 'Q' + (x + w).toFixed(1) + ',' + y.toFixed(1) + ' ' + (x + w).toFixed(1) + ',' + (y + r).toFixed(1) +
+    'V' + (y + h).toFixed(1) + 'Z';
+}
+
+function statsBarSvg(periods, W){
+  const H = 150, top = 8, bottom = 20, plotH = H - top - bottom;
+  const bands = statsBands(W, periods.length);
+  const val = b => statsMetric === "albums" ? b.albums : b.listens;
+  const max = statsNiceMax(Math.max.apply(null, periods.map(val)));
+  const yOf = v => top + plotH - (v / max) * plotH;
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + (statsMetric === "albums" ? "Albums" : "Listens") + ' by release ' + statsSpan + '">';
+  [0, max / 2, max].forEach(t => {
+    const y = yOf(t).toFixed(1);
+    svg += '<line class="stats-grid" x1="' + STATS_PAD.l + '" x2="' + (W - STATS_PAD.r) + '" y1="' + y + '" y2="' + y + '"/>';
+    svg += '<text x="' + (STATS_PAD.l - 6) + '" y="' + y + '" dy="3" text-anchor="end">' + Math.round(t).toLocaleString() + '</text>';
+  });
+  const gap = bands.band >= 5 ? 2 : bands.band * 0.25;
+  const w = Math.min(28, bands.band - gap);
+  periods.forEach((b, i) => {
+    const v = val(b);
+    if(!v) return;
+    const y = yOf(v);
+    svg += '<path class="stats-bar' + (b.p === statsPick ? ' picked' : '') + '" d="' +
+      statsRoundTopBar(bands.cx(i) - w / 2, y, w, top + plotH - y) + '"><title>' +
+      statsPeriodLabel(b.p) + ': ' + v.toLocaleString() + '</title></path>';
+  });
+  svg += statsXTicks(periods, bands, H - 5);
+  return svg + '</svg>';
+}
+
+function statsLineSvg(periods, W){
+  const H = 150, top = 8, bottom = 20, plotH = H - top - bottom;
+  const bands = statsBands(W, periods.length);
+  const yOf = v => top + plotH - ((v - 1) / 4) * plotH;
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Average scores by release ' + statsSpan + '">';
+  for(let t = 1; t <= 5; t++){
+    const y = yOf(t).toFixed(1);
+    svg += '<line class="stats-grid" x1="' + STATS_PAD.l + '" x2="' + (W - STATS_PAD.r) + '" y1="' + y + '" y2="' + y + '"/>';
+    svg += '<text x="' + (STATS_PAD.l - 6) + '" y="' + y + '" dy="3" text-anchor="end">' + t + '</text>';
+  }
+  const pi = periods.findIndex(b => b.p === statsPick);
+  if(pi !== -1){
+    const x = bands.cx(pi).toFixed(1);
+    svg += '<line class="stats-guide" x1="' + x + '" x2="' + x + '" y1="' + top + '" y2="' + (top + plotH) + '"/>';
+  }
+  // Markers on every point only while there's room; otherwise just on the picked period.
+  const allDots = bands.band >= 12;
+  STATS_AXES.forEach(a => {
+    const pts = [];
+    periods.forEach((b, i) => {
+      const v = statsAvg(b, a.key);
+      if(v !== null) pts.push({x: bands.cx(i), y: yOf(v), i: i});
+    });
+    if(pts.length > 1){
+      svg += '<polyline class="stats-line" style="stroke:' + a.color + '" points="' +
+        pts.map(q => q.x.toFixed(1) + ',' + q.y.toFixed(1)).join(" ") + '"/>';
+    }
+    pts.forEach(q => {
+      if(!allDots && q.i !== pi && pts.length > 1) return;
+      svg += '<circle class="stats-dot" style="fill:' + a.color + '" cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="' + (q.i === pi ? 5 : 4) + '"/>';
+    });
+  });
+  svg += statsXTicks(periods, bands, H - 5);
+  return svg + '</svg>';
+}
+
+// Tap (or hover with a mouse) anywhere in a column to point both charts at that period.
+function wireStatsChart(el, periods){
+  const svg = el.querySelector("svg");
+  if(!svg) return;
+  const indexAt = ev => {
+    const box = svg.getBoundingClientRect();
+    const W = svg.viewBox.baseVal.width;
+    const x = (ev.clientX - box.left) * (W / box.width);
+    const bands = statsBands(W, periods.length);
+    const i = Math.floor((x - STATS_PAD.l) / bands.band);
+    return i < 0 || i >= periods.length ? -1 : i;
+  };
+  svg.addEventListener("click", ev => {
+    const i = indexAt(ev);
+    const p = i === -1 ? null : periods[i].p;
+    statsPick = statsPick === p ? null : p;
+    fillStatsTimeline();
+  });
+  svg.addEventListener("pointermove", ev => {
+    if(ev.pointerType !== "mouse") return;
+    const i = indexAt(ev);
+    const p = i === -1 ? null : periods[i].p;
+    if(p !== statsPick){ statsPick = p; fillStatsTimeline(); }
+  });
+  svg.addEventListener("pointerleave", ev => {
+    if(ev.pointerType !== "mouse" || statsPick === null) return;
+    statsPick = null;
+    fillStatsTimeline();
+  });
+}
+
+function statsLegendHtml(bucket){
+  return STATS_AXES.map(a =>
+    '<span><span class="stats-key" style="background:' + a.color + '"></span>' + a.label +
+    ' <b>' + statsFmt(statsAvg(bucket, a.key)) + '</b></span>'
+  ).join("");
+}
+
+function fillStatsTimeline(){
+  const host = document.getElementById("statsTimeline");
+  if(!host) return;
+  const reviews = Object.values(loadReviews());
+  const periods = statsPeriods(reviews);
+  if(!periods.length){
+    host.innerHTML = '<div class="stats-card"><div class="stats-empty">No release years logged</div></div>';
+    return;
+  }
+  const picked = periods.find(b => b.p === statsPick) || null;
+  if(!picked) statsPick = null;
+  const all = statsNewBucket();
+  reviews.forEach(r => { if(statsPeriodOf(r) !== null) statsAddToBucket(all, r); });
+  const focus = picked || all;
+  const focusLabel = picked ? statsPeriodLabel(picked.p) : "All";
+  const metricVal = statsMetric === "albums" ? focus.albums : focus.listens;
+
+  host.innerHTML =
+    '<div class="stats-card">' +
+      '<div class="stats-card-head">' +
+        '<div class="stats-seg">' +
+          '<button class="' + (statsMetric === "listens" ? "active" : "") + '" onclick="setStatsMetric(\'listens\')">Listens</button>' +
+          '<button class="' + (statsMetric === "albums" ? "active" : "") + '" onclick="setStatsMetric(\'albums\')">Albums</button>' +
+        '</div>' +
+        '<span class="stats-readout"><b>' + focusLabel + '</b> ' + metricVal.toLocaleString() + '</span>' +
+      '</div>' +
+      '<div class="stats-chart" id="statsBarChart"></div>' +
+    '</div>' +
+    '<div class="stats-card">' +
+      '<div class="stats-card-head">' +
+        '<span class="stats-card-title">Avg scores</span>' +
+        '<span class="stats-readout"><b>' + focusLabel + '</b> ' + focus.albums.toLocaleString() + ' albums</span>' +
+      '</div>' +
+      '<div class="stats-legend">' + statsLegendHtml(focus) + '</div>' +
+      '<div class="stats-chart" id="statsLineChart"></div>' +
+    '</div>';
+
+  const barEl = document.getElementById("statsBarChart");
+  const lineEl = document.getElementById("statsLineChart");
+  const W = Math.max(200, Math.round(barEl.clientWidth || 300));
+  barEl.innerHTML = statsBarSvg(periods, W);
+  lineEl.innerHTML = statsLineSvg(periods, W);
+  wireStatsChart(barEl, periods);
+  wireStatsChart(lineEl, periods);
+}
+
+/* Covers only get their colour named once they've been read. Ones already on screen elsewhere
+   are named as they load; the rest are fetched here, a few at a time, off-screen. */
+const statsCatTried = new Set();
+const STATS_EXAMPLES = 6;
+let statsExampleList = [];       // what each example cover opens, by its onclick index
+function openStatsExample(n){
+  const r = statsExampleList[n];
+  if(r) openReviewModal(r.artist, r.title, r.year, r.genres);
+}
+let statsCatProgress = null;     // {done, total} while a batch is being read
+let statsRefreshTimer = null;
+function scheduleStatsColorRefresh(){
+  clearTimeout(statsRefreshTimer);
+  statsRefreshTimer = setTimeout(() => { if(section === "stats") fillStatsColors(); }, 250);
+}
+function readCoverCat(artist, title){
+  return new Promise(resolve => {
+    const url = cachedCoverUrl(artist, title);
+    if(!url){ resolve(); return; }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const cat = classifyCoverColor(img);
+      if(cat !== null) storeCoverCat(artist, title, cat);
+      resolve();
+    };
+    img.onerror = () => resolve();
+    setTimeout(resolve, 10000);
+    img.src = url;
+  });
+}
+function statsReadCovers(reviews){
+  if(statsCatProgress) return;
+  const noCover = [];
+  const todo = reviews.filter(r => {
+    if(cachedCoverCat(r.artist, r.title) !== null) return false;
+    if(!cachedCoverUrl(r.artist, r.title)){ noCover.push({artist: r.artist, title: r.title}); return false; }
+    return !statsCatTried.has(reviewKey(r.artist, r.title));
+  });
+  if(noCover.length) hydrateMissingCovers(noCover);
+  if(!todo.length) return;
+  statsCatProgress = {done: 0, total: todo.length};
+  let next = 0;
+  const worker = async () => {
+    while(next < todo.length){
+      const r = todo[next++];
+      statsCatTried.add(reviewKey(r.artist, r.title));
+      await readCoverCat(r.artist, r.title);
+      statsCatProgress.done++;
+      scheduleStatsColorRefresh();
+    }
+  };
+  Promise.all([worker(), worker(), worker(), worker()]).then(() => {
+    statsCatProgress = null;
+    scheduleStatsColorRefresh();
+  });
+}
+
+function fillStatsColors(){
+  const host = document.getElementById("statsColors");
+  if(!host) return;
+  const reviews = Object.values(loadReviews());
+  const buckets = COVER_COLORS.map(() => Object.assign(statsNewBucket(), {compSum: 0, compN: 0, albumsList: []}));
+  let known = 0;
+  reviews.forEach(r => {
+    const cat = cachedCoverCat(r.artist, r.title);
+    if(cat === null) return;
+    known++;
+    const b = buckets[cat];
+    statsAddToBucket(b, r);
+    const c = statsComposite(r);
+    if(c !== null){ b.compSum += c; b.compN++; }
+    b.albumsList.push({r: r, score: c === null ? 0 : c, listens: listensFor(r.artist, r.title)});
+  });
+  statsExampleList = [];
+  const rows = buckets.map((b, i) => ({i: i, b: b})).filter(x => x.b.albums > 0)
+    .sort((a, c) => c.b.albums - a.b.albums || a.i - c.i);
+  const readout = statsCatProgress
+    ? statsCatProgress.done + ' / ' + statsCatProgress.total
+    : '<b>' + known.toLocaleString() + '</b> covers';
+
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<span class="stats-card-title">Cover colors</span>' +
+      '<span class="stats-readout">' + readout + '</span>' +
+    '</div>';
+  if(!rows.length){
+    host.innerHTML = html + '<div class="stats-empty">' + (statsCatProgress ? "Reading covers…" : "No covers read yet") + '</div></div>';
+    return;
+  }
+  html += '<div class="color-strip">' + rows.map(x =>
+    '<span style="flex:' + x.b.albums + ' 1 0; background:' + COVER_COLORS[x.i].hex + '" title="' +
+    COVER_COLORS[x.i].label + ': ' + x.b.albums + '"></span>').join("") + '</div>';
+  const most = rows[0].b.albums;
+  html += '<div class="color-rows"><div class="color-row-head"><span></span><span>Albums</span><span>Avg</span></div>';
+  rows.forEach(x => {
+    const col = COVER_COLORS[x.i];
+    const avg = x.b.compN ? x.b.compSum / x.b.compN : null;
+    html += '<div class="color-row" onclick="toggleStatsColor(' + x.i + ')">' +
+      '<span class="color-name"><span class="color-swatch" style="background:' + col.hex + '"></span>' + col.label + '</span>' +
+      '<span class="color-bar-cell"><span class="color-bar" style="width:' + (x.b.albums / most * 100 * 0.82).toFixed(1) + '%; background:' + col.hex + '"></span>' +
+        '<span class="color-count">' + x.b.albums + '</span></span>' +
+      '<span class="color-avg">' + statsFmt(avg) + '</span>' +
+    '</div>';
+    // Examples: the colour's best-scored albums, most-played first on a tie.
+    const picks = x.b.albumsList.slice()
+      .sort((a, c) => c.score - a.score || c.listens - a.listens)
+      .slice(0, STATS_EXAMPLES);
+    html += '<div class="color-examples">' + picks.map(e => {
+      statsExampleList.push(e.r);
+      const label = escapeHtml(e.r.artist + " – " + e.r.title);
+      return '<button class="color-example" title="' + label + '" aria-label="' + label + '" onclick="openStatsExample(' + (statsExampleList.length - 1) + ')">' +
+        '<img src="' + escapeHtml(cachedCoverUrl(e.r.artist, e.r.title)) + '" alt="" loading="lazy" crossorigin="anonymous"></button>';
+    }).join("") + '</div>';
+    if(statsColorPick === x.i){
+      html += '<div class="color-detail"><div class="stats-legend">' + statsLegendHtml(x.b) + '</div></div>';
+    }
+  });
+  host.innerHTML = html + '</div></div>';
+}
+
+function renderStats(){
+  const content = document.getElementById("content");
+  if(section !== "stats") return;
+  const reviews = Object.values(loadReviews());
+  document.getElementById("statsCount").textContent = reviews.length ? reviews.length.toLocaleString() + " logged" : "";
+  document.getElementById("statsSpanYear").classList.toggle("active", statsSpan === "year");
+  document.getElementById("statsSpanDecade").classList.toggle("active", statsSpan === "decade");
+  if(!reviews.length){
+    content.innerHTML = '<div class="empty-hint">Log albums to see stats.</div>';
+    return;
+  }
+  content.innerHTML = '<div id="statsTimeline"></div><div id="statsColors"></div>';
+  fillStatsTimeline();
+  fillStatsColors();
+  statsReadCovers(reviews);
+}
+let statsResizeTimer = null;
+window.addEventListener("resize", () => {
+  if(section !== "stats") return;
+  clearTimeout(statsResizeTimer);
+  statsResizeTimer = setTimeout(fillStatsTimeline, 150);
+});
 
 /* ---------- DASHBOARD ---------- */
 function renderDashboard(){
@@ -4798,6 +5376,8 @@ function compactSpotifyAlbumEntry(e){
     // Dominant cover hue, packed as hue*100+sat (-1 = greyscale). ~10 bytes, and it evicts
     // with the cover it describes.
     if(e.hue !== undefined && e.hue !== null) out.h = e.hue;
+    // Named cover colour for Stats, an index into COVER_COLORS.
+    if(e.cat !== undefined && e.cat !== null) out.c = e.cat;
     return out;
   }
   const out = {checkedAt: e.checkedAt || 0};
@@ -4806,6 +5386,7 @@ function compactSpotifyAlbumEntry(e){
   if(e.lastfmImage !== undefined){
     out.l = e.lastfmImage.indexOf(LASTFM_IMAGE_PREFIX) === 0 ? e.lastfmImage.slice(LASTFM_IMAGE_PREFIX.length) : e.lastfmImage;
     if(e.lastfmImage && e.hue !== undefined && e.hue !== null) out.h = e.hue;
+    if(e.lastfmImage && e.cat !== undefined && e.cat !== null) out.c = e.cat;
   }
   return out;
 }
@@ -4833,7 +5414,8 @@ function expandSpotifyAlbumEntry(v){
       releaseDate: d,
       year: /^\d{4}$/.test(y) && parseInt(y, 10) >= 1900 ? y : "",
       image: v.m ? (v.m.indexOf("://") === -1 ? SPOTIFY_IMAGE_PREFIX + v.m : v.m) : "",
-      hue: v.h !== undefined ? v.h : null
+      hue: v.h !== undefined ? v.h : null,
+      cat: v.c !== undefined ? v.c : null
     });
   }
   if(v.found === true){   // old full-format match: already the in-memory shape, just make sure artists is filled
@@ -4846,6 +5428,7 @@ function expandSpotifyAlbumEntry(v){
   if(typeof v.l === "string"){
     entry.lastfmImage = v.l && v.l.indexOf("://") === -1 ? LASTFM_IMAGE_PREFIX + v.l : v.l;
     if(v.h !== undefined) entry.hue = v.h;
+    if(v.c !== undefined) entry.cat = v.c;
   }
   return entry;
 }
@@ -4997,6 +5580,7 @@ async function getSpotifyAlbumInfo(artist, title, opts){
         if(!entry.found && prev && !prev.found && prev.lastfmImage){
           entry.lastfmImage = prev.lastfmImage;
           if(prev.hue !== undefined && prev.hue !== null) entry.hue = prev.hue;
+          if(prev.cat !== undefined && prev.cat !== null) entry.cat = prev.cat;
         }
         cache[key] = entry;
         scheduleSpotifyCacheSave();
@@ -5105,6 +5689,7 @@ function rememberLastfmCover(artist, title, url){
   if(!entry) entry = cache[key] = {checkedAt: 0, found: false};
   entry.lastfmImage = url || "";
   entry.hue = null;
+  entry.cat = null;
   scheduleSpotifyCacheSave();
 }
 function cachedCoverUrl(artist, title){
