@@ -274,6 +274,7 @@
   .tab-bar button.landing > span:last-child{animation:tabLabelLand .42s ease-out;}
 
   /* stats */
+  .count-picker.stats-span{margin:0 0 12px;}
   .stats-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:12px 12px 10px; margin-bottom:12px;}
   .stats-card-head{display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:26px;}
   .stats-card-title{font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink);}
@@ -300,21 +301,38 @@
   .color-strip{display:flex; gap:2px; height:14px; margin-top:12px; border-radius:4px; overflow:hidden;}
   .color-strip span{display:block; min-width:3px; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);}
   .color-rows{margin-top:12px;}
-  .color-row-head, .color-row{display:grid; grid-template-columns:84px 1fr 34px; align-items:center; gap:10px;}
+  .color-row-head, .color-row{display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(0, 1fr) 30px; align-items:center; gap:10px;}
   .color-row-head{font-size:9.5px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.06em; padding-bottom:5px;}
   .color-row-head span:last-child, .color-avg{text-align:right;}
   .color-row{padding:7px 0; border-top:1px solid var(--line); font-size:12px; color:var(--ink); cursor:pointer;}
   .color-name{display:flex; align-items:center; gap:7px; min-width:0;}
   .color-swatch{width:12px; height:12px; border-radius:50%; flex:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18);}
+  .color-label{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .combo-swatches{display:inline-flex; flex:none;}
+  .combo-swatches .color-swatch + .color-swatch{margin-left:-3px;}
+  .color-picks{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
+  .color-pick{
+    width:30px; height:30px; border:none; padding:0; border-radius:6px; cursor:pointer;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18);
+  }
+  .color-pick.active{outline:2px solid var(--teal); outline-offset:2px;}
+  .color-pick-all{
+    height:30px; padding:0 12px; border-radius:6px; background:var(--card); border:1px solid var(--line);
+    color:var(--ink-dim); font-family:var(--font-body); font-size:11px; cursor:pointer;
+  }
+  .color-pick-all.active{border-color:var(--teal); color:var(--teal);}
+  .stats-color-picks{display:grid; grid-template-columns:repeat(7, 1fr); gap:8px; margin-top:12px;}
+  .stats-color-picks .color-pick{width:100%; height:auto; aspect-ratio:1;}
+  .stats-clear{background:none; border:none; color:var(--ink-dim); font-family:var(--font-body); font-size:11px; cursor:pointer; padding:4px 0;}
+  .combo-summary{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:14px;}
+  .combo-title{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--ink); min-width:0;}
   .color-bar-cell{display:flex; align-items:center; gap:6px; min-width:0;}
-  .color-bar{height:8px; border-radius:0 4px 4px 0; min-width:2px; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);}
+  .color-bar{height:8px; border-radius:0 4px 4px 0; min-width:2px; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.16);}
   .color-count{font-size:11px; color:var(--ink-dim); flex:none;}
   .color-avg{font-weight:600;}
-  .color-examples{display:grid; grid-template-columns:repeat(6, 1fr); gap:6px; padding:0 0 9px;}
+  .color-examples{display:grid; grid-template-columns:repeat(6, 1fr); gap:6px; margin-top:12px;}
   .color-example{aspect-ratio:1; border:none; padding:0; border-radius:4px; overflow:hidden; background:var(--card-hi); cursor:pointer;}
   .color-example img{display:block; width:100%; height:100%; object-fit:cover;}
-  .color-detail{padding:0 0 8px;}
-  .color-detail .stats-legend{margin-top:0;}
 
   /* discover */
   .week-picker{display:flex; gap:6px; margin-top:16px;}
@@ -752,16 +770,16 @@
         <label>Vibe</label>
         <div class="review-vibe-opts" id="reviewsFilterVibe"></div>
       </div>
+      <div class="reviews-filter-row">
+        <label>Color</label>
+        <div class="color-picks" id="reviewsFilterColor"></div>
+      </div>
     </div>
   </div>
   <div id="statsHeader" class="hidden">
     <div class="reviews-top-row">
       <h1>Stats</h1>
       <span class="reviews-count-inline" id="statsCount"></span>
-    </div>
-    <div class="count-picker">
-      <button class="count-btn" id="statsSpanYear" onclick="setStatsSpan('year')">Year</button>
-      <button class="count-btn" id="statsSpanDecade" onclick="setStatsSpan('decade')">Decade</button>
     </div>
   </div>
 </header>
@@ -1452,7 +1470,7 @@ const RANGE_AXES = {
 };
 let reviewsRange = {rotation: null, distinctiveness: null, pull: null};
 let reviewsRangeAnchor = {rotation: null, distinctiveness: null, pull: null};
-let reviewsFilter = {vibe: "", decade: ""};
+let reviewsFilter = {vibe: "", decade: "", colors: []};   // colors: COVER_COLORS indexes, up to 3
 
 function renderRangeFilter(axisKey){
   const axis = RANGE_AXES[axisKey];
@@ -1583,6 +1601,7 @@ function initReviewsHeader(){
   renderRangeFilter("distinctiveness");
   renderRangeFilter("pull");
   renderReviewsVibeFilter();
+  renderReviewsColorFilter();
   updateFiltersToggleLabel();
 }
 function toggleReviewsFilters(){
@@ -1592,7 +1611,7 @@ function toggleReviewsFilters(){
 }
 
 function updateFiltersToggleLabel(){
-  let activeCount = ["vibe", "decade"].filter(k => reviewsFilter[k]).length;
+  let activeCount = ["vibe", "decade"].filter(k => reviewsFilter[k]).length + (reviewsFilter.colors.length ? 1 : 0);
   activeCount += ["rotation", "distinctiveness", "pull"].filter(k => reviewsRange[k]).length;
   const btn = document.getElementById("filtersToggleBtn");
   if(!btn) return;
@@ -1638,6 +1657,33 @@ function renderReviewsVibeFilter(){
   ).join("");
   el.innerHTML = html;
 }
+// Up to three colours. Matches the same way Stats counts: the album's main colour, its top two,
+// or its top three — so the list always agrees with the number on the Stats page.
+function renderReviewsColorFilter(){
+  const el = document.getElementById("reviewsFilterColor");
+  if(!el) return;
+  const sel = reviewsFilter.colors;
+  el.innerHTML = '<button class="color-pick-all' + (!sel.length ? ' active' : '') + '" onclick="toggleReviewsColorFilter(-1)">All</button>' +
+    COVER_COLORS.map((c, i) =>
+      '<button class="color-pick' + (sel.indexOf(i) !== -1 ? ' active' : '') + '" style="background:' + c.hex +
+      '" title="' + c.label + '" aria-label="' + c.label + '" aria-pressed="' + (sel.indexOf(i) !== -1) +
+      '" onclick="toggleReviewsColorFilter(' + i + ')"></button>').join("");
+}
+function toggleReviewsColorFilter(i){
+  const sel = reviewsFilter.colors;
+  if(i < 0) sel.length = 0;
+  else{
+    const at = sel.indexOf(i);
+    if(at !== -1) sel.splice(at, 1);
+    else{
+      if(sel.length >= COVER_COLOR_MAX) sel.shift();   // a fourth tap drops the oldest
+      sel.push(i);
+    }
+  }
+  renderReviewsColorFilter();
+  updateFiltersToggleLabel();
+  renderReviewsResultsArea();
+}
 function setReviewsVibeFilter(id){
   reviewsFilter.vibe = id;
   renderReviewsVibeFilter();
@@ -1651,6 +1697,7 @@ function getFilteredReviews(){
     reviewMatchesRange(r, "distinctiveness") &&
     reviewMatchesRange(r, "pull") &&
     (!reviewsFilter.vibe || r.vibe === reviewsFilter.vibe) &&
+    reviewColorsMatch(r, reviewsFilter.colors) &&
     reviewDecadeMatches(r, reviewsFilter.decade) &&
     (!reviewsSearch ||
       r.artist.toLowerCase().indexOf(reviewsSearch) !== -1 ||
@@ -1698,12 +1745,14 @@ function renderReviewsResultsArea(){
     row.className = "discover-card";
     row.style.cursor = "pointer";
     const reviewStars = starCountFor(r.artist, r.title);
+    // Every logged cover is read for its colours (Stats and the colour filter need them),
+    // not only the ones with stars to tint.
+    row.dataset.hueArtist = r.artist;
+    row.dataset.hueTitle = r.title;
     if(reviewStars){
       row.setAttribute("data-stars", String(reviewStars));
-      row.dataset.hueArtist = r.artist;
-      row.dataset.hueTitle = r.title;
-      const packedHue = starHueAttr(r.artist, r.title);
-      if(packedHue) row.setAttribute("data-star-hue", packedHue);
+      const starColors = coverColorsAttr(r.artist, r.title);
+      if(starColors) row.setAttribute("data-star-colors", starColors);
     }
     row.onclick = () => openReviewModal(r.artist, r.title, r.year, r.genres);
     row.innerHTML =
@@ -1751,6 +1800,7 @@ function reviewsFilterLabel(){
     if(lbl) parts.push(lbl);
   });
   if(reviewsFilter.vibe) parts.push("chosen vibe");
+  if(reviewsFilter.colors.length) parts.push(colorSetLabel(reviewsFilter.colors).toLowerCase() + " covers");
   return parts.length ? "Reviewed: " + parts.join(" / ") : "All Reviewed Albums";
 }
 function saveReviewsFilterAsList(){
@@ -1859,7 +1909,7 @@ function starHitSideWall(st, s, side){
 let starStates = [];          // rows currently on screen and being simulated
 let starRAF = null, starLast = 0;
 let starObserver = null;
-let starSprites = new Map();   // colour -> rasterised star; hues are quantised so this stays small
+let starSprites = new Map();   // colour -> rasterised star; one per cover colour at most
 let starSpriteDpr = 0;
 let starColor = "";
 let starLineColor = "";
@@ -1884,8 +1934,8 @@ function starLineFillColor(){
   return starLineColor;
 }
 
-// Sprites are rasterised once per colour and shared by every row and star using it. Album
-// hues are quantised to 15 degrees, so a few dozen sprites cover any screenful of albums —
+// Sprites are rasterised once per colour and shared by every row and star using it. Stars
+// only come in the fixed cover colours, so there are never more than a handful of sprites —
 // never one per star, and never per frame.
 function starSpriteFor(color, dpr){
   if(dpr !== starSpriteDpr){ starSprites.clear(); starSpriteDpr = dpr; }
@@ -2109,11 +2159,13 @@ function starDraw(st){
   ctx.moveTo(st.w, 0);
   ctx.quadraticCurveTo(st.w + 2 * STAR_WALL_BULGE, st.h / 2, st.w, st.h);
   ctx.stroke();
-  const sprite = starSpriteFor(st.color || starFillColor(), st.dpr);
-  const drawn = sprite.width / st.dpr;     // sprite size in CSS pixels
-  const half = drawn / 2;
+  // Each star carries its own colour from the cover; every sprite is the same size.
+  const fallback = starFillColor();
   for(let i = 0; i < stars.length; i++){
     const s = stars[i];
+    const sprite = starSpriteFor(s.color || fallback, st.dpr);
+    const drawn = sprite.width / st.dpr;   // sprite size in CSS pixels
+    const half = drawn / 2;
     const scale = s.r / STAR_MAX_R;
     ctx.save();
     ctx.translate(s.x, s.y);
@@ -2156,9 +2208,10 @@ function starActivate(row){
   row.insertBefore(canvas, row.firstChild);
   const st = {row: row, canvas: canvas, ctx: canvas.getContext("2d"),
               stars: [], w: 0, h: 0, dpr: 0, obstacle: null, vibeRect: null, disc: null,
-              color: starColorForPacked(row.getAttribute("data-star-hue"))};
+              palette: starPaletteFor(row.getAttribute("data-star-colors"))};
   if(!starMeasure(st)){ row.removeChild(canvas); return; }
   starSeed(st, Math.min(STAR_MAX, n));
+  starAssignColors(st);
   row._starState = st;
   starStates.push(st);
   starDraw(st);              // paint immediately so reduced-motion still shows the count
@@ -2230,26 +2283,61 @@ document.addEventListener("visibilitychange", function(){
   if(document.hidden) starStopLoop(); else starStartLoop();
 });
 
-/* ---------- COVER HUES ----------
-   Pulls the dominant hue out of an album cover so its stars can be tinted to match.
+/* ---------- COVER COLOURS ----------
+   Names the one to three colours an album cover is mostly made of. Its listen stars are
+   coloured from them in proportion, and Stats and the Logged filter group albums by them.
 
    Spotify's CDN sends Access-Control-Allow-Origin: *, so the cover the browser already
    downloaded can be read back with getImageData — no proxy, no second service. The cover is
    drawn into a shared 32x32 canvas first, which hands the averaging to the GPU scaler and
    leaves 1024 pixels to walk instead of ~90,000.
 
-   The result is packed as hue*100+sat (one integer, ~10 bytes) and stored on the existing
+   The result is packed into one integer (see packCoverColors) and stored on the existing
    Spotify album cache entry, so it evicts with the cover it describes rather than becoming
    its own thing to manage. */
-const HUE_SAMPLE = 32;
-const HUE_BUCKETS = 36;              // 10 degrees per bucket
-const HUE_MIN_COLOR_SHARE = 0.12;    // colour must cover this much of the art to count at all
-const HUE_MIN_BUCKET_SHARE = 0.22;   // and one hue must hold this much of the colour that's there
-const HUE_FULL_SHARE = 0.60;         // a hue this dominant gets the strongest tint
-const HUE_GREY = -1;                 // "read it, and it's greyscale" — distinct from "not read yet"
-const HUE_MAX_SAT = 0.50;
+const COVER_SAMPLE = 32;
+const COVER_COLOR_MIN_SHARE = 0.12;   // a colour has to hold this much of the cover to be tracked
+const COVER_COLOR_MAX = 3;
 
-let hueCanvas = null, hueCtx = null;
+// Stored by index: only ever append to this list.
+const COVER_COLORS = [
+  {id: "red", label: "Red", hex: "#D0453C"},
+  {id: "orange", label: "Orange", hex: "#E58A33"},
+  {id: "yellow", label: "Yellow", hex: "#E6C63F"},
+  {id: "green", label: "Green", hex: "#4E9F4B"},
+  {id: "blue", label: "Blue", hex: "#3E73C6"},
+  {id: "purple", label: "Purple", hex: "#7D52B8"},
+  {id: "pink", label: "Pink", hex: "#E38BB8"},
+  {id: "brown", label: "Brown", hex: "#7B4F2E"},
+  {id: "tan", label: "Tan", hex: "#CFB38D"},
+  {id: "black", label: "Black", hex: "#111111"},
+  {id: "white", label: "White", hex: "#F1EEE6"},
+  {id: "grey", label: "Grey", hex: "#8D8B87"},
+  {id: "teal", label: "Teal", hex: "#2FA3A0"},
+  {id: "maroon", label: "Maroon", hex: "#7A2231"}
+];
+const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, TAN: 8, BLACK: 9, WHITE: 10, GREY: 11, TEAL: 12, MAROON: 13};
+const COVER_NEUTRALS = [CC.BLACK, CC.WHITE, CC.GREY];
+
+// Bump whenever the rules below change what a cover would be called. Every stored reading is
+// then dropped once, and covers are read again under the new rules as they're next seen.
+const COVER_COLORS_VERSION = 3;
+let coverColorsChecked = false;
+function checkCoverColorsVersion(){
+  coverColorsChecked = true;
+  const FLAG = "ll_cover_colors_v";
+  try{ if(localStorage.getItem(FLAG) === String(COVER_COLORS_VERSION)) return; }catch(e){ return; }
+  const cache = loadSpotifyAlbumCache();
+  let changed = false;
+  Object.keys(cache).forEach(k => {
+    const e = cache[k];
+    if(e && typeof e === "object" && e.colors !== undefined && e.colors !== null){ e.colors = null; changed = true; }
+  });
+  if(changed) saveSpotifyAlbumCache();
+  try{ localStorage.setItem(FLAG, String(COVER_COLORS_VERSION)); }catch(e){}
+}
+
+let coverCanvas = null, coverCtx = null;
 
 function rgbToHsl(r, g, b){
   r /= 255; g /= 255; b /= 255;
@@ -2270,160 +2358,20 @@ function hexToHsl(hex){
   return rgbToHsl(parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16));
 }
 
-/* Returns the packed hue for an image, or null if it couldn't be read.
-   Pixels are weighted by saturation squared and by how mid-toned they are, so a cover that's
-   mostly black with one red band reads as red rather than as black. Anything too grey, too
-   dark or too blown out doesn't vote on hue at all — it just counts toward "this is greyscale". */
 function coverSamplePixels(img){
-  if(!hueCanvas){
-    hueCanvas = document.createElement("canvas");
-    hueCanvas.width = hueCanvas.height = HUE_SAMPLE;
+  if(!coverCanvas){
+    coverCanvas = document.createElement("canvas");
+    coverCanvas.width = coverCanvas.height = COVER_SAMPLE;
     // Read back every time we use it, so the software path is the right one here.
-    hueCtx = hueCanvas.getContext("2d", {willReadFrequently: true});
+    coverCtx = coverCanvas.getContext("2d", {willReadFrequently: true});
   }
   try{
-    hueCtx.clearRect(0, 0, HUE_SAMPLE, HUE_SAMPLE);
-    hueCtx.drawImage(img, 0, 0, HUE_SAMPLE, HUE_SAMPLE);
-    return hueCtx.getImageData(0, 0, HUE_SAMPLE, HUE_SAMPLE).data;
+    coverCtx.clearRect(0, 0, COVER_SAMPLE, COVER_SAMPLE);
+    coverCtx.drawImage(img, 0, 0, COVER_SAMPLE, COVER_SAMPLE);
+    return coverCtx.getImageData(0, 0, COVER_SAMPLE, COVER_SAMPLE).data;
   }catch(e){
     return null;   // tainted canvas: the CDN refused CORS for this one
   }
-}
-function extractCoverHue(img){
-  const px = coverSamplePixels(img);
-  if(!px) return null;
-
-  const bins = new Float64Array(HUE_BUCKETS);
-  const satSum = new Float64Array(HUE_BUCKETS);
-  let colourWeight = 0, counted = 0, colourPixels = 0;
-
-  for(let i = 0; i < px.length; i += 4){
-    if(px[i + 3] < 128) continue;
-    counted++;
-    const hsl = rgbToHsl(px[i], px[i + 1], px[i + 2]);
-    const h = hsl[0], sat = hsl[1], lum = hsl[2];
-    if(sat < 0.12 || lum < 0.08 || lum > 0.94) continue;   // greyscale or crushed: no hue vote
-    const mid = 1 - Math.abs(lum - 0.5) * 2;
-    const w = sat * sat * (0.25 + 0.75 * mid * mid);
-    const b = Math.min(HUE_BUCKETS - 1, Math.floor(h / (360 / HUE_BUCKETS)));
-    bins[b] += w;
-    satSum[b] += sat * w;
-    colourWeight += w;
-    colourPixels++;
-  }
-  if(!counted) return null;
-
-  // Not enough colour anywhere on the cover — that's a greyscale album, and that's fine.
-  if(colourWeight <= 0 || colourPixels / counted < HUE_MIN_COLOR_SHARE) return HUE_GREY;
-
-  // Fold each bucket together with its neighbours before picking a winner, so a hue spread
-  // across a boundary isn't beaten by a narrower one that happens to sit mid-bucket.
-  let best = 0, bestScore = -1;
-  for(let b = 0; b < HUE_BUCKETS; b++){
-    const prev = bins[(b - 1 + HUE_BUCKETS) % HUE_BUCKETS];
-    const next = bins[(b + 1) % HUE_BUCKETS];
-    const score = bins[b] + (prev + next) * 0.5;
-    if(score > bestScore){ bestScore = score; best = b; }
-  }
-
-  const share = (bins[best] + bins[(best - 1 + HUE_BUCKETS) % HUE_BUCKETS] * 0.5
-                 + bins[(best + 1) % HUE_BUCKETS] * 0.5) / colourWeight;
-  // No single hue carries the cover: treat it as greyscale rather than picking a colour
-  // that's barely there.
-  if(share < HUE_MIN_BUCKET_SHARE) return HUE_GREY;
-
-  const hue = Math.round(best * (360 / HUE_BUCKETS) + (360 / HUE_BUCKETS) / 2) % 360;
-  const rawSat = bins[best] > 0 ? satSum[best] / bins[best] : 0;
-  // Confidence from the share: a hue that only just clears the bar tints only slightly.
-  const conf = Math.max(0, Math.min(1,
-    (share - HUE_MIN_BUCKET_SHARE) / (HUE_FULL_SHARE - HUE_MIN_BUCKET_SHARE)));
-  const sat = Math.round(Math.min(HUE_MAX_SAT, rawSat) * conf * 99);
-  return hue * 100 + Math.max(0, Math.min(99, sat));
-}
-
-/* Turn a packed hue into an actual star colour for the CURRENT theme.
-   The theme's own --star sets the lightness and the saturation floor, so a tinted star still
-   sits at exactly the brightness the design calls for and a greyscale album lands back on the
-   default colour rather than on something approximating it. */
-let starBaseHsl = null;
-function starThemeBase(){
-  if(!starBaseHsl) starBaseHsl = hexToHsl(starFillColor());
-  return starBaseHsl;
-}
-function starColorForPacked(packed){
-  const base = starThemeBase();
-  if(packed === null || packed === undefined || packed === "" || packed === HUE_GREY){
-    return starFillColor();
-  }
-  const p = typeof packed === "number" ? packed : parseInt(packed, 10);
-  if(!isFinite(p) || p < 0) return starFillColor();
-  const hue = Math.floor(p / 100) % 360;
-  const sat = (p % 100) / 99;
-  if(sat <= 0.01) return starFillColor();
-  // Quantised so the sprite cache stays small and shared across albums of similar colour.
-  const qh = Math.round(hue / 15) * 15 % 360;
-  const qs = Math.round(Math.max(base[1], sat) * 20) / 20;
-  return "hsl(" + qh + "," + Math.round(qs * 100) + "%," + Math.round(base[2] * 100) + "%)";
-}
-
-/* Cache access. The hue lives on the Spotify album entry, keyed the same way the cover is —
-   including a miss that carries a Last.fm cover (its CDN sends the same CORS header). */
-function coverCacheEntry(artist, title){
-  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
-  return hit && (hit.found || hit.lastfmImage) ? hit : null;
-}
-function cachedCoverHue(artist, title){
-  const hit = coverCacheEntry(artist, title);
-  return hit && hit.hue !== undefined && hit.hue !== null ? hit.hue : null;
-}
-function storeCoverHue(artist, title, packed){
-  const entry = coverCacheEntry(artist, title);
-  if(!entry) return;
-  entry.hue = packed;
-  scheduleSpotifyCacheSave();
-}
-function starHueAttr(artist, title){
-  const h = cachedCoverHue(artist, title);
-  return h === null ? "" : String(h);
-}
-
-/* ---------- COVER COLOURS ----------
-   The hue above is tuned for tinting stars, so it ignores black, white and grey and can't tell
-   tan from orange. Stats wants the colour a cover reads as, so every sampled pixel is named
-   and the name with the most weight wins. Stored as an index: only ever append to this list. */
-const COVER_COLORS = [
-  {id: "red", label: "Red", hex: "#D0453C"},
-  {id: "orange", label: "Orange", hex: "#E58A33"},
-  {id: "yellow", label: "Yellow", hex: "#E6C63F"},
-  {id: "green", label: "Green", hex: "#4E9F4B"},
-  {id: "blue", label: "Blue", hex: "#3E73C6"},
-  {id: "purple", label: "Purple", hex: "#7D52B8"},
-  {id: "pink", label: "Pink", hex: "#E38BB8"},
-  {id: "brown", label: "Brown", hex: "#7B4F2E"},
-  {id: "tan", label: "Tan", hex: "#CFB38D"},
-  {id: "black", label: "Black", hex: "#111111"},
-  {id: "white", label: "White", hex: "#F1EEE6"},
-  {id: "grey", label: "Grey", hex: "#8D8B87"},
-  {id: "teal", label: "Teal", hex: "#2FA3A0"},
-  {id: "maroon", label: "Maroon", hex: "#7A2231"}
-];
-const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, TAN: 8, BLACK: 9, WHITE: 10, GREY: 11, TEAL: 12, MAROON: 13};
-// Bump whenever the rules below change what a cover would be called. Every stored colour is then
-// dropped once, and Stats reads the covers again under the new rules.
-const COVER_COLORS_VERSION = 2;
-let coverColorsChecked = false;
-function checkCoverColorsVersion(){
-  coverColorsChecked = true;
-  const FLAG = "ll_cover_colors_v";
-  try{ if(localStorage.getItem(FLAG) === String(COVER_COLORS_VERSION)) return; }catch(e){ return; }
-  const cache = loadSpotifyAlbumCache();
-  let changed = false;
-  Object.keys(cache).forEach(k => {
-    const e = cache[k];
-    if(e && typeof e === "object" && e.cat !== undefined && e.cat !== null){ e.cat = null; changed = true; }
-  });
-  if(changed) saveSpotifyAlbumCache();
-  try{ localStorage.setItem(FLAG, String(COVER_COLORS_VERSION)); }catch(e){}
 }
 
 // Chroma (max - min) rather than HSL saturation, since HSL calls near-black pixels saturated.
@@ -2458,40 +2406,122 @@ function coverPixelColor(r, g, b){
   return CC.PINK;
 }
 
-// Index into COVER_COLORS, or null if the cover couldn't be read. Colour gets a small boost
-// over neutrals so a vivid subject on a plain background still counts for something.
-function classifyCoverColor(img){
+/* Packing: up to three (colour, share) pairs, largest first. Each pair is one slot,
+   index*20 + its share in 5% steps (1..20), and the slots are the digits of a base-401
+   number. A one-colour cover stores about 3 digits and a three-colour cover at most 8 —
+   no more than the single hue this replaced — and there's room to append colours. */
+const COVER_SLOT_BASE = 401;
+function packCoverColors(list){
+  let out = 0, mul = 1;
+  list.forEach(c => {
+    const q = Math.max(1, Math.min(20, Math.round(c.share * 20)));
+    out += (c.i * 20 + q) * mul;
+    mul *= COVER_SLOT_BASE;
+  });
+  return out;
+}
+// [{i, share}], largest first, or null for anything that isn't a reading.
+function unpackCoverColors(packed){
+  let n = typeof packed === "number" ? packed : parseInt(packed, 10);
+  if(!isFinite(n) || n <= 0) return null;
+  const out = [];
+  while(n > 0 && out.length < COVER_COLOR_MAX){
+    const slot = n % COVER_SLOT_BASE;
+    n = Math.floor(n / COVER_SLOT_BASE);
+    if(!slot) return null;
+    const i = Math.floor((slot - 1) / 20);
+    if(!COVER_COLORS[i]) return null;
+    out.push({i: i, share: ((slot - 1) % 20 + 1) / 20});
+  }
+  return out.length ? out : null;
+}
+
+// Packed reading for an image, or null if it couldn't be read. Colour gets a small boost over
+// neutrals so a vivid subject on a plain background still counts for something.
+function classifyCoverColors(img){
   const px = coverSamplePixels(img);
   if(!px) return null;
   const weight = new Float64Array(COVER_COLORS.length);
-  let counted = 0;
+  let total = 0;
   for(let i = 0; i < px.length; i += 4){
     if(px[i + 3] < 128) continue;
-    counted++;
     const r = px[i], g = px[i + 1], b = px[i + 2];
-    const chroma = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
-    weight[coverPixelColor(r, g, b)] += 1 + chroma;
+    const w = 1 + (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+    weight[coverPixelColor(r, g, b)] += w;
+    total += w;
   }
-  if(!counted) return null;
-  let best = 0;
-  for(let k = 1; k < weight.length; k++) if(weight[k] > weight[best]) best = k;
-  return best;
+  if(!total) return null;
+  const ranked = Array.from(weight, (w, i) => ({i: i, share: w / total}))
+    .sort((a, b) => b.share - a.share);
+  // Every colour over the bar, up to three. A cover that's nearly all one colour keeps just that.
+  const kept = ranked.filter(c => c.share >= COVER_COLOR_MIN_SHARE).slice(0, COVER_COLOR_MAX);
+  return packCoverColors(kept.length ? kept : ranked.slice(0, 1));
 }
-function cachedCoverCat(artist, title){
+
+/* Cache access. The reading lives on the Spotify album entry, keyed the same way the cover
+   is — including a miss that carries a Last.fm cover (its CDN sends the same CORS header). */
+function coverCacheEntry(artist, title){
+  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
+  return hit && (hit.found || hit.lastfmImage) ? hit : null;
+}
+function cachedCoverColorsPacked(artist, title){
   if(!coverColorsChecked) checkCoverColorsVersion();
   const hit = coverCacheEntry(artist, title);
-  return hit && typeof hit.cat === "number" && COVER_COLORS[hit.cat] ? hit.cat : null;
+  return hit && hit.colors !== undefined && hit.colors !== null && unpackCoverColors(hit.colors) ? hit.colors : null;
 }
-function storeCoverCat(artist, title, cat){
+function cachedCoverColors(artist, title){
+  const packed = cachedCoverColorsPacked(artist, title);
+  return packed === null ? null : unpackCoverColors(packed);
+}
+function storeCoverColors(artist, title, packed){
   const entry = coverCacheEntry(artist, title);
   if(!entry) return;
-  entry.cat = cat;
+  entry.colors = packed;
   scheduleSpotifyCacheSave();
+}
+function coverColorsAttr(artist, title){
+  const packed = cachedCoverColorsPacked(artist, title);
+  return packed === null ? "" : String(packed);
+}
+
+/* Star colours for the CURRENT theme. The theme's own --star sets the brightness everything is
+   pulled toward, so a tinted star still sits near the level the design calls for; black, white
+   and grey become dark, light and mid greys of the same family. */
+let starBaseHsl = null;
+function starThemeBase(){
+  if(!starBaseHsl) starBaseHsl = hexToHsl(starFillColor());
+  return starBaseHsl;
+}
+function starColorForCat(i){
+  const base = starThemeBase();
+  const c = hexToHsl(COVER_COLORS[i].hex);
+  const l = Math.max(base[2] * 0.6, Math.min(0.72, base[2] + (c[2] - 0.5) * 0.45));
+  const s = COVER_NEUTRALS.indexOf(i) !== -1 ? 0 : Math.min(c[1], 0.55);
+  return "hsl(" + Math.round(c[0]) + "," + Math.round(s * 100) + "%," + Math.round(l * 100) + "%)";
+}
+function starPaletteFor(packed){
+  const list = unpackCoverColors(packed);
+  return list ? list.map(c => ({color: starColorForCat(c.i), share: c.share})) : null;
+}
+// Hands out a row's stars between its cover's colours in proportion to their share, largest
+// remainder first, so ten stars on a 60/25/15 cover come out 6, 3 and 1.
+function starAssignColors(st){
+  const stars = st.stars, pal = st.palette;
+  if(!pal){ stars.forEach(s => { s.color = null; }); return; }
+  const total = pal.reduce((a, p) => a + p.share, 0) || 1;
+  const n = stars.length;
+  const counts = pal.map(p => Math.floor(p.share / total * n));
+  let left = n - counts.reduce((a, b) => a + b, 0);
+  pal.map((p, k) => ({k: k, frac: p.share / total * n - counts[k]}))
+    .sort((a, b) => b.frac - a.frac)
+    .forEach(x => { if(left > 0){ counts[x.k]++; left--; } });
+  let j = 0;
+  counts.forEach((cnt, k) => { for(let m = 0; m < cnt; m++) stars[j++].color = pal[k].color; });
 }
 
 /* Covers arrive two ways — in the initial render, and patched in later by paintCover — and
    `load` doesn't bubble. One capture-phase listener on the document catches both without any
-   per-row wiring, and fires for cached images too. */
+   per-row wiring, and fires for cached images too. Rows opt in by carrying data-hue-artist. */
 document.addEventListener("load", function(ev){
   const img = ev.target;
   if(!img || img.tagName !== "IMG" || img.dataset.hueDone) return;
@@ -2503,21 +2533,18 @@ document.addEventListener("load", function(ev){
   const artist = row.dataset.hueArtist, title = row.dataset.hueTitle;
   if(!artist || !title) return;
 
-  // Only logged albums are named: Stats is the only reader, and it only counts those.
-  if(isReviewed(artist, title) && cachedCoverCat(artist, title) === null){
-    const cat = classifyCoverColor(img);
-    if(cat !== null) storeCoverCat(artist, title, cat);
-  }
-  let packed = cachedCoverHue(artist, title);
+  let packed = cachedCoverColorsPacked(artist, title);
   if(packed === null){
-    packed = extractCoverHue(img);
+    packed = classifyCoverColors(img);
     if(packed === null) return;           // couldn't read it; leave the default colour alone
-    storeCoverHue(artist, title, packed);
+    storeCoverColors(artist, title, packed);
   }
-  row.setAttribute("data-star-hue", String(packed));
+  if(!row.hasAttribute("data-stars")) return;
+  row.setAttribute("data-star-colors", String(packed));
   const st = row._starState;
   if(st){
-    st.color = starColorForPacked(packed);
+    st.palette = starPaletteFor(packed);
+    starAssignColors(st);
     starDraw(st);
   }
 }, true);
@@ -2962,7 +2989,8 @@ function applyTheme(name){
     starSprites.clear();
     for(let i = 0; i < starStates.length; i++){
       const st = starStates[i];
-      st.color = starColorForPacked(st.row.getAttribute("data-star-hue"));
+      st.palette = starPaletteFor(st.row.getAttribute("data-star-colors"));
+      starAssignColors(st);
       starDraw(st);
     }
     // A theme swap changes fonts, and so where the header's text sits.
@@ -3496,16 +3524,16 @@ function populateListSelector(){
 
 /* ---------- STATS ----------
    Everything here is derived from the logged albums on every render — nothing new is stored
-   except each cover's named colour, which rides on the cover cache like its hue does. */
+   except each cover's colour reading, which rides on the cover cache. */
 const STATS_AXES = [
   {key: "rotation", label: "Rotation", color: "var(--teal)"},
   {key: "distinctiveness", label: "Distinctiveness", color: "var(--gold)"},
   {key: "pull", label: "Pull", color: "var(--gold-dim)"}
 ];
 let statsSpan = "year";          // "year" | "decade"
-let statsMetric = "listens";     // "listens" | "albums"
+let statsMetric = "albums";      // "albums" | "relistens"
 let statsPick = null;            // the year or decade both timeline charts are pointing at
-let statsColorPick = null;       // the colour row that's open
+let statsColorSel = [];          // COVER_COLORS indexes picked in the combos card, in tap order
 try{
   if(localStorage.getItem("ll_stats_span") === "decade") statsSpan = "decade";
 }catch(e){}
@@ -3518,11 +3546,7 @@ function setStatsSpan(span){
 }
 function setStatsMetric(metric){
   statsMetric = metric;
-  renderStats();
-}
-function toggleStatsColor(i){
-  statsColorPick = statsColorPick === i ? null : i;
-  fillStatsColors();
+  fillStatsTimeline();
 }
 
 // 1 = weakest … 5 = strongest, or null when that axis wasn't rated.
@@ -3536,21 +3560,26 @@ function statsComposite(r){
   return levels.length ? levels.reduce((a, b) => a + b, 0) / levels.length : null;
 }
 function statsNewBucket(){
-  const b = {albums: 0, listens: 0, sum: {}, n: {}};
+  const b = {albums: 0, relistens: 0, sum: {}, n: {}, compSum: 0, compN: 0, list: []};
   STATS_AXES.forEach(a => { b.sum[a.key] = 0; b.n[a.key] = 0; });
   return b;
 }
 function statsAddToBucket(b, r){
+  const listens = listensFor(r.artist, r.title);
   b.albums++;
-  b.listens += listensFor(r.artist, r.title);
+  b.relistens += Math.max(0, listens - 1);   // only the plays after the first
   STATS_AXES.forEach(a => {
     const v = statsAxisLevel(r, a.key);
     if(v !== null){ b.sum[a.key] += v; b.n[a.key]++; }
   });
+  const c = statsComposite(r);
+  if(c !== null){ b.compSum += c; b.compN++; }
+  b.list.push({r: r, score: c === null ? 0 : c, listens: listens});
 }
 function statsAvg(b, axisKey){
   return b.n[axisKey] ? b.sum[axisKey] / b.n[axisKey] : null;
 }
+function statsCompAvg(b){ return b.compN ? b.compSum / b.compN : null; }
 function statsFmt(v){ return v === null ? "–" : v.toFixed(1); }
 
 function statsPeriodOf(r){
@@ -3602,15 +3631,13 @@ function statsTickEvery(band){
 function statsXTicks(periods, bands, y){
   const every = statsTickEvery(bands.band);
   const unit = statsSpan === "decade" ? 10 : 1;
+  const pi = periods.findIndex(q => q.p === statsPick);
   let out = "";
   periods.forEach((b, i) => {
-    const picked = b.p === statsPick;
+    const picked = i === pi;
     if(!picked && (b.p / unit) % every !== 0) return;
     // Don't let a round-number tick sit on top of the picked one.
-    if(!picked && statsPick !== null){
-      const pi = periods.findIndex(q => q.p === statsPick);
-      if(pi !== -1 && Math.abs(bands.cx(pi) - bands.cx(i)) < 34) return;
-    }
+    if(!picked && pi !== -1 && Math.abs(bands.cx(pi) - bands.cx(i)) < 34) return;
     out += '<text x="' + bands.cx(i).toFixed(1) + '" y="' + y + '" text-anchor="middle"' +
       (picked ? ' class="picked"' : '') + '>' + statsAxisTickLabel(b.p) + '</text>';
   });
@@ -3627,10 +3654,10 @@ function statsRoundTopBar(x, y, w, h){
 function statsBarSvg(periods, W){
   const H = 150, top = 8, bottom = 20, plotH = H - top - bottom;
   const bands = statsBands(W, periods.length);
-  const val = b => statsMetric === "albums" ? b.albums : b.listens;
+  const val = b => statsMetric === "relistens" ? b.relistens : b.albums;
   const max = statsNiceMax(Math.max.apply(null, periods.map(val)));
   const yOf = v => top + plotH - (v / max) * plotH;
-  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + (statsMetric === "albums" ? "Albums" : "Listens") + ' by release ' + statsSpan + '">';
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + (statsMetric === "relistens" ? "Re-listens" : "Albums") + ' by release ' + statsSpan + '">';
   [0, max / 2, max].forEach(t => {
     const y = yOf(t).toFixed(1);
     svg += '<line class="stats-grid" x1="' + STATS_PAD.l + '" x2="' + (W - STATS_PAD.r) + '" y1="' + y + '" y2="' + y + '"/>';
@@ -3739,14 +3766,14 @@ function fillStatsTimeline(){
   reviews.forEach(r => { if(statsPeriodOf(r) !== null) statsAddToBucket(all, r); });
   const focus = picked || all;
   const focusLabel = picked ? statsPeriodLabel(picked.p) : "All";
-  const metricVal = statsMetric === "albums" ? focus.albums : focus.listens;
+  const metricVal = statsMetric === "relistens" ? focus.relistens : focus.albums;
 
   host.innerHTML =
     '<div class="stats-card">' +
       '<div class="stats-card-head">' +
         '<div class="stats-seg">' +
-          '<button class="' + (statsMetric === "listens" ? "active" : "") + '" onclick="setStatsMetric(\'listens\')">Listens</button>' +
           '<button class="' + (statsMetric === "albums" ? "active" : "") + '" onclick="setStatsMetric(\'albums\')">Albums</button>' +
+          '<button class="' + (statsMetric === "relistens" ? "active" : "") + '" onclick="setStatsMetric(\'relistens\')">Re-listens</button>' +
         '</div>' +
         '<span class="stats-readout"><b>' + focusLabel + '</b> ' + metricVal.toLocaleString() + '</span>' +
       '</div>' +
@@ -3770,30 +3797,43 @@ function fillStatsTimeline(){
   wireStatsChart(lineEl, periods);
 }
 
-/* Covers only get their colour named once they've been read. Ones already on screen elsewhere
-   are named as they load; the rest are fetched here, a few at a time, off-screen. */
-const statsCatTried = new Set();
-const STATS_EXAMPLES = 6;
-let statsExampleList = [];       // what each example cover opens, by its onclick index
-function openStatsExample(n){
-  const r = statsExampleList[n];
-  if(r) openReviewModal(r.artist, r.title, r.year, r.genres);
+/* ---------- STATS: COVER COLOURS ----------
+   An album counts under its main colour, its top two together, and its top three together —
+   never under a lesser colour on its own, or a pairing that skips its main one. So a
+   Black / Red / White cover is Black, Black + Red, and Black + Red + White. A combo is a set:
+   Black + Red is the same combo whichever of the two leads. */
+function colorSetKey(idxs){ return idxs.slice().sort((a, b) => a - b).join("-"); }
+function colorSetLabel(idxs){ return idxs.map(i => COVER_COLORS[i].label).join(" + "); }
+function coverColorPrefixKeys(cols){
+  const out = [];
+  for(let n = 1; n <= cols.length; n++) out.push(colorSetKey(cols.slice(0, n).map(c => c.i)));
+  return out;
 }
+// Shared with the Logged filter, so a Stats count and the filtered list always agree.
+function reviewColorsMatch(r, sel){
+  if(!sel || !sel.length) return true;
+  const cols = cachedCoverColors(r.artist, r.title);
+  return !!cols && coverColorPrefixKeys(cols).indexOf(colorSetKey(sel)) !== -1;
+}
+
+// Covers only get read once they've been seen. Ones on screen elsewhere are read as they load;
+// the rest are fetched here, a few at a time, off-screen.
+const statsCatTried = new Set();
 let statsCatProgress = null;     // {done, total} while a batch is being read
 let statsRefreshTimer = null;
 function scheduleStatsColorRefresh(){
   clearTimeout(statsRefreshTimer);
   statsRefreshTimer = setTimeout(() => { if(section === "stats") fillStatsColors(); }, 250);
 }
-function readCoverCat(artist, title){
+function readCoverColors(artist, title){
   return new Promise(resolve => {
     const url = cachedCoverUrl(artist, title);
     if(!url){ resolve(); return; }
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const cat = classifyCoverColor(img);
-      if(cat !== null) storeCoverCat(artist, title, cat);
+      const packed = classifyCoverColors(img);
+      if(packed !== null) storeCoverColors(artist, title, packed);
       resolve();
     };
     img.onerror = () => resolve();
@@ -3805,7 +3845,7 @@ function statsReadCovers(reviews){
   if(statsCatProgress) return;
   const noCover = [];
   const todo = reviews.filter(r => {
-    if(cachedCoverCat(r.artist, r.title) !== null) return false;
+    if(cachedCoverColorsPacked(r.artist, r.title) !== null) return false;
     if(!cachedCoverUrl(r.artist, r.title)){ noCover.push({artist: r.artist, title: r.title}); return false; }
     return !statsCatTried.has(reviewKey(r.artist, r.title));
   });
@@ -3817,7 +3857,7 @@ function statsReadCovers(reviews){
     while(next < todo.length){
       const r = todo[next++];
       statsCatTried.add(reviewKey(r.artist, r.title));
-      await readCoverCat(r.artist, r.title);
+      await readCoverColors(r.artist, r.title);
       statsCatProgress.done++;
       scheduleStatsColorRefresh();
     }
@@ -3828,67 +3868,157 @@ function statsReadCovers(reviews){
   });
 }
 
+function toggleStatsColor(i){
+  const at = statsColorSel.indexOf(i);
+  if(at !== -1) statsColorSel.splice(at, 1);
+  else{
+    if(statsColorSel.length >= COVER_COLOR_MAX) statsColorSel.shift();   // a fourth tap drops the oldest
+    statsColorSel.push(i);
+  }
+  fillStatsColors();
+}
+function setStatsColors(key){
+  statsColorSel = key ? key.split("-").map(Number) : [];
+  fillStatsColors();
+}
+
+// Everything the colour cards need, from one pass over the logs.
+function statsColorIndex(reviews){
+  const sets = {};   // colorSetKey -> bucket
+  let known = 0;
+  reviews.forEach(r => {
+    const cols = cachedCoverColors(r.artist, r.title);
+    if(!cols) return;
+    known++;
+    coverColorPrefixKeys(cols).forEach((k, n) => {
+      const b = sets[k] || (sets[k] = Object.assign(statsNewBucket(), {shares: {}}));
+      statsAddToBucket(b, r);
+      // How much of these covers each colour holds, so the combo reads biggest colour first.
+      for(let m = 0; m <= n; m++) b.shares[cols[m].i] = (b.shares[cols[m].i] || 0) + cols[m].share;
+    });
+  });
+  return {sets: sets, known: known};
+}
+
+// A set's colours, biggest share across its albums first: Black + Red, not Red + Black, when
+// those covers are mostly black.
+function colorSetOrder(key, bucket){
+  const idxs = key.split("-").map(Number);
+  if(!bucket || !bucket.shares) return idxs;
+  return idxs.sort((a, b) => (bucket.shares[b] || 0) - (bucket.shares[a] || 0) || a - b);
+}
+function colorSwatchesHtml(idxs){
+  return '<span class="combo-swatches">' + idxs.map(i =>
+    '<span class="color-swatch" style="background:' + COVER_COLORS[i].hex + '"></span>').join("") + '</span>';
+}
+// One bar row: swatches, name, a bar sized against the biggest row, count, average score.
+function colorRowHtml(idxs, b, most, onclick){
+  const barColor = COVER_COLORS[idxs[0]].hex;
+  return '<div class="color-row" onclick="' + onclick + '">' +
+    '<span class="color-name">' + colorSwatchesHtml(idxs) + '<span class="color-label">' + colorSetLabel(idxs) + '</span></span>' +
+    '<span class="color-bar-cell"><span class="color-bar" style="width:' + (b.albums / most * 100 * 0.82).toFixed(1) + '%; background:' + barColor + '"></span>' +
+      '<span class="color-count">' + b.albums + '</span></span>' +
+    '<span class="color-avg">' + statsFmt(statsCompAvg(b)) + '</span>' +
+  '</div>';
+}
+function colorRowsHtml(rows){
+  if(!rows.length) return '';
+  const most = Math.max.apply(null, rows.map(x => x.b.albums));
+  return '<div class="color-rows"><div class="color-row-head"><span></span><span>Albums</span><span>Avg</span></div>' +
+    rows.map(x => colorRowHtml(x.idxs, x.b, most, "setStatsColors('" + x.key + "')")).join("") + '</div>';
+}
+
+const STATS_EXAMPLES = 12;
 function fillStatsColors(){
   const host = document.getElementById("statsColors");
   if(!host) return;
   const reviews = Object.values(loadReviews());
-  const buckets = COVER_COLORS.map(() => Object.assign(statsNewBucket(), {compSum: 0, compN: 0, albumsList: []}));
-  let known = 0;
-  reviews.forEach(r => {
-    const cat = cachedCoverCat(r.artist, r.title);
-    if(cat === null) return;
-    known++;
-    const b = buckets[cat];
-    statsAddToBucket(b, r);
-    const c = statsComposite(r);
-    if(c !== null){ b.compSum += c; b.compN++; }
-    b.albumsList.push({r: r, score: c === null ? 0 : c, listens: listensFor(r.artist, r.title)});
-  });
-  statsExampleList = [];
-  const rows = buckets.map((b, i) => ({i: i, b: b})).filter(x => x.b.albums > 0)
-    .sort((a, c) => c.b.albums - a.b.albums || a.i - c.i);
+  const idx = statsColorIndex(reviews);
   const readout = statsCatProgress
     ? statsCatProgress.done + ' / ' + statsCatProgress.total
-    : '<b>' + known.toLocaleString() + '</b> covers';
+    : '<b>' + idx.known.toLocaleString() + '</b> covers';
 
+  // Main colours: the familiar strip and bar rows.
+  const mains = COVER_COLORS.map((c, i) => ({idxs: [i], key: String(i), b: idx.sets[String(i)]}))
+    .filter(x => x.b).sort((a, c) => c.b.albums - a.b.albums || a.idxs[0] - c.idxs[0]);
   let html = '<div class="stats-card">' +
     '<div class="stats-card-head">' +
       '<span class="stats-card-title">Cover colors</span>' +
       '<span class="stats-readout">' + readout + '</span>' +
     '</div>';
-  if(!rows.length){
+  if(!mains.length){
     host.innerHTML = html + '<div class="stats-empty">' + (statsCatProgress ? "Reading covers…" : "No covers read yet") + '</div></div>';
     return;
   }
-  html += '<div class="color-strip">' + rows.map(x =>
-    '<span style="flex:' + x.b.albums + ' 1 0; background:' + COVER_COLORS[x.i].hex + '" title="' +
-    COVER_COLORS[x.i].label + ': ' + x.b.albums + '"></span>').join("") + '</div>';
-  const most = rows[0].b.albums;
-  html += '<div class="color-rows"><div class="color-row-head"><span></span><span>Albums</span><span>Avg</span></div>';
-  rows.forEach(x => {
-    const col = COVER_COLORS[x.i];
-    const avg = x.b.compN ? x.b.compSum / x.b.compN : null;
-    html += '<div class="color-row" onclick="toggleStatsColor(' + x.i + ')">' +
-      '<span class="color-name"><span class="color-swatch" style="background:' + col.hex + '"></span>' + col.label + '</span>' +
-      '<span class="color-bar-cell"><span class="color-bar" style="width:' + (x.b.albums / most * 100 * 0.82).toFixed(1) + '%; background:' + col.hex + '"></span>' +
-        '<span class="color-count">' + x.b.albums + '</span></span>' +
-      '<span class="color-avg">' + statsFmt(avg) + '</span>' +
+  html += '<div class="color-strip">' + mains.map(x =>
+    '<span style="flex:' + x.b.albums + ' 1 0; background:' + COVER_COLORS[x.idxs[0]].hex + '" title="' +
+    COVER_COLORS[x.idxs[0]].label + ': ' + x.b.albums + '"></span>').join("") + '</div>';
+  html += colorRowsHtml(mains) + '</div>';
+
+  // Combos: pick up to three squares to look at one colour or combination.
+  const selKey = statsColorSel.length ? colorSetKey(statsColorSel) : "";
+  const sel = selKey ? idx.sets[selKey] || statsNewBucket() : null;
+  html += '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<span class="stats-card-title">Combos</span>' +
+      (sel ? '<button class="stats-clear" onclick="setStatsColors(\'\')">Clear</button>' : '') +
+    '</div>' +
+    '<div class="color-picks stats-color-picks">' + COVER_COLORS.map((c, i) =>
+      '<button class="color-pick' + (statsColorSel.indexOf(i) !== -1 ? ' active' : '') + '" style="background:' + c.hex +
+      '" title="' + c.label + '" aria-label="' + c.label + '" aria-pressed="' + (statsColorSel.indexOf(i) !== -1) +
+      '" onclick="toggleStatsColor(' + i + ')"></button>').join("") + '</div>';
+
+  if(!sel){
+    // Nothing picked: the most common combinations of two or three.
+    const combos = Object.keys(idx.sets).filter(k => k.indexOf("-") !== -1)
+      .map(k => ({key: k, idxs: colorSetOrder(k, idx.sets[k]), b: idx.sets[k]}))
+      .sort((a, c) => c.b.albums - a.b.albums).slice(0, 8);
+    html += combos.length ? colorRowsHtml(combos) : '<div class="stats-empty">No combos yet</div>';
+    host.innerHTML = html + '</div>';
+    return;
+  }
+
+  const selOrder = sel.albums ? colorSetOrder(selKey, sel) : statsColorSel;
+  html += '<div class="combo-summary">' +
+      '<span class="combo-title">' + colorSwatchesHtml(selOrder) + colorSetLabel(selOrder) + '</span>' +
+      '<span class="stats-readout"><b>' + sel.albums + '</b> albums · avg <b>' + statsFmt(statsCompAvg(sel)) + '</b></span>' +
     '</div>';
-    // Examples: the colour's best-scored albums, most-played first on a tie.
-    const picks = x.b.albumsList.slice()
-      .sort((a, c) => c.score - a.score || c.listens - a.listens)
-      .slice(0, STATS_EXAMPLES);
-    html += '<div class="color-examples">' + picks.map(e => {
-      statsExampleList.push(e.r);
-      const label = escapeHtml(e.r.artist + " – " + e.r.title);
-      return '<button class="color-example" title="' + label + '" aria-label="' + label + '" onclick="openStatsExample(' + (statsExampleList.length - 1) + ')">' +
-        '<img src="' + escapeHtml(cachedCoverUrl(e.r.artist, e.r.title)) + '" alt="" loading="lazy" crossorigin="anonymous"></button>';
-    }).join("") + '</div>';
-    if(statsColorPick === x.i){
-      html += '<div class="color-detail"><div class="stats-legend">' + statsLegendHtml(x.b) + '</div></div>';
-    }
-  });
-  host.innerHTML = html + '</div></div>';
+  if(!sel.albums){
+    host.innerHTML = html + '<div class="stats-empty">No albums</div></div>';
+    return;
+  }
+  html += '<div class="stats-legend">' + statsLegendHtml(sel) + '</div>';
+  // The picked set's best-scored albums, most-played first on a tie. Each opens Logged,
+  // filtered to this same colour set.
+  const picks = sel.list.slice().sort((a, c) => c.score - a.score || c.listens - a.listens).slice(0, STATS_EXAMPLES);
+  html += '<div class="color-examples">' + picks.map(e => {
+    const label = escapeHtml(e.r.artist + " – " + e.r.title);
+    return '<button class="color-example" title="' + label + '" aria-label="' + label + '" onclick="openLoggedWithColors(\'' + selKey + '\')">' +
+      '<img src="' + escapeHtml(cachedCoverUrl(e.r.artist, e.r.title)) + '" alt="" loading="lazy" crossorigin="anonymous"></button>';
+  }).join("") + '</div>';
+  // One colour further: the combos this selection leads into.
+  if(statsColorSel.length < COVER_COLOR_MAX){
+    const wider = Object.keys(idx.sets)
+      .map(k => ({key: k, idxs: colorSetOrder(k, idx.sets[k]), b: idx.sets[k]}))
+      .filter(x => x.idxs.length === statsColorSel.length + 1 && statsColorSel.every(i => x.idxs.indexOf(i) !== -1))
+      .sort((a, c) => c.b.albums - a.b.albums).slice(0, 6);
+    html += colorRowsHtml(wider);
+  }
+  host.innerHTML = html + '</div>';
+}
+
+// From a Stats cover: the Logged tab, every other filter cleared, showing just this colour set.
+function openLoggedWithColors(key){
+  reviewsFilter.vibe = "";
+  reviewsFilter.decade = "";
+  reviewsFilter.colors = key ? key.split("-").map(Number) : [];
+  Object.keys(reviewsRange).forEach(k => { reviewsRange[k] = null; reviewsRangeAnchor[k] = null; });
+  reviewsSearch = "";
+  const input = document.getElementById("reviewsSearchInput");
+  if(input) input.value = "";
+  reviewsInitialized = true;
+  initReviewsHeader();
+  switchSection("reviews");
 }
 
 function renderStats(){
@@ -3896,13 +4026,18 @@ function renderStats(){
   if(section !== "stats") return;
   const reviews = Object.values(loadReviews());
   document.getElementById("statsCount").textContent = reviews.length ? reviews.length.toLocaleString() + " logged" : "";
-  document.getElementById("statsSpanYear").classList.toggle("active", statsSpan === "year");
-  document.getElementById("statsSpanDecade").classList.toggle("active", statsSpan === "decade");
   if(!reviews.length){
     content.innerHTML = '<div class="empty-hint">Log albums to see stats.</div>';
     return;
   }
-  content.innerHTML = '<div id="statsTimeline"></div><div id="statsColors"></div>';
+  // Year / Decade only drives the charts under it, so it sits with them and scrolls away
+  // rather than riding in the pinned header over the colour cards.
+  content.innerHTML =
+    '<div class="count-picker stats-span">' +
+      '<button class="count-btn' + (statsSpan === "year" ? ' active' : '') + '" onclick="setStatsSpan(\'year\')">Year</button>' +
+      '<button class="count-btn' + (statsSpan === "decade" ? ' active' : '') + '" onclick="setStatsSpan(\'decade\')">Decade</button>' +
+    '</div>' +
+    '<div id="statsTimeline"></div><div id="statsColors"></div>';
   fillStatsTimeline();
   fillStatsColors();
   statsReadCovers(reviews);
@@ -4013,8 +4148,8 @@ function renderAlbums(){
       row.setAttribute("data-stars", String(stars));
       row.dataset.hueArtist = lookupArtist(i);
       row.dataset.hueTitle = lookupAlbum(i);
-      const packedHue = starHueAttr(lookupArtist(i), lookupAlbum(i));
-      if(packedHue) row.setAttribute("data-star-hue", packedHue);
+      const starColors = coverColorsAttr(lookupArtist(i), lookupAlbum(i));
+      if(starColors) row.setAttribute("data-star-colors", starColors);
     }
 
     const metaBits = [];
@@ -5383,7 +5518,7 @@ function dropSpotifyCacheMisses(){
 
 // Compact form. Found: {found: 1, i: id, a: [artists], t: title, k: type (omitted for "album"),
 // n: tracks, d: releaseDate, m: image (i.scdn.co prefix dropped)}. Miss: {checkedAt, s: suggestion,
-// l: Last.fm cover, h: its hue}; checkedAt 0 is a stub holding only a Last.fm cover, Spotify not asked yet.
+// l: Last.fm cover, o: its colours}; checkedAt 0 is a stub holding only a Last.fm cover, Spotify not asked yet.
 // url, artist, artistLine and year are rebuilt on load. "found" and "checkedAt" keep their old
 // names so an older version of the app still reads matches as matches and retries misses on time.
 function compactSpotifySummary(s){
@@ -5395,11 +5530,9 @@ function compactSpotifyAlbumEntry(e){
   if(e.found){
     const out = Object.assign({found: 1}, compactSpotifySummary(e), {n: e.tracks || 0, d: e.releaseDate || ""});
     if(e.image) out.m = e.image.indexOf(SPOTIFY_IMAGE_PREFIX) === 0 ? e.image.slice(SPOTIFY_IMAGE_PREFIX.length) : e.image;
-    // Dominant cover hue, packed as hue*100+sat (-1 = greyscale). ~10 bytes, and it evicts
-    // with the cover it describes.
-    if(e.hue !== undefined && e.hue !== null) out.h = e.hue;
-    // Named cover colour for Stats, an index into COVER_COLORS.
-    if(e.cat !== undefined && e.cat !== null) out.c = e.cat;
+    // The cover's one to three colours, packed into one integer (packCoverColors) — at most
+    // 8 digits, and it evicts with the cover it describes. Older builds' h and c are dropped.
+    if(e.colors !== undefined && e.colors !== null) out.o = e.colors;
     return out;
   }
   const out = {checkedAt: e.checkedAt || 0};
@@ -5407,8 +5540,7 @@ function compactSpotifyAlbumEntry(e){
   // Last.fm fallback cover (see rememberLastfmCover): its CDN path with the prefix dropped, "" for none.
   if(e.lastfmImage !== undefined){
     out.l = e.lastfmImage.indexOf(LASTFM_IMAGE_PREFIX) === 0 ? e.lastfmImage.slice(LASTFM_IMAGE_PREFIX.length) : e.lastfmImage;
-    if(e.lastfmImage && e.hue !== undefined && e.hue !== null) out.h = e.hue;
-    if(e.lastfmImage && e.cat !== undefined && e.cat !== null) out.c = e.cat;
+    if(e.lastfmImage && e.colors !== undefined && e.colors !== null) out.o = e.colors;
   }
   return out;
 }
@@ -5436,8 +5568,7 @@ function expandSpotifyAlbumEntry(v){
       releaseDate: d,
       year: /^\d{4}$/.test(y) && parseInt(y, 10) >= 1900 ? y : "",
       image: v.m ? (v.m.indexOf("://") === -1 ? SPOTIFY_IMAGE_PREFIX + v.m : v.m) : "",
-      hue: v.h !== undefined ? v.h : null,
-      cat: v.c !== undefined ? v.c : null
+      colors: v.o !== undefined ? v.o : null
     });
   }
   if(v.found === true){   // old full-format match: already the in-memory shape, just make sure artists is filled
@@ -5449,8 +5580,7 @@ function expandSpotifyAlbumEntry(v){
   if(suggestion) entry.suggestion = suggestion;
   if(typeof v.l === "string"){
     entry.lastfmImage = v.l && v.l.indexOf("://") === -1 ? LASTFM_IMAGE_PREFIX + v.l : v.l;
-    if(v.h !== undefined) entry.hue = v.h;
-    if(v.c !== undefined) entry.cat = v.c;
+    if(v.o !== undefined) entry.colors = v.o;
   }
   return entry;
 }
@@ -5601,8 +5731,7 @@ async function getSpotifyAlbumInfo(artist, title, opts){
         const prev = cache[key];
         if(!entry.found && prev && !prev.found && prev.lastfmImage){
           entry.lastfmImage = prev.lastfmImage;
-          if(prev.hue !== undefined && prev.hue !== null) entry.hue = prev.hue;
-          if(prev.cat !== undefined && prev.cat !== null) entry.cat = prev.cat;
+          if(prev.colors !== undefined && prev.colors !== null) entry.colors = prev.colors;
         }
         cache[key] = entry;
         scheduleSpotifyCacheSave();
@@ -5710,8 +5839,7 @@ function rememberLastfmCover(artist, title, url){
   if(entry && entry.lastfmImage === url) return;
   if(!entry) entry = cache[key] = {checkedAt: 0, found: false};
   entry.lastfmImage = url || "";
-  entry.hue = null;
-  entry.cat = null;
+  entry.colors = null;
   scheduleSpotifyCacheSave();
 }
 function cachedCoverUrl(artist, title){
@@ -5743,7 +5871,7 @@ function coverNeedsLookup(artist, title){
   return !!settings.apiKey && !(hit && hit.lastfmImage !== undefined);
 }
 function coverImgHtml(url){
-  // crossorigin is what makes the pixels readable for hue extraction. If a host ever refuses
+  // crossorigin is what makes the pixels readable for colour reading. If a host ever refuses
   // CORS the image would fail outright, so the error path retries bare before giving up —
   // showing the cover always wins over tinting its stars.
   return '<img src="' + escapeHtml(url) + '" alt="" loading="lazy" crossorigin="anonymous" onerror="coverImgFailed(this)">';
@@ -5829,7 +5957,7 @@ function paintCover(key, url){
     if(el.dataset.coverKey !== key) return;
     const img = el.querySelector("img");
     if(img && img.getAttribute("src") === url) return;
-    // A Last.fm cover giving way to Spotify's: a fresh <img> so its load re-reads the hue.
+    // A Last.fm cover giving way to Spotify's: a fresh <img> so its load re-reads the colours.
     if(img) img.remove();
     el.insertAdjacentHTML("beforeend", coverImgHtml(url));
   });
