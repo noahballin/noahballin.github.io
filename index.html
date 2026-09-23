@@ -2296,7 +2296,8 @@ document.addEventListener("visibilitychange", function(){
    Spotify album cache entry, so it evicts with the cover it describes rather than becoming
    its own thing to manage. */
 const COVER_SAMPLE = 32;
-const COVER_COLOR_MIN_SHARE = 0.12;   // a colour has to hold this much of the cover to be tracked
+const COVER_COLOR_MIN_SHARE = 0.10;   // a colour has to hold this much of the cover to be tracked
+const COVER_ACCENT_SHARE = 0.06;      // …or this much, for a real colour filling a spare slot
 const COVER_COLOR_MAX = 3;
 
 // Stored by index: only ever append to this list.
@@ -2321,7 +2322,7 @@ const COVER_NEUTRALS = [CC.BLACK, CC.WHITE, CC.GREY];
 
 // Bump whenever the rules below change what a cover would be called. Every stored reading is
 // then dropped once, and covers are read again under the new rules as they're next seen.
-const COVER_COLORS_VERSION = 5;
+const COVER_COLORS_VERSION = 6;
 let coverColorsChecked = false;
 function checkCoverColorsVersion(){
   coverColorsChecked = true;
@@ -2386,17 +2387,21 @@ function coverPixelColor(r, g, b){
   const c = mx - mn, l = (mx + mn) / 2;
   if(mx < 0.07) return CC.BLACK;
   const h = rgbToHsl(r, g, b)[0];
-  const neutral = mx < 0.25 ? c / mx < 0.3 + (0.25 - mx) * 2
+  const neutral = mx < 0.25 ? c / mx < 0.3 + (0.25 - mx) * 1.2
     : l > 0.8 ? c < (h >= 25 && h < 65 ? 0.07 : 0.035)
-    : c < 0.07;
+    : c / mx < 0.12;
   if(neutral) return l > 0.8 ? CC.WHITE : l < 0.2 ? CC.BLACK : CC.GREY;
   if(l > 0.8 && (h >= 330 || h < 25)) return CC.PINK;   // blush and peach tints read pink
   // Dark yellow: the golden end stays yellow, the olive end reads green.
   if(h >= 45 && h < 68 && l < 0.3) return h < 52 ? CC.YELLOW : CC.GREEN;
+  if(h >= 68 && h < 90 && c < 0.2) return l < 0.6 ? CC.GREEN : CC.TAN;   // grass and moss
   if(c < 0.16 && h >= 12 && h < 65) return l < 0.4 ? CC.BROWN : CC.TAN;   // muted warm
   if(h >= 160 && h < 193) return CC.TEAL;
   if(h >= 193 && h < 255) return CC.BLUE;   // sky and navy sit just past teal
-  if(h >= 345 || h < 12) return l > 0.68 ? CC.PINK : l < 0.33 ? CC.MAROON : CC.RED;
+  if(h >= 345 || h < 12){
+    if(l > 0.68 || (l > 0.55 && c < 0.4)) return CC.PINK;   // flushed skin and dusty rose read pink
+    return l < 0.33 ? CC.MAROON : CC.RED;
+  }
   if(h < 45){
     if(l < 0.36) return CC.BROWN;
     // Pale and not very vivid is tan (think kraft paper), even with a fair bit of chroma.
@@ -2408,7 +2413,7 @@ function coverPixelColor(r, g, b){
     return CC.YELLOW;
   }
   if(h < 160) return CC.GREEN;
-  if(h < 290) return CC.PURPLE;
+  if(h < 290 || (h < 320 && l < 0.55)) return CC.PURPLE;   // violet and magenta shadows read purple
   if(l < 0.35) return h >= 325 ? CC.MAROON : CC.PURPLE;   // deep wine reads as maroon, not purple
   return CC.PINK;
 }
@@ -2443,25 +2448,57 @@ function unpackCoverColors(packed){
   return out.length ? out : null;
 }
 
-// Packed reading for an image, or null if it couldn't be read. Colour gets a small boost over
-// neutrals so a vivid subject on a plain background still counts for something.
+// Hue of each colour's swatch, for matching a faint tint to the nearest real colour.
+const COVER_COLOR_HUES = COVER_COLORS.map((c, i) => COVER_NEUTRALS.indexOf(i) === -1 ? hexToHsl(c.hex)[0] : null);
+
+/* Packed reading for an image, or null if it couldn't be read. Colour gets a small boost over
+   neutrals so a vivid subject on a plain background still counts for something.
+
+   Two passes, because a washed-out pixel only reads as a colour next to the colours around
+   it: Slugger's forest is almost grey pixel by pixel, but it's green beside the grass. The
+   first pass sorts every clearly coloured pixel. Faintly tinted greys and dark pixels are
+   held back, then each joins the nearest colour (within 75 degrees) that the cover clearly
+   shows. A tint with no such colour nearby stays grey or black. */
 function classifyCoverColors(img){
   const px = coverSamplePixels(img);
   if(!px) return null;
   const weight = new Float64Array(COVER_COLORS.length);
+  const faint = [];   // [hue, weight, neutral it would otherwise be]
   let total = 0;
   for(let i = 0; i < px.length; i += 4){
     if(px[i + 3] < 128) continue;
     const r = px[i], g = px[i + 1], b = px[i + 2];
-    const w = 1 + (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
-    weight[coverPixelColor(r, g, b)] += w;
+    const mx = Math.max(r, g, b) / 255, c = mx - Math.min(r, g, b) / 255, l = mx - c / 2;
+    const w = 1 + c;
+    const k = coverPixelColor(r, g, b);
     total += w;
+    // Not too dark to have a colour, not bright enough to be white, and with some tint to it.
+    if((k === CC.GREY || k === CC.BLACK) && mx >= 0.16 && l <= 0.8 && c / mx >= 0.08){
+      faint.push([rgbToHsl(r, g, b)[0], w, k]);
+      continue;
+    }
+    weight[k] += w;
   }
   if(!total) return null;
+  const shown = COVER_COLOR_HUES.map((h, i) => h !== null && weight[i] / total >= 0.03 ? i : -1).filter(i => i !== -1);
+  faint.forEach(f => {
+    let best = f[2], gap = 75;
+    shown.forEach(i => {
+      const d = Math.abs(((f[0] - COVER_COLOR_HUES[i]) % 360 + 540) % 360 - 180);
+      if(d < gap){ gap = d; best = i; }
+    });
+    weight[best] += f[1];
+  });
   const ranked = Array.from(weight, (w, i) => ({i: i, share: w / total}))
     .sort((a, b) => b.share - a.share);
   // Every colour over the bar, up to three. A cover that's nearly all one colour keeps just that.
   const kept = ranked.filter(c => c.share >= COVER_COLOR_MIN_SHARE).slice(0, COVER_COLOR_MAX);
+  // A spare slot goes to a real colour that's clearly there even if it's small — the purple face
+  // on The Front Bottoms — but never to black, white or grey.
+  ranked.forEach(c => {
+    if(kept.length < COVER_COLOR_MAX && kept.indexOf(c) === -1 && c.share >= COVER_ACCENT_SHARE &&
+       COVER_NEUTRALS.indexOf(c.i) === -1) kept.push(c);
+  });
   return packCoverColors(kept.length ? kept : ranked.slice(0, 1));
 }
 
