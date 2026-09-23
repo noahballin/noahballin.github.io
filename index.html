@@ -2403,9 +2403,28 @@ const COVER_COLORS = [
   {id: "tan", label: "Tan", hex: "#CFB38D"},
   {id: "black", label: "Black", hex: "#111111"},
   {id: "white", label: "White", hex: "#F1EEE6"},
-  {id: "grey", label: "Grey", hex: "#8D8B87"}
+  {id: "grey", label: "Grey", hex: "#8D8B87"},
+  {id: "teal", label: "Teal", hex: "#2FA3A0"},
+  {id: "maroon", label: "Maroon", hex: "#7A2231"}
 ];
-const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, TAN: 8, BLACK: 9, WHITE: 10, GREY: 11};
+const CC = {RED: 0, ORANGE: 1, YELLOW: 2, GREEN: 3, BLUE: 4, PURPLE: 5, PINK: 6, BROWN: 7, TAN: 8, BLACK: 9, WHITE: 10, GREY: 11, TEAL: 12, MAROON: 13};
+// Bump whenever the rules below change what a cover would be called. Every stored colour is then
+// dropped once, and Stats reads the covers again under the new rules.
+const COVER_COLORS_VERSION = 2;
+let coverColorsChecked = false;
+function checkCoverColorsVersion(){
+  coverColorsChecked = true;
+  const FLAG = "ll_cover_colors_v";
+  try{ if(localStorage.getItem(FLAG) === String(COVER_COLORS_VERSION)) return; }catch(e){ return; }
+  const cache = loadSpotifyAlbumCache();
+  let changed = false;
+  Object.keys(cache).forEach(k => {
+    const e = cache[k];
+    if(e && typeof e === "object" && e.cat !== undefined && e.cat !== null){ e.cat = null; changed = true; }
+  });
+  if(changed) saveSpotifyAlbumCache();
+  try{ localStorage.setItem(FLAG, String(COVER_COLORS_VERSION)); }catch(e){}
+}
 
 // Chroma (max - min) rather than HSL saturation, since HSL calls near-black pixels saturated.
 function coverPixelColor(r, g, b){
@@ -2419,7 +2438,7 @@ function coverPixelColor(r, g, b){
     if(h >= 12 && h < 65) return l < 0.4 ? CC.BROWN : CC.TAN;
     return l > 0.8 ? CC.WHITE : CC.GREY;
   }
-  if(h >= 345 || h < 12) return l > 0.68 ? CC.PINK : CC.RED;
+  if(h >= 345 || h < 12) return l > 0.68 ? CC.PINK : l < 0.33 ? CC.MAROON : CC.RED;
   if(h < 45){
     if(l < 0.36) return CC.BROWN;
     // Pale and not very vivid is tan (think kraft paper), even with a fair bit of chroma.
@@ -2431,10 +2450,12 @@ function coverPixelColor(r, g, b){
     if(c < 0.3 && l > 0.55) return CC.TAN;
     return CC.YELLOW;
   }
-  if(h < 165) return CC.GREEN;
+  if(h < 160) return CC.GREEN;
+  if(h < 200) return CC.TEAL;
   if(h < 255) return CC.BLUE;
   if(h < 290) return CC.PURPLE;
-  return l < 0.35 ? CC.PURPLE : CC.PINK;
+  if(l < 0.35) return h >= 325 ? CC.MAROON : CC.PURPLE;   // deep wine reads as maroon, not purple
+  return CC.PINK;
 }
 
 // Index into COVER_COLORS, or null if the cover couldn't be read. Colour gets a small boost
@@ -2457,6 +2478,7 @@ function classifyCoverColor(img){
   return best;
 }
 function cachedCoverCat(artist, title){
+  if(!coverColorsChecked) checkCoverColorsVersion();
   const hit = coverCacheEntry(artist, title);
   return hit && typeof hit.cat === "number" && COVER_COLORS[hit.cat] ? hit.cat : null;
 }
