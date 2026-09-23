@@ -2304,15 +2304,19 @@ function starColorForPacked(packed){
   return "hsl(" + qh + "," + Math.round(qs * 100) + "%," + Math.round(base[2] * 100) + "%)";
 }
 
-/* Cache access. The hue lives on the Spotify album entry, keyed the same way the cover is. */
+/* Cache access. The hue lives on the Spotify album entry, keyed the same way the cover is —
+   including a miss that carries a Last.fm cover (its CDN sends the same CORS header). */
+function coverCacheEntry(artist, title){
+  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
+  return hit && (hit.found || hit.lastfmImage) ? hit : null;
+}
 function cachedCoverHue(artist, title){
-  const hit = spotifyCachedAlbum(artist, title);
+  const hit = coverCacheEntry(artist, title);
   return hit && hit.hue !== undefined && hit.hue !== null ? hit.hue : null;
 }
 function storeCoverHue(artist, title, packed){
-  const cache = loadSpotifyAlbumCache();
-  const entry = cache[spotifyAlbumKey(artist, title)];
-  if(!entry || !entry.found) return;
+  const entry = coverCacheEntry(artist, title);
+  if(!entry) return;
   entry.hue = packed;
   scheduleSpotifyCacheSave();
 }
@@ -3897,15 +3901,17 @@ function renderStorageUsage(){
     groups[g].count++;
   }
   const cache = loadSpotifyAlbumCache();
-  let matched = 0, missed = 0;
+  let matched = 0, missed = 0, lastfmCovers = 0;
   Object.keys(cache).forEach(k => {
     if(k === "__version") return;
     if(cache[k].found) matched++;
-    else missed++;
+    else if(cache[k].checkedAt) missed++;
+    if(!cache[k].found && cache[k].lastfmImage) lastfmCovers++;
   });
   const rows = Object.keys(groups).sort((a, b) => groups[b].size - groups[a].size).map(g => {
     let detail = "";
-    if(g === "Spotify album cache") detail = " · " + matched + " matched, " + missed + " not found";
+    if(g === "Spotify album cache") detail = " · " + matched + " matched, " + missed + " not found" +
+      (lastfmCovers ? ", " + lastfmCovers + " Last.fm covers" : "");
     if(g === "List progress") detail = " · " + groups[g].count + " list" + (groups[g].count === 1 ? "" : "s");
     return '<div class="storage-row"><span>' + g + detail + '</span><span>' + formatCharCount(groups[g].size) + '</span></div>';
   });
@@ -4100,7 +4106,7 @@ async function fetchAlbumStats(artist, album){
 
   if(data.error){
     if(data.error === 10) throw {type: "auth", detail: data.message || "Invalid API key"};
-    return {playcount: 0, trackCount: 0, notFound: true};
+    return {playcount: 0, trackCount: 0, notFound: true, image: ""};
   }
   const pc = data.album && data.album.userplaycount ? parseInt(data.album.userplaycount, 10) : 0;
   let trackCount = 0;
@@ -4109,7 +4115,9 @@ async function fetchAlbumStats(artist, album){
   }
   // Which Last.fm entry autocorrect actually landed on, so variants that resolve to the same one count once.
   const entity = ((data.album && data.album.artist) || artist) + "|||" + ((data.album && data.album.name) || album);
-  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false, entity: entity.toLowerCase()};
+  // The cover comes along for free: kept only where Spotify has none (see rememberLastfmCover).
+  const image = lastfmImageFrom(data.album && data.album.image);
+  return {playcount: isNaN(pc) ? 0 : pc, trackCount, notFound: false, entity: entity.toLowerCase(), image};
 }
 
 // Adds up your plays across the Last.fm entries one album is split over (see lastfmNameVariants).
@@ -4145,6 +4153,7 @@ async function fetchAlbumStatsAcrossVariants(artist, album, primary, spotifyInfo
     playcount: found.reduce((sum, r) => sum + r.playcount, 0),
     trackCount: Math.max.apply(null, found.map(r => r.trackCount)),
     notFound: false,
+    image: found.map(r => r.image).filter(Boolean)[0] || "",
     variantHits
   };
 }
@@ -4277,6 +4286,7 @@ async function syncAll(opts){
       const e = entryFor(r.i);
       e.notFound = r.result.notFound;
       e.syncedAt = Date.now();
+      rememberLastfmCover(r.artist, r.album, r.result.image || "");   // no-op once Spotify has matched it
       if(r.result.notFound){
         // No match on Last.fm at all — don't record a fake "0 plays".
         // Clear any stale playcount/trackCount and leave manual untouched,
@@ -4721,6 +4731,7 @@ const SPOTIFY_TYPE_RANK = {album: 0, single: 1, compilation: 2};
 const SPOTIFY_ALBUM_CACHE_VERSION = 3;
 const SPOTIFY_IMAGE_PREFIX = "https://i.scdn.co/image/";
 const SPOTIFY_ALBUM_URL_PREFIX = "https://open.spotify.com/album/";
+const LASTFM_IMAGE_PREFIX = "https://lastfm.freetls.fastly.net/i/u/174s/";   // 174px: sharp enough for a 44px square
 
 let spotifyAlbumCache = null;
 let spotifyCacheSaveTimer = null;
@@ -4771,7 +4782,8 @@ function dropSpotifyCacheMisses(){
 }
 
 // Compact form. Found: {found: 1, i: id, a: [artists], t: title, k: type (omitted for "album"),
-// n: tracks, d: releaseDate, m: image (i.scdn.co prefix dropped)}. Miss: {checkedAt, s: suggestion}.
+// n: tracks, d: releaseDate, m: image (i.scdn.co prefix dropped)}. Miss: {checkedAt, s: suggestion,
+// l: Last.fm cover, h: its hue}; checkedAt 0 is a stub holding only a Last.fm cover, Spotify not asked yet.
 // url, artist, artistLine and year are rebuilt on load. "found" and "checkedAt" keep their old
 // names so an older version of the app still reads matches as matches and retries misses on time.
 function compactSpotifySummary(s){
@@ -4790,6 +4802,11 @@ function compactSpotifyAlbumEntry(e){
   }
   const out = {checkedAt: e.checkedAt || 0};
   if(e.suggestion) out.s = compactSpotifySummary(e.suggestion);
+  // Last.fm fallback cover (see rememberLastfmCover): its CDN path with the prefix dropped, "" for none.
+  if(e.lastfmImage !== undefined){
+    out.l = e.lastfmImage.indexOf(LASTFM_IMAGE_PREFIX) === 0 ? e.lastfmImage.slice(LASTFM_IMAGE_PREFIX.length) : e.lastfmImage;
+    if(e.lastfmImage && e.hue !== undefined && e.hue !== null) out.h = e.hue;
+  }
   return out;
 }
 function expandSpotifySummary(c){
@@ -4826,6 +4843,10 @@ function expandSpotifyAlbumEntry(v){
   const entry = {checkedAt: v.checkedAt || 0, found: false};
   const suggestion = v.s ? expandSpotifySummary(v.s) : v.suggestion ? Object.assign({}, v.suggestion, {artists: spotifyCreditedArtists(v.suggestion)}) : null;
   if(suggestion) entry.suggestion = suggestion;
+  if(typeof v.l === "string"){
+    entry.lastfmImage = v.l && v.l.indexOf("://") === -1 ? LASTFM_IMAGE_PREFIX + v.l : v.l;
+    if(v.h !== undefined) entry.hue = v.h;
+  }
   return entry;
 }
 function scheduleSpotifyCacheSave(){
@@ -4970,6 +4991,13 @@ async function getSpotifyAlbumInfo(artist, title, opts){
     spotifyLookupsInFlight[key] = withSpotifyLookupSlot(() => matchSpotifyAlbum(artist, title))
       .then(pick => {
         const entry = spotifyAlbumEntry(pick);
+        // A match replaces any Last.fm cover outright; a repeat miss keeps it (a blank answer is
+        // dropped so Last.fm gets asked again too).
+        const prev = cache[key];
+        if(!entry.found && prev && !prev.found && prev.lastfmImage){
+          entry.lastfmImage = prev.lastfmImage;
+          if(prev.hue !== undefined && prev.hue !== null) entry.hue = prev.hue;
+        }
         cache[key] = entry;
         scheduleSpotifyCacheSave();
         return entry;
@@ -5045,12 +5073,67 @@ function lastfmNameVariants(artist, title, info){
 /* ---------- ALBUM COVERS + DIRECT SPOTIFY LINKS ---------- */
 // Covers come from the album lookup cache. Albums not looked up yet show their number in the
 // empty square; This Week and Reviews fill those in as you browse (Lists get them from sync).
+// Spotify's cover wins; Last.fm's fills in where Spotify has no match, isn't connected, or is
+// failing, and gives way as soon as Spotify matches.
 const COVER_HYDRATE_CHUNK = 8;
 const COVER_HYDRATE_MAX = 60;   // per render, so a long Reviews list doesn't fire hundreds of lookups at once
+const LASTFM_COVER_CONCURRENCY = 3;
+const LASTFM_PLACEHOLDER_IMAGE = "2a96cbd8b46e442fc41c2b86b821562f";   // Last.fm's grey star for "no art"
 
 function spotifyNeedsLookup(artist, title){
   const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
   return !hit || (!hit.found && Date.now() - hit.checkedAt >= SPOTIFY_MISS_RETRY_MS);
+}
+// Last.fm's image array ([{#text, size}], smallest first) → one 174px URL, or "" for none.
+function lastfmImageFrom(images){
+  const list = Array.isArray(images) ? images : [];
+  const hit = list.map(im => im && im["#text"]).filter(Boolean).pop();
+  if(!hit || hit.indexOf(LASTFM_PLACEHOLDER_IMAGE) !== -1) return "";
+  const m = /\/i\/u\/[^\/]+\/([^\/?#]+)$/.exec(hit);
+  return m ? LASTFM_IMAGE_PREFIX + m[1] : hit;
+}
+// The Last.fm cover rides on the Spotify cache entry for the same album: on a Spotify miss, or on
+// a stub (checkedAt 0) when Spotify hasn't answered yet. lastfmImage: URL, "" for none, undefined
+// for not asked. A Spotify match replaces the entry, so the Last.fm cover goes with it.
+function rememberLastfmCover(artist, title, url){
+  const cache = loadSpotifyAlbumCache();
+  const key = spotifyAlbumKey(artist, title);
+  let entry = cache[key];
+  if(entry && entry.found) return;
+  if(!url && entry && entry.lastfmImage !== undefined) return;   // a blank answer never wipes a cover
+  if(entry && entry.lastfmImage === url) return;
+  if(!entry) entry = cache[key] = {checkedAt: 0, found: false};
+  entry.lastfmImage = url || "";
+  entry.hue = null;
+  scheduleSpotifyCacheSave();
+}
+function cachedCoverUrl(artist, title){
+  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
+  if(!hit) return "";
+  return (hit.found ? hit.image : hit.lastfmImage) || "";
+}
+// Resolves to the cover URL, "" when Last.fm has none, or null when the lookup failed.
+async function fetchLastfmCover(artist, title){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo"
+    + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(artist)
+    + "&album=" + encodeURIComponent(stripEditionSuffix(title))
+    + "&autocorrect=1&format=json";
+  try{
+    const data = await (await fetch(url)).json();
+    if(data.error && data.error !== 6) return null;   // 6: no such album. Anything else: try another day
+    const image = data.album ? lastfmImageFrom(data.album.image) : "";
+    rememberLastfmCover(artist, title, image);
+    return image;
+  }catch(e){
+    return null;
+  }
+}
+function coverNeedsLookup(artist, title){
+  const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
+  if(hit && hit.found) return false;
+  if(isSpotifyConnected() && spotifyNeedsLookup(artist, title)) return true;
+  return !!settings.apiKey && !(hit && hit.lastfmImage !== undefined);
 }
 function coverImgHtml(url){
   // crossorigin is what makes the pixels readable for hue extraction. If a host ever refuses
@@ -5066,10 +5149,10 @@ function coverImgFailed(img){
   img.src = src;
 }
 function albumCoverHtml(artist, title, label){
-  const hit = spotifyCachedAlbum(artist, title);
+  const url = cachedCoverUrl(artist, title);
   return '<div class="album-cover" data-cover-key="' + escapeHtml(spotifyAlbumKey(artist, title)) + '">' +
       '<span class="album-cover-num">' + escapeHtml(label || "") + '</span>' +
-      (hit && hit.image ? coverImgHtml(hit.image) : '') +
+      (url ? coverImgHtml(url) : '') +
     '</div>';
 }
 function openSpotifyAlbum(artist, title){
@@ -5089,26 +5172,39 @@ function wireAlbumCover(row, artist, title){
 const coverHydrationTried = new Set();
 let coverHydrationRunning = false;
 let coverHydrationQueued = null;
-// Looks up albums on screen that have never been checked, then paints their covers in place.
+// Looks up albums on screen that have never been checked, then paints their covers in place:
+// Spotify first, then Last.fm for whatever Spotify didn't match (or couldn't be asked about).
 async function hydrateMissingCovers(pairs){
-  if(!isSpotifyConnected()) return;
+  if(!isSpotifyConnected() && !settings.apiKey) return;
   if(coverHydrationRunning){ coverHydrationQueued = pairs; return; }
   const todo = [];
   pairs.forEach(p => {
     const key = spotifyAlbumKey(p.artist, p.title);
-    if(todo.length >= COVER_HYDRATE_MAX || coverHydrationTried.has(key) || !spotifyNeedsLookup(p.artist, p.title)) return;
+    if(todo.length >= COVER_HYDRATE_MAX || coverHydrationTried.has(key) || !coverNeedsLookup(p.artist, p.title)) return;
     coverHydrationTried.add(key);   // once per session, even if the lookup fails
     todo.push(p);
   });
   if(todo.length === 0) return;
   coverHydrationRunning = true;
   const state = newSpotifyLookupState();
+  const fallback = [];
   try{
-    for(let i = 0; i < todo.length && !state.stop; i += COVER_HYDRATE_CHUNK){
+    // Every chunk runs even after Spotify stops: spotifyAlbumInfoSafe returns null straight away,
+    // which hands the rest to Last.fm.
+    for(let i = 0; i < todo.length; i += COVER_HYDRATE_CHUNK){
       await Promise.all(todo.slice(i, i + COVER_HYDRATE_CHUNK).map(async p => {
         const info = await spotifyAlbumInfoSafe(p.artist, p.title, state);
-        if(info && info.found && info.image) paintCover(spotifyAlbumKey(p.artist, p.title), info.image);
+        if(info && info.found){
+          if(info.image) paintCover(spotifyAlbumKey(p.artist, p.title), info.image);
+        }else fallback.push(p);
       }));
+    }
+    if(settings.apiKey){
+      await mapLimit(fallback, LASTFM_COVER_CONCURRENCY, async p => {
+        const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(p.artist, p.title)];
+        const url = hit && hit.lastfmImage !== undefined ? hit.lastfmImage : await fetchLastfmCover(p.artist, p.title);
+        if(url) paintCover(spotifyAlbumKey(p.artist, p.title), url);
+      });
     }
     saveSpotifyAlbumCache();
   }finally{
@@ -5123,7 +5219,12 @@ async function hydrateMissingCovers(pairs){
 function paintCover(key, url){
   // Patch squares already on screen rather than re-rendering, so scroll position and open modals stay put.
   document.querySelectorAll(".album-cover").forEach(el => {
-    if(el.dataset.coverKey === key && !el.querySelector("img")) el.insertAdjacentHTML("beforeend", coverImgHtml(url));
+    if(el.dataset.coverKey !== key) return;
+    const img = el.querySelector("img");
+    if(img && img.getAttribute("src") === url) return;
+    // A Last.fm cover giving way to Spotify's: a fresh <img> so its load re-reads the hue.
+    if(img) img.remove();
+    el.insertAdjacentHTML("beforeend", coverImgHtml(url));
   });
 }
 
@@ -5183,7 +5284,8 @@ async function checkListAgainstSpotify(){
 function listIssueFor(artist, title){
   if(normName(artist) === "variousartists") return {kind: "various", detail: ""};
   const hit = loadSpotifyAlbumCache()[spotifyAlbumKey(artist, title)];
-  if(!hit) return null;   // lookup failed this time — not evidence of a problem
+  // No entry, or only a Last.fm cover stub: the lookup failed this time — not evidence of a problem.
+  if(!hit || (!hit.found && !hit.checkedAt)) return null;
   if(!hit.found){
     if(!hit.suggestion) return {kind: "missing", detail: ""};
     return {kind: "spelling", detail: "No exact match — closest Spotify album",
@@ -5784,7 +5886,7 @@ function groupScrobblesByAlbum(tracks){
     if(!artist || !rawAlbum) return;
     const album = stripEditionSuffix(rawAlbum);
     const uts = t.date && t.date.uts ? parseInt(t.date.uts, 10) : 0;
-    plays.push({artist, album, uts, node: album.toLowerCase() + "|" + artist.toLowerCase()});
+    plays.push({artist, album, uts, image: lastfmImageFrom(t.image), node: album.toLowerCase() + "|" + artist.toLowerCase()});
   });
   plays.sort((a, b) => a.uts - b.uts);
 
@@ -5802,8 +5904,9 @@ function groupScrobblesByAlbum(tracks){
   plays.forEach(p => {
     const key = root(p.node);
     // Credited to the earliest play's artist for now; a merged album gets Spotify's first artist later.
-    if(!groups[key]) groups[key] = {artist: p.artist, album: p.album, count: 0, lastUts: 0, artists: [], utsList: []};
+    if(!groups[key]) groups[key] = {artist: p.artist, album: p.album, count: 0, lastUts: 0, artists: [], utsList: [], image: ""};
     const g = groups[key];
+    if(!g.image) g.image = p.image;   // Last.fm's cover, for when Spotify has none
     g.count++;
     g.utsList.push(p.uts);
     if(p.uts > g.lastUts) g.lastUts = p.uts;
@@ -6145,6 +6248,10 @@ async function generateRecentListens(){
   const nearMisses = withEstimates
     .filter(g => !passes(g) && g.ratio >= 0.4)
     .sort((a, b) => b.ratio - a.ratio);
+  // The scrobbles' own Last.fm cover goes to the album cache (only for albums shown with a cover),
+  // not into the saved results.
+  fullyListened.forEach(al => { if(al.image) rememberLastfmCover(al.artist, al.album, al.image); });
+  fullyListened.concat(nearMisses).forEach(al => { delete al.image; });
 
   recentResults = {fromUnix, toUnix, albums: fullyListened, nearMisses: nearMisses};
   saveRecentResultsToStorage();
