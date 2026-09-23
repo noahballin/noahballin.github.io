@@ -2321,7 +2321,7 @@ const COVER_NEUTRALS = [CC.BLACK, CC.WHITE, CC.GREY];
 
 // Bump whenever the rules below change what a cover would be called. Every stored reading is
 // then dropped once, and covers are read again under the new rules as they're next seen.
-const COVER_COLORS_VERSION = 3;
+const COVER_COLORS_VERSION = 5;
 let coverColorsChecked = false;
 function checkCoverColorsVersion(){
   coverColorsChecked = true;
@@ -2374,18 +2374,28 @@ function coverSamplePixels(img){
   }
 }
 
-// Chroma (max - min) rather than HSL saturation, since HSL calls near-black pixels saturated.
+/* Anything with a real tint goes to its hue: slate is blue, navy is blue, a green-black blend
+   is green. Only pixels with almost no colour are neutral. Dark pixels are judged on how
+   colourful they are for their brightness (chroma / max), and must clear a higher bar the
+   darker they get, so a black that's only faintly blue stays black. Very light pixels count
+   as a pastel with only a faint tint, except warm ones, so off-white paper stays white.
+   Tuned against Punisher (navy sky, black ridge, red ground), Hypochondriac (olive and gold
+   over black) and Glow On (pale pink). */
 function coverPixelColor(r, g, b){
   const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
   const c = mx - mn, l = (mx + mn) / 2;
-  if(l < 0.12 || (c < 0.1 && l < 0.2)) return CC.BLACK;
-  if(c < 0.1) return l > 0.8 ? CC.WHITE : CC.GREY;
-  if(l > 0.9) return CC.WHITE;
+  if(mx < 0.07) return CC.BLACK;
   const h = rgbToHsl(r, g, b)[0];
-  if(c < 0.16){   // muted: warm reads as tan or brown, anything else as grey
-    if(h >= 12 && h < 65) return l < 0.4 ? CC.BROWN : CC.TAN;
-    return l > 0.8 ? CC.WHITE : CC.GREY;
-  }
+  const neutral = mx < 0.25 ? c / mx < 0.3 + (0.25 - mx) * 2
+    : l > 0.8 ? c < (h >= 25 && h < 65 ? 0.07 : 0.035)
+    : c < 0.07;
+  if(neutral) return l > 0.8 ? CC.WHITE : l < 0.2 ? CC.BLACK : CC.GREY;
+  if(l > 0.8 && (h >= 330 || h < 25)) return CC.PINK;   // blush and peach tints read pink
+  // Dark yellow: the golden end stays yellow, the olive end reads green.
+  if(h >= 45 && h < 68 && l < 0.3) return h < 52 ? CC.YELLOW : CC.GREEN;
+  if(c < 0.16 && h >= 12 && h < 65) return l < 0.4 ? CC.BROWN : CC.TAN;   // muted warm
+  if(h >= 160 && h < 193) return CC.TEAL;
+  if(h >= 193 && h < 255) return CC.BLUE;   // sky and navy sit just past teal
   if(h >= 345 || h < 12) return l > 0.68 ? CC.PINK : l < 0.33 ? CC.MAROON : CC.RED;
   if(h < 45){
     if(l < 0.36) return CC.BROWN;
@@ -2394,13 +2404,10 @@ function coverPixelColor(r, g, b){
     return CC.ORANGE;
   }
   if(h < 68){
-    if(l < 0.3) return h < 55 ? CC.BROWN : CC.GREEN;
     if(c < 0.3 && l > 0.55) return CC.TAN;
     return CC.YELLOW;
   }
   if(h < 160) return CC.GREEN;
-  if(h < 200) return CC.TEAL;
-  if(h < 255) return CC.BLUE;
   if(h < 290) return CC.PURPLE;
   if(l < 0.35) return h >= 325 ? CC.MAROON : CC.PURPLE;   // deep wine reads as maroon, not purple
   return CC.PINK;
@@ -3928,7 +3935,7 @@ function colorRowsHtml(rows){
     rows.map(x => colorRowHtml(x.idxs, x.b, most, "setStatsColors('" + x.key + "')")).join("") + '</div>';
 }
 
-const STATS_EXAMPLES = 12;
+const STATS_EXAMPLES = 6;
 function fillStatsColors(){
   const host = document.getElementById("statsColors");
   if(!host) return;
