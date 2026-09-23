@@ -74,16 +74,18 @@
     -webkit-text-fill-color:transparent; color:transparent;
   }
 
-  /* Header starfield: stands in for the "Listening Log" label, filling the eyebrow up to the
-     save button. Stars never move — each one sits dark most of its cycle and only briefly
-     fades up, so at any moment just a few are lit. Positions, colours and timings are set
-     per star by buildHeaderStars(). */
-  .header-stars{flex:1; position:relative; align-self:stretch; min-height:18px; overflow:hidden;}
+  /* Header starfield: a layer behind the whole header. Stars never move — each one sits dark
+     most of its cycle and only briefly fades up, so at any moment just a few are lit.
+     layoutHeaderStars() places them only in empty space: clear of every line of text, icon,
+     control and filled shape, and wholly inside the header so none is clipped. z-index -1
+     inside the header's own stacking context keeps them above its background, below its content. */
+  .eyebrow-spacer{flex:1;}
+  .header-starfield{position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:-1;}
   /* The same 5-point star as the album listen stars (inner radius 0.382 of outer). */
   .header-star{
-    position:absolute; width:var(--size, 10px); height:var(--size, 10px);
-    transform:translate(-50%, -50%) rotate(var(--rot, 0deg));
-    background:currentColor; opacity:0;
+    position:absolute; width:var(--size, 14px); height:var(--size, 14px);
+    transform:rotate(var(--rot, 0deg));
+    background:#CDCDCD; opacity:0;
     clip-path:polygon(50% 0, 61.2% 34.5%, 97.6% 34.5%, 68.2% 55.9%, 79.4% 90.5%, 50% 69.1%, 20.6% 90.5%, 31.8% 55.9%, 2.4% 34.5%, 38.8% 34.5%);
     animation:header-twinkle var(--dur, 9s) ease-in-out var(--delay, 0s) infinite;
   }
@@ -616,7 +618,7 @@
 <header>
   <div class="eyebrow">
     <button class="back-btn hidden" id="backBtn" onclick="goDashboard()">&larr;</button>
-    <span class="header-stars" id="headerStars" role="img" aria-label="Listening Log"></span>
+    <span class="eyebrow-spacer" role="img" aria-label="Listening Log"></span>
     <button class="gear" onclick="openBackupModal()" aria-label="Backup and restore"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg></button>
     <button class="gear" onclick="openSettings()" aria-label="Settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051 a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button>
   </div>
@@ -2786,7 +2788,8 @@ function applyTheme(name){
       st.color = starColorForPacked(st.row.getAttribute("data-star-hue"));
       starDraw(st);
     }
-    if(typeof recolorHeaderStars === "function") recolorHeaderStars();
+    // A theme swap changes fonts, and so where the header's text sits.
+    if(typeof scheduleHeaderStars === "function") scheduleHeaderStars();
   }
 }
 function loadThemeName(){
@@ -2798,54 +2801,130 @@ function setTheme(name){
 }
 applyTheme(loadThemeName());
 
-/* Scatters fixed listen stars across the header strip. Each one borrows the cover hue of an
-   album you've fully listened to (one pick per listen, so heavy rotation shows up more), run
-   through the same starColorForPacked() as the row stars. Albums whose cover hue hasn't been
-   read yet, or a fresh install with no listens, fall back to the theme's plain star colour.
-   Each star is lit for ~30% of a long, randomly offset cycle, so only a handful show at once. */
-const HEADER_STAR_COUNT = 30;
-function listenedCoverHues(){
-  const hues = [];
-  const totals = tallyIndex();
-  Object.keys(totals).forEach(k => {
-    const parts = k.split("|||");
-    if(parts.length !== 2) return;
-    const hue = cachedCoverHue(parts[0], parts[1]);
-    if(hue === null || hue === HUE_GREY) return;
-    for(let n = Math.min(totals[k], STAR_MAX); n > 0; n--) hues.push(hue);
+/* ---------- HEADER STARS ----------
+   Fixed stars scattered through the empty parts of the header, sized like the album listen
+   stars. Every visible text line, icon, control and filled/bordered box in the header is an
+   obstacle; a star is only placed where its whole box clears all of them by HSTAR_GAP, clears
+   the other stars, and sits fully inside the header.
+
+   The header changes shape constantly (section switches, filter panel, sync progress text), so
+   any change re-runs the layout. Stars that still fit are KEPT where they are — only ones that
+   now collide are dropped and the gaps refilled — so the field doesn't reshuffle on every
+   progress tick. `var`, not `let`: applyTheme() can call in here before this block has run. */
+var HSTAR_GAP = 4;            // clearance from any obstacle, px
+var HSTAR_EDGE = 3;           // clearance from the header's own edges, px
+var HSTAR_AREA_PER = 2600;    // one star per this many px² of header, before collisions
+var HSTAR_TRIES = 40;         // placement attempts per star wanted
+var headerStarList = [];      // {x, y, size, el}
+var headerStarField = null;
+var headerStarRAF = 0;
+
+function headerStarObstacles(header, origin){
+  const rects = [];
+  const add = r => {
+    if(r.width <= 0 || r.height <= 0) return;
+    rects.push({l: r.left - origin.left - HSTAR_GAP, t: r.top - origin.top - HSTAR_GAP,
+                r: r.right - origin.left + HSTAR_GAP, b: r.bottom - origin.top + HSTAR_GAP});
+  };
+  const SOLID = {BUTTON: 1, INPUT: 1, SELECT: 1, TEXTAREA: 1, IMG: 1, svg: 1, CANVAS: 1, VIDEO: 1};
+  header.querySelectorAll("*").forEach(el => {
+    if(el === headerStarField || headerStarField.contains(el)) return;
+    if(el.getClientRects().length === 0) return;   // display:none, or inside something hidden
+    if(SOLID[el.tagName]){ add(el.getBoundingClientRect()); return; }
+    const cs = getComputedStyle(el);
+    if(cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) return;
+    const bg = cs.backgroundColor;
+    const hasFill = (bg && bg !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(bg)) ||
+      cs.backgroundImage !== "none";
+    const hasBorder = ["Top", "Right", "Bottom", "Left"].some(s => parseFloat(cs["border" + s + "Width"]) > 0);
+    if(hasFill || hasBorder || cs.boxShadow !== "none") add(el.getBoundingClientRect());
   });
-  return hues;
-}
-function recolorHeaderStars(){
-  const field = document.getElementById("headerStars");
-  if(!field) return;
-  field.querySelectorAll(".header-star").forEach(s => {
-    s.style.color = starColorForPacked(s.dataset.hue);
-  });
-}
-function buildHeaderStars(){
-  const field = document.getElementById("headerStars");
-  if(!field) return;
-  const hues = listenedCoverHues();
-  let html = "";
-  for(let i = 0; i < HEADER_STAR_COUNT; i++){
-    const dur = 6 + Math.random() * 10;
-    const hue = hues.length ? hues[Math.floor(Math.random() * hues.length)] : "";
-    html += '<span class="header-star" data-hue="' + hue + '" style="' +
-      'left:' + (1 + Math.random() * 98).toFixed(1) + '%;' +
-      'top:' + (15 + Math.random() * 70).toFixed(1) + '%;' +
-      '--size:' + (STAR_MIN_R + Math.random() * (STAR_MAX_R - STAR_MIN_R)).toFixed(1) + 'px;' +
-      '--rot:' + Math.round(Math.random() * 72) + 'deg;' +
-      '--dur:' + dur.toFixed(2) + 's;' +
-      '--delay:' + (-Math.random() * dur).toFixed(2) + 's;' +
-      '--peak:' + (0.6 + Math.random() * 0.4).toFixed(2) + ';"></span>';
+  // Text is measured line by line, so a short label doesn't block its whole row.
+  const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for(let n = walker.nextNode(); n; n = walker.nextNode()){
+    if(!n.nodeValue.trim() || headerStarField.contains(n)) continue;
+    range.selectNodeContents(n);
+    const lines = range.getClientRects();
+    for(let i = 0; i < lines.length; i++) add(lines[i]);
   }
-  field.innerHTML = html;
-  recolorHeaderStars();
+  return rects;
 }
-// Deferred to DOMContentLoaded: the Spotify cache that holds cover hues is declared further
-// down this script, so reading it here at load time would hit it before it exists.
-document.addEventListener("DOMContentLoaded", buildHeaderStars);
+
+function headerStarFits(x, y, size, w, h, obstacles, others){
+  if(x < HSTAR_EDGE || y < HSTAR_EDGE || x + size > w - HSTAR_EDGE || y + size > h - HSTAR_EDGE) return false;
+  for(let i = 0; i < obstacles.length; i++){
+    const o = obstacles[i];
+    if(x < o.r && x + size > o.l && y < o.b && y + size > o.t) return false;
+  }
+  for(let i = 0; i < others.length; i++){
+    const s = others[i];
+    // Centre distance vs. the two radii, since the stars themselves are round-ish.
+    const dx = (x + size / 2) - (s.x + s.size / 2), dy = (y + size / 2) - (s.y + s.size / 2);
+    const min = (size + s.size) / 2 + HSTAR_GAP;
+    if(dx * dx + dy * dy < min * min) return false;
+  }
+  return true;
+}
+
+function layoutHeaderStars(){
+  headerStarRAF = 0;
+  const header = document.querySelector("header");
+  if(!header || !headerStarField) return;
+  const w = headerStarField.clientWidth, h = headerStarField.clientHeight;
+  const origin = headerStarField.getBoundingClientRect();
+  const obstacles = headerStarObstacles(header, origin);
+  const target = Math.max(4, Math.round(w * h / HSTAR_AREA_PER));
+
+  // Keep every star that still fits; drop the rest.
+  const kept = [];
+  headerStarList.forEach(s => {
+    if(kept.length < target && headerStarFits(s.x, s.y, s.size, w, h, obstacles, kept)) kept.push(s);
+    else s.el.remove();
+  });
+  headerStarList = kept;
+
+  for(let tries = (target - kept.length) * HSTAR_TRIES; tries > 0 && headerStarList.length < target; tries--){
+    const size = 2 * (STAR_MIN_R + Math.random() * (STAR_MAX_R - STAR_MIN_R));   // album star diameters
+    const x = Math.random() * (w - size), y = Math.random() * (h - size);
+    if(!headerStarFits(x, y, size, w, h, obstacles, headerStarList)) continue;
+    const el = document.createElement("span");
+    el.className = "header-star";
+    const dur = 6 + Math.random() * 10;
+    el.style.cssText =
+      "left:" + x.toFixed(1) + "px;top:" + y.toFixed(1) + "px;" +
+      "--size:" + size.toFixed(1) + "px;" +
+      "--rot:" + Math.round(Math.random() * 72) + "deg;" +
+      "--dur:" + dur.toFixed(2) + "s;" +
+      "--delay:" + (-Math.random() * dur).toFixed(2) + "s;" +
+      "--peak:" + (0.55 + Math.random() * 0.45).toFixed(2) + ";";
+    headerStarField.appendChild(el);
+    headerStarList.push({x: x, y: y, size: size, el: el});
+  }
+}
+
+function scheduleHeaderStars(){
+  if(!headerStarField || headerStarRAF) return;
+  headerStarRAF = requestAnimationFrame(layoutHeaderStars);
+}
+
+(function initHeaderStars(){
+  const header = document.querySelector("header");
+  if(!header) return;
+  headerStarField = document.createElement("div");
+  headerStarField.className = "header-starfield";
+  headerStarField.setAttribute("aria-hidden", "true");
+  header.insertBefore(headerStarField, header.firstChild);
+  if(window.ResizeObserver) new ResizeObserver(scheduleHeaderStars).observe(header);
+  // Our own star inserts land in the header subtree too; ignore those or this loops forever.
+  new MutationObserver(muts => {
+    if(muts.some(m => !headerStarField.contains(m.target) && m.target !== headerStarField)) scheduleHeaderStars();
+  }).observe(header, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "style", "hidden"]});
+  window.addEventListener("resize", scheduleHeaderStars);
+  // Web fonts change text widths without resizing the header.
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleHeaderStars);
+  scheduleHeaderStars();
+})();
 
 function loadSettings(){
   try{
