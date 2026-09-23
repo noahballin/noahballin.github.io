@@ -80,7 +80,11 @@
      control and filled shape, and wholly inside the header so none is clipped. z-index -1
      inside the header's own stacking context keeps them above its background, below its content. */
   .eyebrow-spacer{flex:1;}
-  .header-starfield{position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:-1;}
+  /* Starts below the safe-area inset, so no star reaches up under the iPhone status bar / notch. */
+  .header-starfield{
+    position:absolute; left:0; right:0; bottom:0; top:env(safe-area-inset-top, 0px);
+    overflow:hidden; pointer-events:none; z-index:-1;
+  }
   /* The same 5-point star as the album listen stars (inner radius 0.382 of outer). */
   .header-star{
     position:absolute; width:var(--size, 14px); height:var(--size, 14px);
