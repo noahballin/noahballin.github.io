@@ -342,10 +342,8 @@
     color:var(--ink-dim); font-family:var(--font-body); cursor:pointer;
     display:flex; flex-direction:column; align-items:center; gap:3px;
   }
-  .week-btn .week-label{font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em;}
-  .week-btn .week-range{font-size:9.5px; color:var(--ink-dim);}
+  .week-btn .week-label{font-size:13px; text-transform:uppercase; letter-spacing:0.04em;}
   .week-btn.active{background:var(--gold); border-color:var(--gold); color:#17140F;}
-  .week-btn.active .week-range{color:#17140F; opacity:0.75;}
 
   .count-picker{display:flex; gap:6px; margin-top:12px;}
   .count-btn{
@@ -726,10 +724,10 @@
     <h1>New Releases</h1>
     <div class="week-picker">
       <button class="week-btn" id="discoverWin7" onclick="setDiscoverWindow(7)">
-        <span class="week-label">This week</span><span class="week-range">last 7 days</span>
+        <span class="week-label">This week</span>
       </button>
       <button class="week-btn" id="discoverWin28" onclick="setDiscoverWindow(28)">
-        <span class="week-label">4 weeks</span><span class="week-range">last 28 days</span>
+        <span class="week-label">4 weeks</span>
       </button>
     </div>
     <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscover()">Refresh</button>
@@ -2347,7 +2345,7 @@ const COVER_COLOR_ORDER = [CC.RED, CC.ORANGE, CC.YELLOW, CC.GREEN, CC.TEAL, CC.B
 
 // Bump whenever the rules below change what a cover would be called. Every stored reading is
 // then dropped once, and covers are read again under the new rules as they're next seen.
-const COVER_COLORS_VERSION = 8;
+const COVER_COLORS_VERSION = 9;
 let coverColorsChecked = false;
 function checkCoverColorsVersion(){
   coverColorsChecked = true;
@@ -2407,14 +2405,17 @@ function coverSamplePixels(img){
    as a pastel with only a faint tint, except warm ones, so off-white paper stays white.
    Tuned against Punisher (navy sky, black ridge, red ground), Hypochondriac (olive and gold
    over black) and Glow On (pale pink). */
+function coverWarmHue(h){ return h >= 345 || h < 45; }
 function coverPixelColor(r, g, b){
   const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
   const c = mx - mn, l = (mx + mn) / 2;
   if(mx < 0.07) return CC.BLACK;
   const h = rgbToHsl(r, g, b)[0];
+  // A faint warm cast is how old and toned black-and-white photos look (Rockin' the Suburbs),
+  // so reds, oranges and browns need a stronger tint than cool colours before they count.
   const neutral = mx < 0.25 ? c / mx < 0.3 + (0.25 - mx) * 1.2
     : l > 0.8 ? c < (h >= 25 && h < 65 ? 0.07 : 0.035)
-    : c / mx < 0.12;
+    : c / mx < (coverWarmHue(h) ? 0.26 : 0.12);
   if(neutral) return l > 0.8 ? CC.WHITE : l < 0.2 ? CC.BLACK : CC.GREY;
   if(l > 0.8 && (h >= 330 || h < 25)) return CC.PINK;   // blush and peach tints read pink
   // Dark yellow: the golden end stays yellow, the olive end reads green.
@@ -2500,9 +2501,13 @@ function classifyCoverColors(img){
     const k = coverPixelColor(r, g, b);
     total += w;
     // Not too dark to have a colour, not bright enough to be white, and with some tint to it.
+    // Warm casts stay neutral: sepia is greyscale, and borrowing would turn it brown or red.
     if((k === CC.GREY || k === CC.BLACK) && mx >= 0.16 && l <= 0.8 && c / mx >= 0.08){
-      faint.push([rgbToHsl(r, g, b)[0], w, k]);
-      continue;
+      const h = rgbToHsl(r, g, b)[0];
+      if(!coverWarmHue(h)){
+        faint.push([h, w, k]);
+        continue;
+      }
     }
     weight[k] += w;
   }
@@ -2523,10 +2528,14 @@ function classifyCoverColors(img){
   const kept = ranked.filter(c => c.share >= COVER_COLOR_MIN_SHARE).slice(0, COVER_COLOR_MAX);
   // A spare slot goes to a real colour that's clearly there even if it's small — the purple face
   // on The Front Bottoms — but never to black, white or grey.
-  ranked.forEach(c => {
-    if(kept.length < COVER_COLOR_MAX && kept.indexOf(c) === -1 && c.share >= COVER_ACCENT_SHARE &&
-       COVER_NEUTRALS.indexOf(c.i) === -1) kept.push(c);
-  });
+  const accents = ranked.filter(c => kept.indexOf(c) === -1 && c.share >= COVER_ACCENT_SHARE &&
+    COVER_NEUTRALS.indexOf(c.i) === -1);
+  while(kept.length < COVER_COLOR_MAX && accents.length) kept.push(accents.shift());
+  // And a small grey or black in the last slot gives way to one: a real colour says more.
+  const last = kept[COVER_COLOR_MAX - 1];
+  if(last && COVER_NEUTRALS.indexOf(last.i) !== -1 && last.share < 0.2 && accents.length){
+    kept[COVER_COLOR_MAX - 1] = accents.shift();
+  }
   return packCoverColors(kept.length ? kept : ranked.slice(0, 1));
 }
 
@@ -6217,15 +6226,19 @@ function searchFromListCheck(idx){
 
 /* ---------- DISCOVER (new releases via Spotify, ranked with Last.fm, personalised) ---------- */
 // Spotify's February 2026 API changes removed /browse/new-releases, related artists and every
-// popularity field, so: candidates come from album search (tag:new = last two weeks, plus a
-// year-filtered search for the 4-week window), "big" is ranked by Last.fm listeners, and
-// personal picks come from top/followed artists, your reviews, and Last.fm similar artists.
+// popularity field, so: candidates come from album search (tag:new = last two weeks). tag:new
+// can't see weeks three and four, so the 4-week window adds what earlier refreshes saw, a
+// year-filtered search, and the recent albums of artists charting on Last.fm (globally and
+// for you). "Big" is ranked by Last.fm listeners.
 const DISCOVER_STORE_KEY = "ll_discover_spotify_v1";
 const DISCOVER_WINDOW_KEY = "ll_discover_window";
 const DISCOVER_WINDOWS = [7, 28];
 const DISCOVER_NEW_TAG_PAGES = 20;    // 10 results per page is the search maximum now
-const DISCOVER_YEAR_PAGES = 15;       // 4-week window only: tag:new stops at two weeks
-const DISCOVER_ENRICH_MAX = 90;       // Last.fm listener/tag lookups per refresh — every row shown gets one
+const DISCOVER_YEAR_PAGES = 10;       // 4-week window only: tag:new stops at two weeks
+const DISCOVER_CHART_ARTISTS = 35;    // 4-week window only: Last.fm's global chart, one search each
+const DISCOVER_USER_ARTISTS = 15;     // ...plus your own most-played artists this month
+const DISCOVER_SEEN_KEY = "ll_discover_seen_v1";   // tag:new finds from earlier refreshes
+const DISCOVER_ENRICH_MAX = 120;      // Last.fm listener/tag lookups per refresh — every row shown gets one
 const DISCOVER_STORE_MAX = 80;        // stored per window (the 7-day view can be cut from 28-day data)
 const DISCOVER_SHOW = 40;
 const DISCOVER_MIN_LISTENERS = 100;   // below this nobody is listening yet — not worth a row
@@ -6375,20 +6388,64 @@ async function searchAlbums(q, pages, onPage){
   return out;
 }
 
+/* --- what earlier refreshes saw: tag:new forgets an album after two weeks, this doesn't --- */
+function loadDiscoverSeen(){
+  try{
+    const s = JSON.parse(localStorage.getItem(DISCOVER_SEEN_KEY));
+    return Array.isArray(s) ? s.filter(al => al && al.id && al.releaseDate) : [];
+  }catch(e){ return []; }
+}
+function saveDiscoverSeen(albums){
+  const cutoff = discoverCutoff(Math.max.apply(null, DISCOVER_WINDOWS));
+  const byId = new Map();
+  loadDiscoverSeen().concat(albums).forEach(al => { if(al.releaseDate >= cutoff) byId.set(al.id, al); });
+  try{ localStorage.setItem(DISCOVER_SEEN_KEY, JSON.stringify(Array.from(byId.values()))); }
+  catch(e){ /* a cache: losing it only narrows the next 4-week refresh */ }
+}
+
+/* --- artists people are playing right now; a big album from three weeks ago keeps them charting --- */
+async function fetchLastfmArtistNames(method, extra, limit){
+  const url = "https://ws.audioscrobbler.com/2.0/?method=" + method + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + extra + "&limit=" + limit + "&format=json";
+  try{
+    const data = await (await fetch(url)).json();
+    const list = data && (data.artists || data.topartists);
+    const arr = list && list.artist ? (Array.isArray(list.artist) ? list.artist : [list.artist]) : [];
+    return arr.map(a => a && a.name).filter(Boolean);
+  }catch(e){ return []; }
+}
+async function fetchChartArtists(){
+  if(!settings.apiKey) return [];
+  const lists = await Promise.all([
+    fetchLastfmArtistNames("chart.gettopartists", "", DISCOVER_CHART_ARTISTS),
+    settings.username
+      ? fetchLastfmArtistNames("user.gettopartists", "&user=" + encodeURIComponent(settings.username) + "&period=1month", DISCOVER_USER_ARTISTS)
+      : []
+  ]);
+  const seen = new Set();
+  return lists[1].concat(lists[0]).filter(name => {
+    const k = normName(name);
+    if(!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 async function fetchNewReleasePool(days, note){
   const cutoff = discoverCutoff(days);
   const today = localDateStr(new Date());
   const pool = new Map();
-  const addAll = rawItems => {
-    rawItems.forEach((raw, idx) => {
-      const al = normalizeSpotifyAlbum(raw);
-      if(!al || !isDiscoverWorthy(al) || !inDiscoverWindow(al, cutoff, today)) return;
-      const key = discoverKey(al);
-      const existing = pool.get(key);
-      if(existing) existing.searchRank = Math.min(existing.searchRank, idx + 1);
-      else{ al.searchRank = idx + 1; pool.set(key, al); }
-    });
+  const add = (al, rank) => {
+    if(!al || !isDiscoverWorthy(al) || !inDiscoverWindow(al, cutoff, today)) return;
+    const key = discoverKey(al);
+    const existing = pool.get(key);
+    if(existing){
+      existing.searchRank = Math.min(existing.searchRank, rank);
+      existing.charting = existing.charting || !!al.charting;
+    }
+    else pool.set(key, Object.assign({}, al, {searchRank: rank}));
   };
+  const addAll = rawItems => rawItems.forEach((raw, idx) => add(normalizeSpotifyAlbum(raw), idx + 1));
 
   const progress = (p, n) => { note.textContent = "Scanning new releases… " + p + "/" + n; };
   let tagged = [];
@@ -6400,11 +6457,31 @@ async function fetchNewReleasePool(days, note){
   // Fall back to pairing the tag with a year filter if a bare tag query is rejected or empty.
   if(tagged.length === 0) tagged = await searchAlbums("tag:new " + yearFilterFor(cutoff), DISCOVER_NEW_TAG_PAGES, progress);
   addAll(tagged);
+  saveDiscoverSeen(tagged.map((raw, idx) => {
+    const al = normalizeSpotifyAlbum(raw);
+    return al && isDiscoverWorthy(al) ? Object.assign(al, {searchRank: idx + 1}) : null;
+  }).filter(Boolean));
 
   if(days > 14){
+    loadDiscoverSeen().forEach(al => add(al, al.searchRank || DISCOVER_NEW_TAG_PAGES * 10));
     addAll(await searchAlbums(yearFilterFor(cutoff), DISCOVER_YEAR_PAGES, (p, n) => {
       note.textContent = "Scanning the last four weeks… " + p + "/" + n;
     }));
+    // A bonus source: a rate limit or a miss here shouldn't cost the whole refresh.
+    const artists = await fetchChartArtists();
+    let n = 0;
+    try{
+      await mapLimit(artists, 2, async name => {
+        const q = 'artist:"' + name.replace(/"/g, "") + '" ' + yearFilterFor(cutoff);
+        const data = await spotifyGet("/search", {q: q, type: "album", limit: 10});
+        // Only that artist's own records: the filter is fuzzy and drags in namesakes.
+        ((data && data.albums && data.albums.items) || []).forEach(raw => {
+          const al = normalizeSpotifyAlbum(raw);
+          if(al && al.artistNames.some(a => normName(a) === normName(name))) add(Object.assign(al, {charting: true}), 1);
+        });
+        note.textContent = "Checking charting artists… " + (++n) + "/" + artists.length;
+      });
+    }catch(err){ /* keep what the other sources found */ }
   }
   return Array.from(pool.values());
 }
@@ -6465,7 +6542,10 @@ async function generateDiscover(){
     if(settings.apiKey){
       // Every row needs listeners (to rank and to clear the floor) and tags (the genre label),
       // so enrich in Spotify's search order and keep what clears the bar.
-      const toEnrich = pool.slice().sort((a, b) => a.searchRank - b.searchRank).slice(0, DISCOVER_ENRICH_MAX);
+      // Charting artists' albums go first: they're the likeliest to earn a row.
+      const toEnrich = pool.slice()
+        .sort((a, b) => ((b.charting ? 1 : 0) - (a.charting ? 1 : 0)) || (a.searchRank - b.searchRank))
+        .slice(0, DISCOVER_ENRICH_MAX);
       let n = 0;
       await mapLimit(toEnrich, 3, async al => {
         const buzz = await fetchLastfmBuzz(al.artist, al.title);
