@@ -6219,6 +6219,8 @@ const DISCOVER_POPULARITY_BATCH = 1000;   // the popularity endpoint turns down 
 const DISCOVER_ENRICH_MAX = 500;          // Last.fm lookups per refresh: ~35 s at 4 at a time
 const DISCOVER_LASTFM_CONCURRENCY = 4;
 const DISCOVER_SHOW = 40;
+const DISCOVER_SPOTIFY_MAX = 70;      // Spotify checks per refresh, enough to replace the singles and misses
+const DISCOVER_EP_MIN_TRACKS = 5;     // Spotify files EPs as singles; five tracks or more is an EP
 const DISCOVER_MIN_LISTENERS = 100;   // below this nobody is listening yet — not worth a row
 // Reissues, live sets, soundtracks and remix albums ride on an old artist's popularity, not a new record's.
 const DISCOVER_SKIP_TITLE = /\b(live|remaster(ed)?|anniversary|deluxe|expanded|remix(es)?|soundtrack|o\.?s\.?t|recordings|demos?|sessions|edition|instrumentals?|karaoke|sped[\s-]?up|slowed|greatest hits|best of|collection|anthology|reissue)\b|\d{4}[‐-]\d{2}[‐-]\d{2}/i;
@@ -6413,10 +6415,49 @@ function discoverMomentum(al){
   return (al.listeners || 0) / Math.sqrt(daysSinceRelease(al.releaseDate) + 1);
 }
 
+/* --- Spotify: the direct link, and the final word on album vs single --- */
+// MusicBrainz and Last.fm both mix up an album with its title-track single, but Spotify's type
+// and track count are reliable. Checked in rank order until the list is full; the matches go
+// only into this list, not the shared album cache.
+async function checkDiscoverOnSpotify(ranked, note, warnings){
+  let next = 0, kept = 0, done = 0, stop = null;
+  const counts = {single: 0, missing: 0};
+  while(kept < DISCOVER_SHOW && next < Math.min(ranked.length, DISCOVER_SPOTIFY_MAX) && !stop){
+    const chunk = ranked.slice(next, Math.min(next + DISCOVER_SHOW - kept, DISCOVER_SPOTIFY_MAX));
+    next += chunk.length;
+    await mapLimit(chunk, SPOTIFY_LOOKUP_CONCURRENCY, async al => {
+      if(stop) return;
+      let pick;
+      try{ pick = await withSpotifyLookupSlot(() => matchSpotifyAlbum(al.artist, al.title)); }
+      catch(err){
+        if(err.type === "reauth" || err.type === "rate") stop = spotifyErrorText(err);
+        return;   // a one-off failure leaves this album unchecked
+      }
+      note.textContent = "Finding albums on Spotify… " + (++done);
+      const sp = pick && pick.exact ? pick.album : null;
+      if(!sp){ al.spotify = "missing"; counts.missing++; return; }
+      const tracks = sp.total_tracks || 0;
+      if(sp.album_type !== "album" && !(sp.album_type === "single" && tracks >= DISCOVER_EP_MIN_TRACKS)){
+        al.spotify = "single"; counts.single++; return;
+      }
+      al.spotify = "ok";
+      al.kind = sp.album_type === "album" ? "album" : "EP";
+      al.url = (sp.external_urls && sp.external_urls.spotify) || "";
+      al.image = spotifyThumbUrl(sp.images) || al.image;
+    });
+    kept = ranked.filter(al => al.spotify === "ok").length;
+  }
+  if(counts.single) warnings.push(counts.single + " single" + (counts.single === 1 ? "" : "s") + " left out");
+  if(counts.missing) warnings.push(counts.missing + " not on Spotify left out");
+  // Past a rate limit, the rest go in unchecked: tapping one searches Spotify instead.
+  if(stop) warnings.push("Spotify stopped (" + stop + "), so some rows may be singles");
+  return ranked.filter(al => al.spotify === "ok" || (stop && !al.spotify)).slice(0, DISCOVER_SHOW);
+}
+
 /* --- shape for storage --- */
 function toDiscoverItem(al){
   return {
-    artist: al.artist, title: al.title, releaseDate: al.releaseDate, kind: al.kind,
+    artist: al.artist, title: al.title, releaseDate: al.releaseDate, kind: al.kind, url: al.url || "",
     image: al.image || al.caaImage || "", listeners: al.listeners || 0, tags: al.tags || []
   };
 }
@@ -6446,16 +6487,24 @@ async function generateDiscover(){
       note.textContent = "Checking listener counts on Last.fm… " + (++n) + "/" + toEnrich.length;
     });
     // An album Last.fm can't match reads as 0 listeners, so it goes too — we can't vouch for it.
-    const albums = toEnrich.filter(al => al.listeners >= DISCOVER_MIN_LISTENERS)
-      .sort((a, b) => discoverMomentum(b) - discoverMomentum(a))
-      .slice(0, DISCOVER_SHOW);
+    const ranked = toEnrich.filter(al => al.listeners >= DISCOVER_MIN_LISTENERS)
+      .sort((a, b) => discoverMomentum(b) - discoverMomentum(a));
+
+    const warnings = [];
+    let albums;
+    if(isSpotifyConnected()) albums = await checkDiscoverOnSpotify(ranked, note, warnings);
+    else{
+      albums = ranked.slice(0, DISCOVER_SHOW);
+      warnings.push("connect Spotify in Settings to open albums directly and leave out singles");
+    }
 
     note.textContent = "Fetching genres…";
     await mapLimit(albums, DISCOVER_LASTFM_CONCURRENCY, async al => { al.tags = await fetchLastfmTags(al); });
 
     discoverResults = {version: 3, generatedAt: Date.now(), albums: albums.map(toDiscoverItem)};
     saveDiscoverResults();
-    note.textContent = albums.length + " new albums, from " + pool.length + " released in the last two weeks";
+    note.textContent = [albums.length + " new albums, from " + pool.length + " released in the last two weeks"]
+      .concat(warnings).join(" · ");
   }catch(err){
     note.textContent = "Couldn't load new releases: " + (err && err.message ? err.message : "something went wrong");
   }finally{
@@ -6546,7 +6595,7 @@ function renderDiscoverResultsArea(){
     const row = document.createElement("div");
     row.className = "discover-card album-link";
     row.innerHTML = discoverCardHtml(al);
-    row.onclick = () => openSpotifySearch(al.artist, al.title);
+    row.onclick = () => al.url ? openSpotifyUrl(al.url) : openSpotifySearch(al.artist, al.title);
     frag.appendChild(row);
   });
   const saveRow = document.createElement("div");
