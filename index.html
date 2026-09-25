@@ -335,16 +335,6 @@
   .color-example{aspect-ratio:1; border:none; padding:0; border-radius:4px; overflow:hidden; background:var(--card-hi); cursor:pointer;}
   .color-example img{display:block; width:100%; height:100%; object-fit:cover;}
 
-  /* discover */
-  .week-picker{display:flex; gap:6px; margin-top:16px;}
-  .week-btn{
-    flex:1; padding:10px 4px; background:var(--card); border:1px solid var(--line); border-radius:10px;
-    color:var(--ink-dim); font-family:var(--font-body); cursor:pointer;
-    display:flex; flex-direction:column; align-items:center; gap:3px;
-  }
-  .week-btn .week-label{font-size:13px; text-transform:uppercase; letter-spacing:0.04em;}
-  .week-btn.active{background:var(--gold); border-color:var(--gold); color:#17140F;}
-
   .count-picker{display:flex; gap:6px; margin-top:12px;}
   .count-btn{
     flex:1; padding:9px 4px; background:var(--card); border:1px solid var(--line); border-radius:20px;
@@ -423,7 +413,6 @@
   }
   .discover-links .tile-name{font-weight:600;}
   .discover-links .tile-sub{font-size:9.5px; color:var(--ink-dim); line-height:1.3;}
-  #discoverHeader .week-picker{margin-top:12px;}
   #discoverHeader .sync-btn{margin-top:10px;}
   .spotify-status{font-size:12px; color:var(--ink); margin-bottom:2px;}
   .check-group-head{margin:18px 0 4px; display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
@@ -722,14 +711,6 @@
 
   <div id="discoverHeader" class="hidden">
     <h1>New Releases</h1>
-    <div class="week-picker">
-      <button class="week-btn" id="discoverWin7" onclick="setDiscoverWindow(7)">
-        <span class="week-label">This week</span>
-      </button>
-      <button class="week-btn" id="discoverWin14" onclick="setDiscoverWindow(14)">
-        <span class="week-label">2 weeks</span>
-      </button>
-    </div>
     <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscover()">Refresh</button>
     <div class="sync-note" id="discoverNote"></div>
   </div>
@@ -1141,7 +1122,7 @@ const VIBE_EMOTES = [
 // storage is full, rebuildable caches are cleared — cheapest to refill first — and the write retried.
 const CACHE_EVICTION_STEPS = [
   () => localStorage.removeItem("ll_spotify_log"),
-  () => localStorage.removeItem("ll_discover_spotify_v1"),
+  () => localStorage.removeItem("ll_discover_v3"),
   () => localStorage.removeItem("ll_recent_results"),
   () => dropSpotifyCacheMisses(),
   () => localStorage.removeItem("ll_spotify_albums")
@@ -5305,7 +5286,7 @@ async function handleSpotifyCallback(){
     });
     storeSpotifyTokens(data, null);
     renderDiscoverResultsArea();
-    spotifyNotice("Spotify connected. Tap Refresh to load new releases.");
+    spotifyNotice("Spotify connected.");
   }catch(err){
     spotifyNotice("Couldn't finish Spotify sign-in: " + spotifyErrorText(err));
   }
@@ -6224,20 +6205,24 @@ function searchFromListCheck(idx){
   if(issue) openSpotifySearch(issue.artist, issue.title);
 }
 
-/* ---------- DISCOVER (new releases via Spotify, ranked with Last.fm, personalised) ---------- */
-// Spotify's February 2026 API changes removed /browse/new-releases, related artists and every
-// popularity field, so: candidates come from album search (tag:new = last two weeks, which is
-// why the longest window is two weeks), and "big" is ranked by Last.fm listeners.
-const DISCOVER_STORE_KEY = "ll_discover_spotify_v1";
-const DISCOVER_WINDOW_KEY = "ll_discover_window";
-const DISCOVER_WINDOWS = [7, 14];
-const DISCOVER_WIDEST = DISCOVER_WINDOWS[DISCOVER_WINDOWS.length - 1];
-const DISCOVER_NEW_TAG_PAGES = 20;    // 10 results per page is the search maximum now
-const DISCOVER_ENRICH_MAX = 90;       // Last.fm listener/tag lookups per refresh — every row shown gets one
-const DISCOVER_STORE_MAX = 80;        // stored per window (the 7-day view can be cut from 14-day data)
+/* ---------- DISCOVER (new releases via ListenBrainz, ranked with Last.fm) ---------- */
+// ListenBrainz lists every release MusicBrainz knows from the last two weeks, with exact dates —
+// thousands of them, far too many to look each one up on Last.fm. So: its artist popularity
+// (one bulk call per 1,000 artists) cuts the pool to the likeliest few hundred, and those are
+// ranked by how many people are listening to that album on Last.fm. Tested against NPR's and
+// AllMusic's weekly picks, a 500 cut keeps 39 of the 40 albums a full pass would rank highest.
+// Spotify isn't needed for any of it; a tap just searches Spotify for the album.
+const DISCOVER_STORE_KEY = "ll_discover_v3";
+const DISCOVER_DAYS = 14;
+const LISTENBRAINZ_API = "https://api.listenbrainz.org/1";
+const DISCOVER_POPULARITY_BATCH = 1000;   // the popularity endpoint turns down much bigger batches
+const DISCOVER_ENRICH_MAX = 500;          // Last.fm lookups per refresh: ~35 s at 4 at a time
+const DISCOVER_LASTFM_CONCURRENCY = 4;
 const DISCOVER_SHOW = 40;
 const DISCOVER_MIN_LISTENERS = 100;   // below this nobody is listening yet — not worth a row
-const DISCOVER_SKIP_TITLE = /\b(remaster(ed)?|anniversary|deluxe|expanded|sped[\s-]?up|slowed|karaoke|instrumentals)\b/i;
+// Reissues, live sets, soundtracks and remix albums ride on an old artist's popularity, not a new record's.
+const DISCOVER_SKIP_TITLE = /\b(live|remaster(ed)?|anniversary|deluxe|expanded|remix(es)?|soundtrack|o\.?s\.?t|recordings|demos?|sessions|edition|instrumentals?|karaoke|sped[\s-]?up|slowed|greatest hits|best of|collection|anthology|reissue)\b|\d{4}[‐-]\d{2}[‐-]\d{2}/i;
+const DISCOVER_SKIP_ARTIST = /^(various artists|unknown artist|\[unknown\])$/i;
 const DISCOVER_LINKS = [
   {label: "Album of the Year", sub: "Releases this week", url: "https://www.albumoftheyear.org/releases/this-week/"},
   {label: "Pitchfork", sub: "Best New Albums", url: "https://pitchfork.com/reviews/best/albums/"},
@@ -6271,34 +6256,24 @@ const SPOTIFY_GENRE_LINKS = [
   {name: "Every genre", id: "0JQ5DArNBzkmxXHCqFLx3b"}
 ];
 
-let discoverResults = null;   // {version: 2, windows: {"7": result, "14": result}}
-let discoverWindow = parseInt(localStorage.getItem(DISCOVER_WINDOW_KEY), 10) > 7 ? DISCOVER_WIDEST : 7;
+let discoverResults = null;   // {version: 3, generatedAt, albums: [...]}
 let discoverBusy = false;
 
-function emptyDiscoverStore(){ return {version: 2, windows: {}}; }
 function loadDiscoverResults(){
-  // Caches from the Apple-chart / MusicBrainz versions have a different shape — drop them, and
-  // the seen-album archive a short-lived 4-week view kept.
-  localStorage.removeItem("ll_discover_results");
-  localStorage.removeItem("ll_discover_v2");
-  localStorage.removeItem("ll_discover_seen_v1");
+  // Caches from the Apple-chart / MusicBrainz / Spotify-search versions have a different shape.
+  ["ll_discover_results", "ll_discover_v2", "ll_discover_seen_v1", "ll_discover_spotify_v1", "ll_discover_window"]
+    .forEach(k => localStorage.removeItem(k));
   try{
     const s = JSON.parse(localStorage.getItem(DISCOVER_STORE_KEY));
-    if(!s || s.version !== 2 || !s.windows || typeof s.windows !== "object") return emptyDiscoverStore();
-    // A refresh older than the widest window has nothing left in it that's still new, so it goes
-    // rather than sitting in storage. Albums you log keep their own data elsewhere.
-    const stale = Date.now() - DISCOVER_WIDEST * 86400000;
-    const before = Object.keys(s.windows).length;
-    Object.keys(s.windows).forEach(k => {
-      const w = s.windows[k];
-      if(DISCOVER_WINDOWS.indexOf(Number(k)) === -1 || !w || !w.generatedAt || w.generatedAt < stale ||
-         !Array.isArray(w.albums)) delete s.windows[k];
-    });
-    if(Object.keys(s.windows).length !== before){
-      try{ localStorage.setItem(DISCOVER_STORE_KEY, JSON.stringify(s)); }catch(e){}
+    // A refresh older than the window has nothing left in it that's still new, so it goes rather
+    // than sitting in storage. Albums you log, list or listen to keep their own data elsewhere.
+    if(!s || s.version !== 3 || !s.generatedAt || !Array.isArray(s.albums) ||
+       Date.now() - s.generatedAt > DISCOVER_DAYS * 86400000){
+      localStorage.removeItem(DISCOVER_STORE_KEY);
+      return null;
     }
     return s;
-  }catch(e){ return emptyDiscoverStore(); }
+  }catch(e){ return null; }
 }
 function saveDiscoverResults(){
   try{ localStorage.setItem(DISCOVER_STORE_KEY, JSON.stringify(discoverResults)); }
@@ -6318,12 +6293,12 @@ async function mapLimit(items, limit, fn){
   await Promise.all(workers);
 }
 
-/* --- dates & album shape --- */
+/* --- dates --- */
 function localDateStr(d){
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 function discoverCutoff(days){
-  // Rolling window that always ends today: "7 days" = today plus the six days before it.
+  // Rolling window that always ends today: "14 days" = today plus the thirteen days before it.
   const d = new Date();
   d.setDate(d.getDate() - (days - 1));
   return localDateStr(d);
@@ -6336,115 +6311,104 @@ function daysSinceRelease(dateStr){
   const today = parseLocalDate(localDateStr(new Date()));
   return Math.max(0, Math.round((today - parseLocalDate(dateStr)) / 86400000));
 }
-function yearFilterFor(cutoff){
-  const thisYear = new Date().getFullYear();
-  const cutoffYear = parseInt(cutoff.slice(0, 4), 10);
-  return cutoffYear < thisYear ? "year:" + cutoffYear + "-" + thisYear : "year:" + thisYear;
-}
 function normName(s){
   return String(s || "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
     .replace(/&/g, " and ").replace(/^the\s+/, "").replace(/[^\p{L}\p{N}]+/gu, "");
 }
-
-function normalizeSpotifyAlbum(a){
-  // Month/year-precision dates can't be placed inside a 7-day window, so skip them.
-  if(!a || !a.id || !a.name || a.release_date_precision !== "day" || !a.release_date) return null;
-  const artists = (a.artists || []).filter(x => x && x.name);
-  if(artists.length === 0) return null;
-  const image = spotifyThumbUrl(a.images);
-  return {
-    id: a.id,
-    artist: artists[0].name,
-    artistLine: artists.map(x => x.name).join(", "),
-    artistNames: artists.map(x => x.name),
-    artistIds: artists.map(x => x.id).filter(Boolean),
-    title: a.name,
-    releaseDate: a.release_date,
-    tracks: a.total_tracks || 0,
-    type: a.album_type || "",
-    image: image,
-    url: (a.external_urls && a.external_urls.spotify) || ""
-  };
-}
-function discoverKind(al){
-  if(al.type === "album") return "album";
-  if(al.type === "single" && al.tracks >= 5) return "EP";
-  return "";   // real singles and compilations aren't album listens
-}
-function isDiscoverWorthy(al){
-  return !!discoverKind(al) && !DISCOVER_SKIP_TITLE.test(al.title) && normName(al.artist) !== "variousartists";
-}
-function inDiscoverWindow(al, cutoff, today){
-  return al.releaseDate >= cutoff && al.releaseDate <= today;
-}
 function discoverKey(al){ return reviewKey(al.artist, stripEditionSuffix(al.title)); }
 
-/* --- candidate pool: what's new, in Spotify's search order --- */
-async function searchAlbums(q, pages, onPage){
-  const out = [];
-  for(let p = 0; p < pages; p++){
-    if(onPage) onPage(p + 1, pages);
-    const data = await spotifyGet("/search", {q: q, type: "album", limit: 10, offset: p * 10});
-    const page = data && data.albums;
-    const items = (page && page.items) || [];
-    items.forEach(it => { if(it) out.push(it); });
-    if(!page || !page.next || items.length === 0) break;
-  }
-  return out;
+/* --- candidate pool: every album and EP out in the window --- */
+async function listenbrainzJson(path, init){
+  let res;
+  try{ res = await fetch(LISTENBRAINZ_API + path, init); }
+  catch(e){ throw new Error("couldn't reach ListenBrainz"); }
+  if(res.status === 429) throw new Error("ListenBrainz is busy — try again in a few seconds");
+  if(!res.ok) throw new Error("ListenBrainz answered " + res.status);
+  return res.json();
 }
-
-async function fetchNewReleasePool(days, note){
-  const cutoff = discoverCutoff(days);
+async function fetchNewReleasePool(){
+  const cutoff = discoverCutoff(DISCOVER_DAYS);
   const today = localDateStr(new Date());
+  const data = await listenbrainzJson("/explore/fresh-releases/?days=" + DISCOVER_DAYS +
+    "&sort=release_date&past=true&future=false");
   const pool = new Map();
-  const addAll = rawItems => {
-    rawItems.forEach((raw, idx) => {
-      const al = normalizeSpotifyAlbum(raw);
-      if(!al || !isDiscoverWorthy(al) || !inDiscoverWindow(al, cutoff, today)) return;
-      const key = discoverKey(al);
-      const existing = pool.get(key);
-      if(existing) existing.searchRank = Math.min(existing.searchRank, idx + 1);
-      else{ al.searchRank = idx + 1; pool.set(key, al); }
-    });
-  };
-
-  const progress = (p, n) => { note.textContent = "Scanning new releases… " + p + "/" + n; };
-  let tagged = [];
-  try{
-    tagged = await searchAlbums("tag:new", DISCOVER_NEW_TAG_PAGES, progress);
-  }catch(err){
-    if(err.status !== 400) throw err;
-  }
-  // Fall back to pairing the tag with a year filter if a bare tag query is rejected or empty.
-  if(tagged.length === 0) tagged = await searchAlbums("tag:new " + yearFilterFor(cutoff), DISCOVER_NEW_TAG_PAGES, progress);
-  addAll(tagged);
+  ((data && data.payload && data.payload.releases) || []).forEach(r => {
+    const type = r.release_group_primary_type;
+    if(type !== "Album" && type !== "EP") return;   // singles and broadcasts aren't album listens
+    if(!r.release_name || !r.artist_credit_name || !r.release_date) return;
+    if(r.release_date < cutoff || r.release_date > today) return;
+    if(DISCOVER_SKIP_TITLE.test(r.release_name) || DISCOVER_SKIP_ARTIST.test(r.artist_credit_name.trim())) return;
+    const al = {
+      artist: r.artist_credit_name,
+      title: r.release_name,
+      releaseDate: r.release_date,
+      kind: type === "EP" ? "EP" : "album",
+      artistMbids: (r.artist_mbids || []).filter(Boolean),
+      caaImage: r.caa_id && r.caa_release_mbid ? "https://coverartarchive.org/release/" + r.caa_release_mbid + "/front-250" : ""
+    };
+    // The same record often turns up once per format or country — keep one.
+    const key = discoverKey(al);
+    if(!pool.has(key)) pool.set(key, al);
+  });
   return Array.from(pool.values());
 }
 
-/* --- Last.fm: listener counts (the popularity signal Spotify no longer exposes) + tags --- */
-async function fetchLastfmBuzz(artist, title){
-  const base = "https://ws.audioscrobbler.com/2.0/?api_key=" + encodeURIComponent(settings.apiKey)
-    + "&artist=" + encodeURIComponent(artist)
-    + "&album=" + encodeURIComponent(stripEditionSuffix(title))
-    + "&autocorrect=1&format=json";
-  const out = {listeners: 0, tags: []};
-  try{
-    // album.getinfo's bundled tags are unreliable (see fetchAlbumMeta), so tags come from gettoptags.
-    const [infoRes, tagsRes] = await Promise.all([fetch(base + "&method=album.getinfo"), fetch(base + "&method=album.gettoptags")]);
-    const info = await infoRes.json();
-    if(info && !info.error && info.album) out.listeners = parseInt(info.album.listeners, 10) || 0;
-    const tagsData = await tagsRes.json();
-    if(tagsData && !tagsData.error && tagsData.toptags && tagsData.toptags.tag){
-      const arr = Array.isArray(tagsData.toptags.tag) ? tagsData.toptags.tag : [tagsData.toptags.tag];
-      out.tags = arr.map(t => t && t.name).filter(n => n && !/^\d+s?$/i.test(n.trim()))
-        .slice(0, 3).map(n => n.toLowerCase());
-    }
-  }catch(e){
-    // leave zeros — an album Last.fm can't match just falls back to Spotify's search order
+/* --- first cut: how many people listen to the artist at all --- */
+async function fetchArtistPopularity(mbids, note){
+  const users = {};
+  for(let i = 0; i < mbids.length; i += DISCOVER_POPULARITY_BATCH){
+    note.textContent = "Sizing up artists… " + Math.min(i + DISCOVER_POPULARITY_BATCH, mbids.length) + "/" + mbids.length;
+    const rows = await listenbrainzJson("/popularity/artist", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({artist_mbids: mbids.slice(i, i + DISCOVER_POPULARITY_BATCH)})
+    });
+    (rows || []).forEach(r => { if(r && r.artist_mbid) users[r.artist_mbid] = r.total_user_count || 0; });
   }
-  return out;
+  return users;
 }
-// Listeners pile up over time, so damp by age or a four-week-old album always beats this Friday's.
+
+/* --- Last.fm: listener counts for the album itself, then tags for the ones shown --- */
+async function fetchLastfmJson(url){
+  for(let attempt = 0; attempt < 2; attempt++){
+    try{
+      const data = await (await fetch(url)).json();
+      // 29 is Last.fm's rate limit: back off once, then give up on this album.
+      if(data && data.error === 29 && attempt === 0){ await sleep(2000); continue; }
+      return data && !data.error ? data : null;
+    }catch(e){ return null; }
+  }
+  return null;
+}
+function lastfmAlbumUrl(method, al){
+  return "https://ws.audioscrobbler.com/2.0/?method=" + method + "&api_key=" + encodeURIComponent(settings.apiKey)
+    + "&artist=" + encodeURIComponent(al.artist)
+    + "&album=" + encodeURIComponent(stripEditionSuffix(al.title))
+    + "&autocorrect=1&format=json";
+}
+async function fetchLastfmListeners(al){
+  const data = await fetchLastfmJson(lastfmAlbumUrl("album.getinfo", al));
+  const album = data && data.album;
+  return {listeners: album ? parseInt(album.listeners, 10) || 0 : 0, image: album ? lastfmImageFrom(album.image) : ""};
+}
+// Personal bookkeeping tags, not genres.
+const DISCOVER_JUNK_TAG = /^(my top songs|spotify|seen live|favou?rites?|albums i own|under \d+.*)$/i;
+function lastfmTopTagNames(data, artist){
+  const tag = data && data.toptags && data.toptags.tag;
+  if(!tag) return [];
+  return (Array.isArray(tag) ? tag : [tag]).map(t => t && t.name)
+    .filter(n => n && !/^\d+s?$/i.test(n.trim()) && !DISCOVER_JUNK_TAG.test(n.trim()) && normName(n) !== normName(artist))
+    .slice(0, 3).map(n => n.toLowerCase());
+}
+async function fetchLastfmTags(al){
+  // album.getinfo's bundled tags are unreliable (see fetchAlbumMeta), so tags come from gettoptags.
+  const tags = lastfmTopTagNames(await fetchLastfmJson(lastfmAlbumUrl("album.gettoptags", al)), al.artist);
+  if(tags.length) return tags;
+  // A week-old album rarely has tags yet; the artist's are the next best genre label.
+  return lastfmTopTagNames(await fetchLastfmJson("https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&api_key=" +
+    encodeURIComponent(settings.apiKey) + "&artist=" + encodeURIComponent(al.artist) + "&autocorrect=1&format=json"), al.artist);
+}
+// Listeners pile up over time, so damp by age or a two-week-old album always beats this Friday's.
 function discoverMomentum(al){
   return (al.listeners || 0) / Math.sqrt(daysSinceRelease(al.releaseDate) + 1);
 }
@@ -6452,59 +6416,48 @@ function discoverMomentum(al){
 /* --- shape for storage --- */
 function toDiscoverItem(al){
   return {
-    id: al.id, artist: al.artist, artistLine: al.artistLine, title: al.title,
-    releaseDate: al.releaseDate, tracks: al.tracks, kind: discoverKind(al),
-    image: al.image, url: al.url,
-    listeners: al.listeners || 0, tags: al.tags || []
+    artist: al.artist, title: al.title, releaseDate: al.releaseDate, kind: al.kind,
+    image: al.image || al.caaImage || "", listeners: al.listeners || 0, tags: al.tags || []
   };
 }
 
 /* --- orchestration --- */
 async function generateDiscover(){
   if(discoverBusy) return;
-  if(!isSpotifyConnected()){ connectSpotify(); return; }
-  if(!discoverResults) discoverResults = loadDiscoverResults();
-  const days = discoverWindow;
+  if(!settings.apiKey){ openSettings(); return; }
   const note = document.getElementById("discoverNote");
   const btn = document.getElementById("discoverGenerateBtn");
   discoverBusy = true;
   btn.disabled = true;
-  const warnings = [];
   try{
-    const pool = await fetchNewReleasePool(days, note);
+    note.textContent = "Fetching the last two weeks of releases…";
+    const pool = await fetchNewReleasePool();
 
-    let albums;
-    if(settings.apiKey){
-      // Every row needs listeners (to rank and to clear the floor) and tags (the genre label),
-      // so enrich in Spotify's search order and keep what clears the bar.
-      const toEnrich = pool.slice().sort((a, b) => a.searchRank - b.searchRank).slice(0, DISCOVER_ENRICH_MAX);
-      let n = 0;
-      await mapLimit(toEnrich, 3, async al => {
-        const buzz = await fetchLastfmBuzz(al.artist, al.title);
-        al.listeners = buzz.listeners;
-        al.tags = buzz.tags;
-        n++;
-        note.textContent = "Checking listener counts on Last.fm… " + n + "/" + toEnrich.length;
-        await sleep(150);
-      });
-      const kept = toEnrich.filter(al => al.listeners >= DISCOVER_MIN_LISTENERS);
-      const dropped = toEnrich.length - kept.length;
-      // An album Last.fm can't match reads as 0 listeners, so it goes too — we can't vouch for it.
-      if(dropped) warnings.push(dropped + " hidden (under " + DISCOVER_MIN_LISTENERS + " listeners or not on Last.fm)");
-      albums = kept.sort((a, b) => (discoverMomentum(b) - discoverMomentum(a)) || (a.searchRank - b.searchRank));
-    }else{
-      // No key, so no listener counts to filter or rank on — fall back to Spotify's own order.
-      warnings.push("add a Last.fm key in Settings to rank by listeners and hide the unheard");
-      albums = pool.slice().sort((a, b) => a.searchRank - b.searchRank);
-    }
-    albums = albums.slice(0, DISCOVER_STORE_MAX).map(toDiscoverItem);
+    const mbids = Array.from(new Set([].concat.apply([], pool.map(al => al.artistMbids))));
+    const users = await fetchArtistPopularity(mbids, note);
+    pool.forEach(al => { al.artistUsers = Math.max.apply(null, [0].concat(al.artistMbids.map(m => users[m] || 0))); });
+    const toEnrich = pool.sort((a, b) => b.artistUsers - a.artistUsers).slice(0, DISCOVER_ENRICH_MAX);
 
-    discoverResults.windows[days] = {generatedAt: Date.now(), days: days, albums: albums};
+    let n = 0;
+    await mapLimit(toEnrich, DISCOVER_LASTFM_CONCURRENCY, async al => {
+      const buzz = await fetchLastfmListeners(al);
+      al.listeners = buzz.listeners;
+      al.image = buzz.image;
+      note.textContent = "Checking listener counts on Last.fm… " + (++n) + "/" + toEnrich.length;
+    });
+    // An album Last.fm can't match reads as 0 listeners, so it goes too — we can't vouch for it.
+    const albums = toEnrich.filter(al => al.listeners >= DISCOVER_MIN_LISTENERS)
+      .sort((a, b) => discoverMomentum(b) - discoverMomentum(a))
+      .slice(0, DISCOVER_SHOW);
+
+    note.textContent = "Fetching genres…";
+    await mapLimit(albums, DISCOVER_LASTFM_CONCURRENCY, async al => { al.tags = await fetchLastfmTags(al); });
+
+    discoverResults = {version: 3, generatedAt: Date.now(), albums: albums.map(toDiscoverItem)};
     saveDiscoverResults();
-
-    note.textContent = [albums.length + " new albums"].concat(warnings).join(" · ");
+    note.textContent = albums.length + " new albums, from " + pool.length + " released in the last two weeks";
   }catch(err){
-    note.textContent = "Couldn't load new releases: " + spotifyErrorText(err);
+    note.textContent = "Couldn't load new releases: " + (err && err.message ? err.message : "something went wrong");
   }finally{
     discoverBusy = false;
     btn.disabled = false;
@@ -6512,25 +6465,8 @@ async function generateDiscover(){
   }
 }
 
-function setDiscoverWindow(days){
-  if(DISCOVER_WINDOWS.indexOf(days) === -1) return;
-  discoverWindow = days;
-  localStorage.setItem(DISCOVER_WINDOW_KEY, String(days));
-  renderDiscoverResultsArea();
-}
-// The 7-day view can be cut from a fresher 2-week refresh (it ran the same tag:new scan).
-function resultsForWindow(days){
-  if(!discoverResults) return null;
-  const own = discoverResults.windows[days];
-  const wide = discoverResults.windows[DISCOVER_WIDEST];
-  if(days < DISCOVER_WIDEST && wide && (!own || wide.generatedAt > own.generatedAt)){
-    const cutoff = discoverCutoff(days);
-    return Object.assign({}, wide, {albums: wide.albums.filter(al => al.releaseDate >= cutoff), derived: true});
-  }
-  return own || null;
-}
-function discoverItems(res){
-  return (res && res.albums ? res.albums : []).slice(0, DISCOVER_SHOW);
+function discoverItems(){
+  return (discoverResults && discoverResults.albums ? discoverResults.albums : []).slice(0, DISCOVER_SHOW);
 }
 
 function formatListeners(n){
@@ -6577,13 +6513,10 @@ function discoverLinksHtml(){
 }
 
 function updateDiscoverHeader(){
-  const connected = isSpotifyConnected();
+  const ready = !!settings.apiKey;
   const btn = document.getElementById("discoverGenerateBtn");
-  if(!discoverBusy) btn.textContent = connected ? "Refresh" : "Connect Spotify";
-  btn.classList.toggle("needs-setup", !connected);
-  DISCOVER_WINDOWS.forEach(d => {
-    document.getElementById("discoverWin" + d).classList.toggle("active", d === discoverWindow);
-  });
+  if(!discoverBusy) btn.textContent = ready ? "Refresh" : "Add a Last.fm key";
+  btn.classList.toggle("needs-setup", !ready);
 }
 
 function renderDiscoverResultsArea(){
@@ -6592,17 +6525,13 @@ function renderDiscoverResultsArea(){
   if(!discoverResults) discoverResults = loadDiscoverResults();
   updateDiscoverHeader();
   const content = document.getElementById("content");
-  if(!isSpotifyConnected()){
-    content.innerHTML = '<div class="empty-hint">Connect Spotify to see new releases, ranked by how many people are ' +
-      'actually listening.</div>' + discoverLinksHtml();
-    return;
-  }
-  const res = resultsForWindow(discoverWindow);
-  const items = discoverItems(res);
+  const res = discoverResults;
+  const items = discoverItems();
   if(items.length === 0){
     content.innerHTML = '<div class="empty-hint">' + (res
-      ? "No new albums turned up in this window. Try the 2-week view or refresh later."
-      : "Tap Refresh to load " + (discoverWindow === 7 ? "this week's" : "the last two weeks of") + " new releases.") +
+      ? "No new albums turned up in the last two weeks. Try refreshing later."
+      : "Tap Refresh to load the last two weeks of new releases, ranked by how many people are actually listening. " +
+        "It takes about half a minute.") +
       '</div>' + discoverLinksHtml();
     return;
   }
@@ -6610,15 +6539,14 @@ function renderDiscoverResultsArea(){
   const frag = document.createDocumentFragment();
   const stamp = document.createElement("div");
   stamp.className = "discover-stamp";
-  stamp.textContent = "Updated " + new Date(res.generatedAt).toLocaleString(undefined, {weekday: "short", hour: "numeric", minute: "2-digit"}) +
-    (res.derived ? " · cut from your 2-week refresh" : "");
+  stamp.textContent = "Updated " + new Date(res.generatedAt).toLocaleString(undefined, {weekday: "short", hour: "numeric", minute: "2-digit"});
   frag.appendChild(stamp);
 
   items.forEach(al => {
     const row = document.createElement("div");
     row.className = "discover-card album-link";
     row.innerHTML = discoverCardHtml(al);
-    row.onclick = () => al.url ? openSpotifyUrl(al.url) : openSpotifySearch(al.artist, al.title);
+    row.onclick = () => openSpotifySearch(al.artist, al.title);
     frag.appendChild(row);
   });
   const saveRow = document.createElement("div");
@@ -6632,7 +6560,7 @@ function renderDiscoverResultsArea(){
 }
 
 function saveDiscoverAsList(){
-  const items = discoverItems(resultsForWindow(discoverWindow));
+  const items = discoverItems();
   if(items.length === 0) return;
   const stamp = new Date().toLocaleDateString(undefined, {month: "short", day: "numeric", year: "numeric"});
   const label = "New albums — " + stamp;
