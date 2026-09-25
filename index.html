@@ -726,8 +726,8 @@
       <button class="week-btn" id="discoverWin7" onclick="setDiscoverWindow(7)">
         <span class="week-label">This week</span>
       </button>
-      <button class="week-btn" id="discoverWin28" onclick="setDiscoverWindow(28)">
-        <span class="week-label">4 weeks</span>
+      <button class="week-btn" id="discoverWin14" onclick="setDiscoverWindow(14)">
+        <span class="week-label">2 weeks</span>
       </button>
     </div>
     <button class="sync-btn" id="discoverGenerateBtn" onclick="generateDiscover()">Refresh</button>
@@ -6226,20 +6226,15 @@ function searchFromListCheck(idx){
 
 /* ---------- DISCOVER (new releases via Spotify, ranked with Last.fm, personalised) ---------- */
 // Spotify's February 2026 API changes removed /browse/new-releases, related artists and every
-// popularity field, so: candidates come from album search (tag:new = last two weeks). tag:new
-// can't see weeks three and four, so the 4-week window adds what earlier refreshes saw, a
-// year-filtered search, and the recent albums of artists charting on Last.fm (globally and
-// for you). "Big" is ranked by Last.fm listeners.
+// popularity field, so: candidates come from album search (tag:new = last two weeks, which is
+// why the longest window is two weeks), and "big" is ranked by Last.fm listeners.
 const DISCOVER_STORE_KEY = "ll_discover_spotify_v1";
 const DISCOVER_WINDOW_KEY = "ll_discover_window";
-const DISCOVER_WINDOWS = [7, 28];
+const DISCOVER_WINDOWS = [7, 14];
+const DISCOVER_WIDEST = DISCOVER_WINDOWS[DISCOVER_WINDOWS.length - 1];
 const DISCOVER_NEW_TAG_PAGES = 20;    // 10 results per page is the search maximum now
-const DISCOVER_YEAR_PAGES = 10;       // 4-week window only: tag:new stops at two weeks
-const DISCOVER_CHART_ARTISTS = 35;    // 4-week window only: Last.fm's global chart, one search each
-const DISCOVER_USER_ARTISTS = 15;     // ...plus your own most-played artists this month
-const DISCOVER_SEEN_KEY = "ll_discover_seen_v1";   // tag:new finds from earlier refreshes
-const DISCOVER_ENRICH_MAX = 120;      // Last.fm listener/tag lookups per refresh — every row shown gets one
-const DISCOVER_STORE_MAX = 80;        // stored per window (the 7-day view can be cut from 28-day data)
+const DISCOVER_ENRICH_MAX = 90;       // Last.fm listener/tag lookups per refresh — every row shown gets one
+const DISCOVER_STORE_MAX = 80;        // stored per window (the 7-day view can be cut from 14-day data)
 const DISCOVER_SHOW = 40;
 const DISCOVER_MIN_LISTENERS = 100;   // below this nobody is listening yet — not worth a row
 const DISCOVER_SKIP_TITLE = /\b(remaster(ed)?|anniversary|deluxe|expanded|sped[\s-]?up|slowed|karaoke|instrumentals)\b/i;
@@ -6276,22 +6271,32 @@ const SPOTIFY_GENRE_LINKS = [
   {name: "Every genre", id: "0JQ5DArNBzkmxXHCqFLx3b"}
 ];
 
-let discoverResults = null;   // {version: 2, windows: {"7": result, "28": result}}
-let discoverWindow = parseInt(localStorage.getItem(DISCOVER_WINDOW_KEY), 10) === 28 ? 28 : 7;
+let discoverResults = null;   // {version: 2, windows: {"7": result, "14": result}}
+let discoverWindow = parseInt(localStorage.getItem(DISCOVER_WINDOW_KEY), 10) > 7 ? DISCOVER_WIDEST : 7;
 let discoverBusy = false;
 
 function emptyDiscoverStore(){ return {version: 2, windows: {}}; }
 function loadDiscoverResults(){
-  // Caches from the Apple-chart / MusicBrainz versions have a different shape — drop them.
+  // Caches from the Apple-chart / MusicBrainz versions have a different shape — drop them, and
+  // the seen-album archive a short-lived 4-week view kept.
   localStorage.removeItem("ll_discover_results");
   localStorage.removeItem("ll_discover_v2");
+  localStorage.removeItem("ll_discover_seen_v1");
   try{
     const s = JSON.parse(localStorage.getItem(DISCOVER_STORE_KEY));
     if(!s || s.version !== 2 || !s.windows || typeof s.windows !== "object") return emptyDiscoverStore();
+    // A refresh older than the widest window has nothing left in it that's still new, so it goes
+    // rather than sitting in storage. Albums you log keep their own data elsewhere.
+    const stale = Date.now() - DISCOVER_WIDEST * 86400000;
+    const before = Object.keys(s.windows).length;
     Object.keys(s.windows).forEach(k => {
       const w = s.windows[k];
-      if(!w || !w.generatedAt || !Array.isArray(w.albums)) delete s.windows[k];
+      if(DISCOVER_WINDOWS.indexOf(Number(k)) === -1 || !w || !w.generatedAt || w.generatedAt < stale ||
+         !Array.isArray(w.albums)) delete s.windows[k];
     });
+    if(Object.keys(s.windows).length !== before){
+      try{ localStorage.setItem(DISCOVER_STORE_KEY, JSON.stringify(s)); }catch(e){}
+    }
     return s;
   }catch(e){ return emptyDiscoverStore(); }
 }
@@ -6388,64 +6393,20 @@ async function searchAlbums(q, pages, onPage){
   return out;
 }
 
-/* --- what earlier refreshes saw: tag:new forgets an album after two weeks, this doesn't --- */
-function loadDiscoverSeen(){
-  try{
-    const s = JSON.parse(localStorage.getItem(DISCOVER_SEEN_KEY));
-    return Array.isArray(s) ? s.filter(al => al && al.id && al.releaseDate) : [];
-  }catch(e){ return []; }
-}
-function saveDiscoverSeen(albums){
-  const cutoff = discoverCutoff(Math.max.apply(null, DISCOVER_WINDOWS));
-  const byId = new Map();
-  loadDiscoverSeen().concat(albums).forEach(al => { if(al.releaseDate >= cutoff) byId.set(al.id, al); });
-  try{ localStorage.setItem(DISCOVER_SEEN_KEY, JSON.stringify(Array.from(byId.values()))); }
-  catch(e){ /* a cache: losing it only narrows the next 4-week refresh */ }
-}
-
-/* --- artists people are playing right now; a big album from three weeks ago keeps them charting --- */
-async function fetchLastfmArtistNames(method, extra, limit){
-  const url = "https://ws.audioscrobbler.com/2.0/?method=" + method + "&api_key=" + encodeURIComponent(settings.apiKey)
-    + extra + "&limit=" + limit + "&format=json";
-  try{
-    const data = await (await fetch(url)).json();
-    const list = data && (data.artists || data.topartists);
-    const arr = list && list.artist ? (Array.isArray(list.artist) ? list.artist : [list.artist]) : [];
-    return arr.map(a => a && a.name).filter(Boolean);
-  }catch(e){ return []; }
-}
-async function fetchChartArtists(){
-  if(!settings.apiKey) return [];
-  const lists = await Promise.all([
-    fetchLastfmArtistNames("chart.gettopartists", "", DISCOVER_CHART_ARTISTS),
-    settings.username
-      ? fetchLastfmArtistNames("user.gettopartists", "&user=" + encodeURIComponent(settings.username) + "&period=1month", DISCOVER_USER_ARTISTS)
-      : []
-  ]);
-  const seen = new Set();
-  return lists[1].concat(lists[0]).filter(name => {
-    const k = normName(name);
-    if(!k || seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-}
-
 async function fetchNewReleasePool(days, note){
   const cutoff = discoverCutoff(days);
   const today = localDateStr(new Date());
   const pool = new Map();
-  const add = (al, rank) => {
-    if(!al || !isDiscoverWorthy(al) || !inDiscoverWindow(al, cutoff, today)) return;
-    const key = discoverKey(al);
-    const existing = pool.get(key);
-    if(existing){
-      existing.searchRank = Math.min(existing.searchRank, rank);
-      existing.charting = existing.charting || !!al.charting;
-    }
-    else pool.set(key, Object.assign({}, al, {searchRank: rank}));
+  const addAll = rawItems => {
+    rawItems.forEach((raw, idx) => {
+      const al = normalizeSpotifyAlbum(raw);
+      if(!al || !isDiscoverWorthy(al) || !inDiscoverWindow(al, cutoff, today)) return;
+      const key = discoverKey(al);
+      const existing = pool.get(key);
+      if(existing) existing.searchRank = Math.min(existing.searchRank, idx + 1);
+      else{ al.searchRank = idx + 1; pool.set(key, al); }
+    });
   };
-  const addAll = rawItems => rawItems.forEach((raw, idx) => add(normalizeSpotifyAlbum(raw), idx + 1));
 
   const progress = (p, n) => { note.textContent = "Scanning new releases… " + p + "/" + n; };
   let tagged = [];
@@ -6457,32 +6418,6 @@ async function fetchNewReleasePool(days, note){
   // Fall back to pairing the tag with a year filter if a bare tag query is rejected or empty.
   if(tagged.length === 0) tagged = await searchAlbums("tag:new " + yearFilterFor(cutoff), DISCOVER_NEW_TAG_PAGES, progress);
   addAll(tagged);
-  saveDiscoverSeen(tagged.map((raw, idx) => {
-    const al = normalizeSpotifyAlbum(raw);
-    return al && isDiscoverWorthy(al) ? Object.assign(al, {searchRank: idx + 1}) : null;
-  }).filter(Boolean));
-
-  if(days > 14){
-    loadDiscoverSeen().forEach(al => add(al, al.searchRank || DISCOVER_NEW_TAG_PAGES * 10));
-    addAll(await searchAlbums(yearFilterFor(cutoff), DISCOVER_YEAR_PAGES, (p, n) => {
-      note.textContent = "Scanning the last four weeks… " + p + "/" + n;
-    }));
-    // A bonus source: a rate limit or a miss here shouldn't cost the whole refresh.
-    const artists = await fetchChartArtists();
-    let n = 0;
-    try{
-      await mapLimit(artists, 2, async name => {
-        const q = 'artist:"' + name.replace(/"/g, "") + '" ' + yearFilterFor(cutoff);
-        const data = await spotifyGet("/search", {q: q, type: "album", limit: 10});
-        // Only that artist's own records: the filter is fuzzy and drags in namesakes.
-        ((data && data.albums && data.albums.items) || []).forEach(raw => {
-          const al = normalizeSpotifyAlbum(raw);
-          if(al && al.artistNames.some(a => normName(a) === normName(name))) add(Object.assign(al, {charting: true}), 1);
-        });
-        note.textContent = "Checking charting artists… " + (++n) + "/" + artists.length;
-      });
-    }catch(err){ /* keep what the other sources found */ }
-  }
   return Array.from(pool.values());
 }
 
@@ -6542,10 +6477,7 @@ async function generateDiscover(){
     if(settings.apiKey){
       // Every row needs listeners (to rank and to clear the floor) and tags (the genre label),
       // so enrich in Spotify's search order and keep what clears the bar.
-      // Charting artists' albums go first: they're the likeliest to earn a row.
-      const toEnrich = pool.slice()
-        .sort((a, b) => ((b.charting ? 1 : 0) - (a.charting ? 1 : 0)) || (a.searchRank - b.searchRank))
-        .slice(0, DISCOVER_ENRICH_MAX);
+      const toEnrich = pool.slice().sort((a, b) => a.searchRank - b.searchRank).slice(0, DISCOVER_ENRICH_MAX);
       let n = 0;
       await mapLimit(toEnrich, 3, async al => {
         const buzz = await fetchLastfmBuzz(al.artist, al.title);
@@ -6586,12 +6518,12 @@ function setDiscoverWindow(days){
   localStorage.setItem(DISCOVER_WINDOW_KEY, String(days));
   renderDiscoverResultsArea();
 }
-// The 7-day view can be cut from a fresher 4-week refresh (it ran the same tag:new scan and more).
+// The 7-day view can be cut from a fresher 2-week refresh (it ran the same tag:new scan).
 function resultsForWindow(days){
   if(!discoverResults) return null;
   const own = discoverResults.windows[days];
-  const wide = discoverResults.windows[28];
-  if(days < 28 && wide && (!own || wide.generatedAt > own.generatedAt)){
+  const wide = discoverResults.windows[DISCOVER_WIDEST];
+  if(days < DISCOVER_WIDEST && wide && (!own || wide.generatedAt > own.generatedAt)){
     const cutoff = discoverCutoff(days);
     return Object.assign({}, wide, {albums: wide.albums.filter(al => al.releaseDate >= cutoff), derived: true});
   }
@@ -6669,8 +6601,8 @@ function renderDiscoverResultsArea(){
   const items = discoverItems(res);
   if(items.length === 0){
     content.innerHTML = '<div class="empty-hint">' + (res
-      ? "No new albums turned up in this window. Try the 4-week view or refresh later."
-      : "Tap Refresh to load " + (discoverWindow === 7 ? "this week's" : "the last four weeks of") + " new releases.") +
+      ? "No new albums turned up in this window. Try the 2-week view or refresh later."
+      : "Tap Refresh to load " + (discoverWindow === 7 ? "this week's" : "the last two weeks of") + " new releases.") +
       '</div>' + discoverLinksHtml();
     return;
   }
@@ -6679,7 +6611,7 @@ function renderDiscoverResultsArea(){
   const stamp = document.createElement("div");
   stamp.className = "discover-stamp";
   stamp.textContent = "Updated " + new Date(res.generatedAt).toLocaleString(undefined, {weekday: "short", hour: "numeric", minute: "2-digit"}) +
-    (res.derived ? " · cut from your 4-week refresh" : "");
+    (res.derived ? " · cut from your 2-week refresh" : "");
   frag.appendChild(stamp);
 
   items.forEach(al => {
