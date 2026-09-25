@@ -735,7 +735,7 @@
       <div class="reviews-filter-row" id="reviewsSortRow" data-star-floor>
         <label>Sort by</label>
         <select id="reviewsSortSelect" onchange="setReviewsSort(this.value)">
-          <option value="recent">Recent logs</option>
+          <option value="recent">Recently listened</option>
           <option value="rotation">Personal scores</option>
           <option value="listens">Listen count</option>
           <option value="artist">Artist A–Z</option>
@@ -1707,7 +1707,10 @@ function getFilteredReviews(){
     const i = RATING_AXES[axisKey].options.indexOf(r[axisKey]);
     return i === -1 ? 999 : i;
   };
-  const byRecent = (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0);
+  const byReviewed = (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0);
+  // Most recently listened first, like Recents; never-listened albums fall back to review date.
+  const byRecent = (a, b) =>
+    lastListenFor(b.artist, b.title) - lastListenFor(a.artist, a.title) || byReviewed(a, b);
   const sorters = {
     recent: byRecent,
     // Personal scores: rotation first, pull breaks ties, then distinctiveness.
@@ -2634,11 +2637,15 @@ function listenWeekStart(w){ return w * WEEK_SECONDS; }
 
 let tallyStore = null;
 let tallyTotals = null;   // flattened key -> total, rebuilt lazily after any write
+let tallyLastIndex = null;   // flattened key -> most recent listen (unix secs), rebuilt alongside
 
 function loadTally(){
   if(tallyStore) return tallyStore;
   try{ tallyStore = JSON.parse(localStorage.getItem(TALLY_KEY)); }catch(e){ tallyStore = null; }
   if(!tallyStore || tallyStore.v !== 1 || !tallyStore.weeks) tallyStore = {v: 1, weeks: {}};
+  // Latest play per album per week, stored beside the counts so it's replaced the same way.
+  // Weeks recorded before this existed fall back to the week's start.
+  if(!tallyStore.last) tallyStore.last = {};
   return tallyStore;
 }
 
@@ -2662,36 +2669,63 @@ function listensFor(artist, title){
   if(!artist || !title) return 0;
   return tallyIndex()[reviewKey(artist, title)] || 0;
 }
+function tallyLast(){
+  if(tallyLastIndex) return tallyLastIndex;
+  const st = loadTally();
+  const last = {};
+  Object.keys(st.weeks).forEach(w => {
+    const wk = st.weeks[w], wl = st.last[w] || {}, start = listenWeekStart(parseInt(w, 10));
+    Object.keys(wk).forEach(k => {
+      const at = wl[k] || start;
+      if(at > (last[k] || 0)) last[k] = at;
+    });
+  });
+  tallyLastIndex = last;
+  return last;
+}
+// When an album last earned a full listen (unix secs), or 0 if it never has.
+function lastListenFor(artist, title){
+  if(!artist || !title) return 0;
+  return tallyLast()[reviewKey(artist, title)] || 0;
+}
 // One star per full listen past the first, capped so a heavily-played album doesn't swarm.
 function starCountFor(artist, title){
   return Math.max(0, Math.min(STAR_MAX, listensFor(artist, title) - 1));
 }
 
-function setTallyWeek(week, map){
+function setTallyWeek(week, map, lastMap){
   const st = loadTally();
-  const clean = {};
+  const clean = {}, cleanLast = {};
   const keys = Object.keys(map || {});
   for(let i = 0; i < keys.length; i++){
-    if(map[keys[i]] > 0) clean[keys[i]] = map[keys[i]];
+    if(map[keys[i]] > 0){
+      clean[keys[i]] = map[keys[i]];
+      if(lastMap && lastMap[keys[i]]) cleanLast[keys[i]] = lastMap[keys[i]];
+    }
   }
   if(Object.keys(clean).length) st.weeks[String(week)] = clean;
   else delete st.weeks[String(week)];
+  if(Object.keys(cleanLast).length) st.last[String(week)] = cleanLast;
+  else delete st.last[String(week)];
   tallyTotals = null;
+  tallyLastIndex = null;
 }
 
 function saveTally(){
   loadTally();
   saveUserData(TALLY_KEY, JSON.stringify(tallyStore));
   tallyTotals = null;
+  tallyLastIndex = null;
 }
 
 function tallyWeekCount(){ return Object.keys(loadTally().weeks).length; }
 function tallyAlbumCount(){ return Object.keys(tallyIndex()).length; }
 
 /* Split each album's plays into the 7-day buckets they landed in, and credit each bucket on
-   its own. Groups must already carry trackCount (resolved) and utsList (per-play timestamps). */
+   its own. Groups must already carry trackCount (resolved) and utsList (per-play timestamps).
+   Returns {counts: week -> key -> listens, last: week -> key -> latest play in that week}. */
 function tallyWeeksFromGroups(groups){
-  const byWeek = {};
+  const byWeek = {}, lastByWeek = {};
   for(let i = 0; i < groups.length; i++){
     const g = groups[i];
     if(!g || !g.utsList || !g.utsList.length) continue;
@@ -2700,11 +2734,12 @@ function tallyWeeksFromGroups(groups){
     // Same guard This Week uses: a 2-3 track single shouldn't earn a "full listen".
     if(real && g.trackCount < TALLY_MIN_TRACKS) continue;
     const key = reviewKey(g.artist, g.album);
-    const perWeek = {};
+    const perWeek = {}, latest = {};
     for(let j = 0; j < g.utsList.length; j++){
       if(!g.utsList[j]) continue;
       const w = listenWeek(g.utsList[j]);
       perWeek[w] = (perWeek[w] || 0) + 1;
+      if(g.utsList[j] > (latest[w] || 0)) latest[w] = g.utsList[j];
     }
     const weeks = Object.keys(perWeek);
     for(let j = 0; j < weeks.length; j++){
@@ -2714,16 +2749,19 @@ function tallyWeeksFromGroups(groups){
       const listens = Math.max(1, Math.floor(ratio));
       if(!byWeek[weeks[j]]) byWeek[weeks[j]] = {};
       byWeek[weeks[j]][key] = (byWeek[weeks[j]][key] || 0) + listens;
+      if(!lastByWeek[weeks[j]]) lastByWeek[weeks[j]] = {};
+      lastByWeek[weeks[j]][key] = Math.max(lastByWeek[weeks[j]][key] || 0, latest[weeks[j]]);
     }
   }
-  return byWeek;
+  return {counts: byWeek, last: lastByWeek};
 }
 
 /* Commit those buckets, but only the ones the query window actually covered in full.
    A rolling 7-day window clips its oldest bucket, and writing that partial count would
    clobber a complete one recorded earlier. The in-progress current week is the deliberate
    exception: partial is all that exists for it, and the next sync replaces it with more. */
-function commitTallyWeeks(byWeek, fromUnix, toUnix){
+function commitTallyWeeks(tallied, fromUnix, toUnix){
+  const byWeek = tallied.counts;
   const nowWeek = listenWeek(Math.floor(Date.now() / 1000));
   const weeks = Object.keys(byWeek);
   let written = 0;
@@ -2732,7 +2770,7 @@ function commitTallyWeeks(byWeek, fromUnix, toUnix){
     const start = listenWeekStart(w), end = start + WEEK_SECONDS;
     const fullyCovered = start >= fromUnix && end <= toUnix;
     if(!fullyCovered && w !== nowWeek) continue;
-    setTallyWeek(w, byWeek[weeks[i]]);
+    setTallyWeek(w, byWeek[weeks[i]], tallied.last[weeks[i]]);
     written++;
   }
   if(written) saveTally();
