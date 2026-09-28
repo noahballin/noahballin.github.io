@@ -334,6 +334,18 @@
   .color-examples{display:grid; grid-template-columns:repeat(6, 1fr); gap:6px; margin-top:12px;}
   .color-example{aspect-ratio:1; border:none; padding:0; border-radius:4px; overflow:hidden; background:var(--card-hi); cursor:pointer;}
   .color-example img{display:block; width:100%; height:100%; object-fit:cover;}
+  .taste-tiles{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;}
+  .taste-tile{background:var(--card-hi); border-radius:6px; padding:8px 10px 9px;}
+  .taste-tile-num{font-family:var(--font-display); font-size:22px; font-weight:600; color:var(--ink); line-height:1.1;}
+  .taste-tile-label{font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.06em;}
+  .taste-meter{position:relative; height:4px; margin-top:7px; border-radius:2px; background:var(--line);}
+  .taste-meter::after{content:""; position:absolute; left:50%; top:-2px; width:1px; height:8px; background:var(--ink-dim);}
+  .taste-meter span{position:absolute; top:0; height:100%; border-radius:2px; background:var(--teal);}
+  .taste-meter span.neg{background:var(--gold-dim);}
+  .taste-group{margin-top:12px;}
+  .taste-group-head{display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--ink-dim);}
+  .taste-group-head b{color:var(--ink); font-weight:600;}
+  .taste-group .color-examples{margin-top:6px;}
 
   .count-picker{display:flex; gap:6px; margin-top:12px;}
   .count-btn{
@@ -1124,6 +1136,7 @@ const CACHE_EVICTION_STEPS = [
   () => localStorage.removeItem("ll_spotify_log"),
   () => localStorage.removeItem("ll_discover_v3"),
   () => localStorage.removeItem("ll_recent_results"),
+  () => localStorage.removeItem("ll_taste_sources"),
   () => dropSpotifyCacheMisses(),
   () => localStorage.removeItem("ll_spotify_albums")
 ];
@@ -4131,6 +4144,293 @@ function openLoggedWithColors(key){
   switchSection("reviews");
 }
 
+/* ---------- STATS: CRITICS & CROWD ----------
+   Your taste against two outside views, compared by rank rather than score: where an album
+   sits among your logs by composite (with a sliver of re-listens), by critic score, and by
+   Last.fm listener count. Critic scores come from the ratings box on the album's English
+   Wikipedia page — Metacritic when it's there, otherwise the average of the listed reviews. */
+const TASTE_CACHE_KEY = "ll_taste_sources";   // key -> {c: 0–100 | null, ct, l: listeners | null, lt}
+const TASTE_RELISTEN_WEIGHT = 0.1;
+const TASTE_STRONG = 0.2;                     // top / bottom fifth of your logs counts as a strong feeling
+const TASTE_DAY = 86400000;
+let tasteCache = null;
+let tasteSaveTimer = null;
+let statsTasteSide = "love";                  // "love" | "dislike"
+let statsTasteProgress = null;                // {done, total} while sources are being fetched
+const statsTasteTried = new Set();
+
+function loadTasteCache(){
+  if(tasteCache) return tasteCache;
+  try{ tasteCache = JSON.parse(localStorage.getItem(TASTE_CACHE_KEY)) || {}; }catch(e){ tasteCache = {}; }
+  return tasteCache;
+}
+function scheduleTasteCacheSave(){
+  clearTimeout(tasteSaveTimer);
+  tasteSaveTimer = setTimeout(() => {
+    try{ localStorage.setItem(TASTE_CACHE_KEY, JSON.stringify(tasteCache)); }catch(e){}   // a cache: losing it only costs a refetch
+  }, 1000);
+}
+// Found scores are rechecked now and then (a new album's Metacritic moves for a few weeks);
+// misses sooner, since pages and scores keep getting added.
+function tasteStale(value, checkedAt){
+  if(!checkedAt) return true;
+  return Date.now() - checkedAt > (value === null ? 21 : 90) * TASTE_DAY;
+}
+
+/* --- Wikipedia ratings box --- */
+function wikiApi(params){
+  const q = Object.keys(params).map(k => k + "=" + encodeURIComponent(params[k])).join("&");
+  return fetch("https://en.wikipedia.org/w/api.php?" + q + "&format=json&formatversion=2&origin=*").then(res => res.json());
+}
+// The template starting at `from`, braces balanced.
+function wikiTemplateAt(text, from){
+  let depth = 0;
+  for(let i = from; i < text.length - 1; i++){
+    if(text[i] === "{" && text[i + 1] === "{"){ depth++; i++; }
+    else if(text[i] === "}" && text[i + 1] === "}"){ depth--; i++; if(!depth) return text.slice(from + 2, i - 1); }
+  }
+  return "";
+}
+// Top-level "name = value" params of a template body, ignoring pipes inside nested {{ }} and [[ ]].
+function wikiTemplateParams(body){
+  const parts = [];
+  let depth = 0, start = 0;
+  for(let i = 0; i < body.length; i++){
+    const two = body.substr(i, 2);
+    if(two === "{{" || two === "[["){ depth++; i++; }
+    else if(two === "}}" || two === "]]"){ depth--; i++; }
+    else if(body[i] === "|" && !depth){ parts.push(body.slice(start, i)); start = i + 1; }
+  }
+  parts.push(body.slice(start));
+  const out = {};
+  parts.slice(1).forEach(p => {
+    const eq = p.indexOf("=");
+    if(eq !== -1) out[p.slice(0, eq).trim().toLowerCase()] = p.slice(eq + 1).trim();
+  });
+  return out;
+}
+const WIKI_GRADES = {"A+": 100, "A": 95, "A-": 90, "B+": 85, "B": 80, "B-": 75, "C+": 70, "C": 65, "C-": 60, "D+": 55, "D": 50, "D-": 45, "E": 40, "F": 30};
+// One review's score as 0–100: {{Rating|3.5|5}}, {{Rating-10|8}}, 8.2/10, or a letter grade.
+function wikiRatingValue(raw){
+  const s = raw.trim();
+  let m = s.match(/^\{\{\s*rating\s*-\s*(\d+)\s*\|\s*([\d.]+)/i);
+  let v = m ? +m[2] / +m[1] : null;
+  if(v === null && (m = s.match(/^\{\{\s*rating\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/i))) v = +m[1] / +m[2];
+  if(v === null && (m = s.match(/^([\d.]+)\s*\/\s*([\d.]+)/))) v = +m[1] / +m[2];
+  if(v === null && (m = s.replace(/[−–]/g, "-").match(/^([A-F][+-]?)(?![\w])/))) return WIKI_GRADES[m[1]] === undefined ? null : WIKI_GRADES[m[1]];
+  return v !== null && isFinite(v) && v >= 0 && v <= 1 ? v * 100 : null;
+}
+function wikiCriticScore(wikitext){
+  // "<\!--" is escaped so the page's <script> never holds a literal comment opener.
+  const text = wikitext.replace(/<\!--[\s\S]*?--\>/g, "").replace(/<ref[^>]*\/>/gi, "").replace(/<ref[\s\S]*?<\/ref>/gi, "");
+  const at = text.search(/\{\{\s*(album|music) ratings/i);
+  if(at === -1) return null;
+  const params = wikiTemplateParams(wikiTemplateAt(text, at));
+  const mc = (params.mc || "").match(/^(\d{1,3})/);
+  if(mc && +mc[1] <= 100) return +mc[1];
+  const scores = Object.keys(params).filter(k => /^rev\d+score$/.test(k)).map(k => wikiRatingValue(params[k])).filter(v => v !== null);
+  return scores.length >= 2 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+}
+// A page counts as the album when its title (less any "(… album)") or infobox name matches,
+// and its infobox names the artist.
+function wikiPageIsAlbum(page, artist, title){
+  const text = page.revisions && page.revisions[0] && (page.revisions[0].slots ? page.revisions[0].slots.main.content : page.revisions[0].content);
+  if(!text) return null;
+  const box = text.match(/\{\{\s*infobox album[\s\S]*?\n\s*\|\s*artist\s*=([^\n]*)/i);
+  if(!box || normName(box[1]).indexOf(normName(artist)) === -1) return null;
+  const want = normName(title);
+  const name = text.match(/\{\{\s*infobox album[\s\S]*?\n\s*\|\s*name\s*=([^\n]*)/i);
+  const okTitle = normName(page.title.replace(/\s*\([^)]*\)\s*$/, "")) === want || (name && normName(name[1]) === want);
+  return okTitle ? text : null;
+}
+// Resolves to 0–100, null when there's no page or no scores, or undefined when the lookup failed.
+async function fetchWikiCriticScore(artist, title){
+  const clean = stripEditionSuffix(title);
+  try{
+    const found = await wikiApi({action: "query", list: "search", srsearch: clean + " " + artist + " album", srlimit: 3});
+    const titles = ((found.query && found.query.search) || []).map(s => s.title);
+    if(!titles.length) return null;
+    const pages = await wikiApi({action: "query", prop: "revisions", rvprop: "content", rvslots: "main", redirects: 1, titles: titles.join("|")});
+    const list = (pages.query && pages.query.pages) || [];
+    for(const t of titles){   // keep search order: the best match first
+      const page = list.find(p => p.title === t) || null;
+      const text = page && wikiPageIsAlbum(page, artist, clean);
+      if(text) return wikiCriticScore(text);
+    }
+    return null;
+  }catch(e){
+    return undefined;
+  }
+}
+
+/* --- fetching, a couple at a time, off-screen --- */
+let statsTasteRefreshTimer = null;
+function scheduleStatsTasteRefresh(){
+  clearTimeout(statsTasteRefreshTimer);
+  statsTasteRefreshTimer = setTimeout(() => { if(section === "stats") fillStatsTaste(); }, 400);
+}
+function statsFetchTaste(reviews){
+  if(statsTasteProgress) return;
+  const cache = loadTasteCache();
+  const todo = reviews.filter(r => {
+    if(statsComposite(r) === null) return false;
+    const key = reviewKey(r.artist, r.title);
+    if(statsTasteTried.has(key)) return false;
+    const e = cache[key] || {};
+    return tasteStale(e.c === undefined ? null : e.c, e.ct) || (settings.apiKey && tasteStale(e.l === undefined ? null : e.l, e.lt));
+  });
+  if(!todo.length) return;
+  statsTasteProgress = {done: 0, total: todo.length};
+  let next = 0;
+  const worker = async () => {
+    while(next < todo.length){
+      const r = todo[next++];
+      const key = reviewKey(r.artist, r.title);
+      statsTasteTried.add(key);
+      const e = cache[key] || {};
+      if(tasteStale(e.c === undefined ? null : e.c, e.ct)){
+        const c = await fetchWikiCriticScore(r.artist, r.title);
+        if(c !== undefined){ e.c = c; e.ct = Date.now(); }
+      }
+      if(settings.apiKey && tasteStale(e.l === undefined ? null : e.l, e.lt)){
+        const got = await fetchLastfmListeners({artist: r.artist, title: r.title});
+        e.l = got.listeners || null;
+        e.lt = Date.now();
+      }
+      cache[key] = e;
+      scheduleTasteCacheSave();
+      statsTasteProgress.done++;
+      scheduleStatsTasteRefresh();
+    }
+  };
+  Promise.all([worker(), worker()]).then(() => {
+    statsTasteProgress = null;
+    scheduleStatsTasteRefresh();
+  });
+}
+
+/* --- ranking --- */
+// Each value's place among the rest, 0 (lowest) … 1 (highest); ties share their average place.
+function tastePercentiles(values){
+  const order = values.map((v, i) => i).sort((a, b) => values[a] - values[b]);
+  const out = new Array(values.length);
+  for(let i = 0; i < order.length; ){
+    let j = i;
+    while(j + 1 < order.length && values[order[j + 1]] === values[order[i]]) j++;
+    const p = order.length > 1 ? ((i + j) / 2) / (order.length - 1) : 0.5;
+    for(let k = i; k <= j; k++) out[order[k]] = p;
+    i = j + 1;
+  }
+  return out;
+}
+// Spearman's rank correlation: -1 opposite tastes, 0 unrelated, 1 the same order.
+function tasteAgreement(xs, ys){
+  if(xs.length < 8) return null;
+  const a = tastePercentiles(xs), b = tastePercentiles(ys);
+  const ma = a.reduce((s, v) => s + v, 0) / a.length, mb = b.reduce((s, v) => s + v, 0) / b.length;
+  let num = 0, da = 0, db = 0;
+  a.forEach((v, i) => { num += (v - ma) * (b[i] - mb); da += (v - ma) * (v - ma); db += (b[i] - mb) * (b[i] - mb); });
+  return da && db ? num / Math.sqrt(da * db) : null;
+}
+function statsTasteIndex(reviews){
+  const cache = loadTasteCache();
+  const rows = reviews.map(r => {
+    const comp = statsComposite(r);
+    if(comp === null) return null;
+    const e = cache[reviewKey(r.artist, r.title)] || {};
+    return {r: r, comp: comp, relistens: Math.max(0, listensFor(r.artist, r.title) - 1),
+      critic: typeof e.c === "number" ? e.c : null, crowd: typeof e.l === "number" ? e.l : null};
+  }).filter(Boolean);
+  // You: composite, with re-listens as a small share that also settles ties.
+  const compP = tastePercentiles(rows.map(x => x.comp));
+  const relP = tastePercentiles(rows.map(x => x.relistens));
+  const blend = rows.map((x, i) => (1 - TASTE_RELISTEN_WEIGHT) * compP[i] + TASTE_RELISTEN_WEIGHT * relP[i]);
+  tastePercentiles(blend).forEach((p, i) => rows[i].you = p);
+  // Critics and crowd, each ranked among the albums they have a view on.
+  ["critic", "crowd"].forEach(k => {
+    const have = rows.filter(x => x[k] !== null);
+    tastePercentiles(have.map(x => x[k])).forEach((p, i) => have[i][k + "P"] = p);
+  });
+  const both = k => rows.filter(x => x[k] !== null);
+  return {
+    rows: rows,
+    critics: tasteAgreement(both("critic").map(x => x.you), both("critic").map(x => x.critic)),
+    crowd: tasteAgreement(both("crowd").map(x => x.you), both("crowd").map(x => x.crowd)),
+    matched: {critic: both("critic").length, crowd: both("crowd").length}
+  };
+}
+
+function setStatsTasteSide(side){
+  statsTasteSide = side;
+  fillStatsTaste();
+}
+function tasteTileHtml(label, v, n){
+  const w = v === null ? 0 : Math.abs(v) * 50;
+  return '<div class="taste-tile" title="' + n + ' albums compared">' +
+    '<div class="taste-tile-num">' + (v === null ? "–" : (v > 0 ? "+" : "") + v.toFixed(2)) + '</div>' +
+    '<div class="taste-tile-label">' + label + '</div>' +
+    '<div class="taste-meter"><span class="' + (v < 0 ? "neg" : "") + '" style="left:' + (v < 0 ? 50 - w : 50) + '%; width:' + w + '%"></span></div>' +
+  '</div>';
+}
+function tasteCoverHtml(x){
+  const e = x.r;
+  const label = escapeHtml(e.artist + " – " + e.title + " · critics " + Math.round(x.critic) + " · " + x.crowd.toLocaleString() + " listeners");
+  const url = cachedCoverUrl(e.artist, e.title);
+  return '<button class="color-example" title="' + label + '" aria-label="' + label + '" onclick="openReviewModal(' +
+    escapeHtml(JSON.stringify(e.artist)) + ',' + escapeHtml(JSON.stringify(e.title)) + ')">' +
+    (url ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy">' : '') + '</button>';
+}
+function fillStatsTaste(){
+  const host = document.getElementById("statsTaste");
+  if(!host) return;
+  const idx = statsTasteIndex(Object.values(loadReviews()));
+  const love = statsTasteSide === "love";
+  const readout = statsTasteProgress
+    ? statsTasteProgress.done + ' / ' + statsTasteProgress.total
+    : '<b>' + idx.matched.critic.toLocaleString() + '</b> / ' + idx.rows.length.toLocaleString() + ' scored';
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<span class="stats-card-title">Critics &amp; crowd</span>' +
+      '<span class="stats-readout">' + readout + '</span>' +
+    '</div>' +
+    '<div class="taste-tiles">' +
+      tasteTileHtml("Critics", idx.critics, idx.matched.critic) +
+      tasteTileHtml("Last.fm crowd", settings.apiKey ? idx.crowd : null, idx.matched.crowd) +
+    '</div>';
+
+  // Your strongest feelings, split by who's with you. Only albums both sides have a view on.
+  const strong = idx.rows.filter(x => x.critic !== null && x.crowd !== null &&
+    (love ? x.you >= 1 - TASTE_STRONG : x.you <= TASTE_STRONG));
+  const groups = [
+    {label: "Everyone agrees", c: true, l: true},
+    {label: "Critics agree", c: true, l: false},
+    {label: "Crowd agrees", c: false, l: true},
+    {label: "Just you", c: false, l: false}
+  ];
+  const agrees = p => love ? p >= 0.5 : p < 0.5;
+  html += '<div class="taste-group-head" style="margin-top:14px">' +
+    '<div class="stats-seg">' +
+      '<button class="' + (love ? "active" : "") + '" onclick="setStatsTasteSide(\'love\')">Loves</button>' +
+      '<button class="' + (love ? "" : "active") + '" onclick="setStatsTasteSide(\'dislike\')">Dislikes</button>' +
+    '</div></div>';
+  if(!strong.length){
+    const why = !settings.apiKey ? "Add a Last.fm API key in settings" : statsTasteProgress ? "Looking up scores…" : "Not enough matched albums yet";
+    host.innerHTML = html + '<div class="stats-empty">' + why + '</div></div>';
+    return;
+  }
+  groups.forEach(g => {
+    const list = strong.filter(x => agrees(x.criticP) === g.c && agrees(x.crowdP) === g.l);
+    // "Just you" leads with the widest gaps; the rest with your strongest feelings.
+    const gap = x => Math.abs(x.you - (x.criticP + x.crowdP) / 2);
+    list.sort(!g.c && !g.l ? (a, b) => gap(b) - gap(a)
+      : love ? (a, b) => b.you - a.you || b.relistens - a.relistens : (a, b) => a.you - b.you);
+    html += '<div class="taste-group"><div class="taste-group-head"><span>' + g.label + '</span><b>' + list.length + '</b></div>' +
+      (list.length ? '<div class="color-examples">' + list.slice(0, STATS_EXAMPLES).map(tasteCoverHtml).join("") + '</div>' : '') +
+    '</div>';
+  });
+  host.innerHTML = html + '</div>';
+}
+
 function renderStats(){
   const content = document.getElementById("content");
   if(section !== "stats") return;
@@ -4147,10 +4447,12 @@ function renderStats(){
       '<button class="count-btn' + (statsSpan === "year" ? ' active' : '') + '" onclick="setStatsSpan(\'year\')">Year</button>' +
       '<button class="count-btn' + (statsSpan === "decade" ? ' active' : '') + '" onclick="setStatsSpan(\'decade\')">Decade</button>' +
     '</div>' +
-    '<div id="statsTimeline"></div><div id="statsColors"></div>';
+    '<div id="statsTimeline"></div><div id="statsColors"></div><div id="statsTaste"></div>';
   fillStatsTimeline();
   fillStatsColors();
+  fillStatsTaste();
   statsReadCovers(reviews);
+  statsFetchTaste(reviews);
 }
 let statsResizeTimer = null;
 window.addEventListener("resize", () => {
