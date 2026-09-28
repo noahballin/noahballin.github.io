@@ -2329,7 +2329,7 @@ const COVER_COLOR_ORDER = [CC.RED, CC.ORANGE, CC.YELLOW, CC.GREEN, CC.TEAL, CC.B
 
 // Bump whenever the rules below change what a cover would be called. Every stored reading is
 // then dropped once, and covers are read again under the new rules as they're next seen.
-const COVER_COLORS_VERSION = 9;
+const COVER_COLORS_VERSION = 10;
 let coverColorsChecked = false;
 function checkCoverColorsVersion(){
   coverColorsChecked = true;
@@ -2418,6 +2418,9 @@ function coverPixelColor(r, g, b){
     // Not very vivid (and pale shades can carry a fair bit of chroma before they read orange):
     // kraft paper, wood and classic tan are brown, cream is white.
     if(c < 0.3 || (l > 0.62 && c < 0.42)) return pale ? CC.WHITE : CC.BROWN;
+    // Bright and vivid past 40 degrees is golden yellow (amber, saffron: Everything So Far),
+    // not orange. CSS orange sits at 39 and tangerine at 33, so true oranges stay orange.
+    if(h >= 40) return CC.YELLOW;
     return CC.ORANGE;
   }
   if(h < 68){
