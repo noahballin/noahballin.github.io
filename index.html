@@ -305,6 +305,7 @@
   .color-row-head, .color-row{display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(0, 1fr) 30px; align-items:center; gap:10px;}
   .color-row-head{font-size:9.5px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.06em; padding-bottom:5px;}
   .color-row-head span:last-child, .color-avg{text-align:right;}
+  .color-row.active .color-label{color:var(--teal);}
   .color-row{padding:7px 0; border-top:1px solid var(--line); font-size:12px; color:var(--ink); cursor:pointer;}
   .color-name{display:flex; align-items:center; gap:7px; min-width:0;}
   .color-swatch{width:12px; height:12px; border-radius:50%; flex:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18);}
@@ -4144,6 +4145,275 @@ function openLoggedWithColors(key){
   switchSection("reviews");
 }
 
+/* ---------- STATS: COVER SUBJECTS ----------
+   What a cover shows, read in the browser by the image half of MobileCLIP-S0 (fp16, ~23 MB,
+   fetched once when you ask for it and kept in the Cache API, never in localStorage). The text
+   half is never loaded: each label's prompts were run through it ahead of time and averaged,
+   and ship below as int8 vectors, 512 apiece. A cover goes to the label nearest its own vector.
+   Only subjects you couldn't argue with, and only when the model is sure: a cover that isn't
+   clearly one of them stays unsorted. Several labels feed one subject (one face and a band are
+   both People, since the model can't reliably tell them apart), and some labels feed none —
+   painting, abstract, pattern, object — so an illustration isn't pushed into People for want
+   of anywhere else to go. Covers that look like graphics go through a second pass that only asks
+   whether they're text: asked alongside everything else, Text wins on nearly every cover, since
+   nearly every cover has some lettering. On 77 known covers, 29 were sorted and none were wrong.
+   The reading is one digit on the album's cover-cache entry (p), -1 for read but unsorted, and
+   goes with the cover. */
+const COVER_SUBJECTS = [
+  {id: "people", label: "People", hex: "#C98B6B"},
+  {id: "nature", label: "Nature", hex: "#6E9B5A"},
+  {id: "buildings", label: "Buildings", hex: "#8D8B87"},
+  {id: "animals", label: "Animals", hex: "#C9A23F"},
+  {id: "text", label: "Text", hex: "#D4C3A0"},
+  // Stricter: a person leaning on a car, or cartoon astronauts, otherwise gets in.
+  {id: "vehicles", label: "Vehicles", hex: "#C0504D", min: 0.85},
+  {id: "space", label: "Space", hex: "#6A6FB8", min: 0.85}
+];
+const SUBJECT_NONE = -1;          // read, but not clearly any subject
+const SUBJECT_SECOND_PASS = -2;
+// The first-pass labels, in the order of the vectors: portrait, group of people, nature, building,
+// animal, vehicle, space, painting or illustration, abstract, text only. Each maps to its
+// COVER_SUBJECTS index, to SUBJECT_NONE, or to SUBJECT_SECOND_PASS for the last two.
+const SUBJECT_LABEL_GROUPS = [0, 0, 1, 2, 3, 5, 6, SUBJECT_NONE, SUBJECT_SECOND_PASS, SUBJECT_SECOND_PASS];
+// The second-pass labels, after those: text, patterns, abstract, object.
+const SUBJECT_SECOND_LABELS = [4, SUBJECT_NONE, SUBJECT_NONE, SUBJECT_NONE];
+// How sure each pass has to be, as the winner's share of the softmax, unless the subject sets
+// its own min. Set on the test covers so nothing arguable got in: a painted landscape (31%) and
+// people with goats (54%) stay out.
+const SUBJECT_MIN_SHARE = 0.6;
+const SUBJECT_TEXT_MIN_SHARE = 0.75;
+const SUBJECT_LABEL_EMBEDS = "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";
+const SUBJECT_MODEL_URL = "https://huggingface.co/Xenova/mobileclip_s0/resolve/main/onnx/vision_model_fp16.onnx";
+const SUBJECT_ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+const SUBJECT_SIZE = 256;          // the model's input: 256px square, RGB scaled to 0–1, no mean/std
+const SUBJECT_MODEL_CACHE = "ll-models";
+
+let subjectModel = null;           // Promise of {ort, session, labels}
+function loadSubjectModel(){
+  if(!subjectModel){
+    subjectModel = (async () => {
+      const ort = await import(SUBJECT_ORT_BASE + "ort.wasm.min.mjs");
+      ort.env.wasm.wasmPaths = SUBJECT_ORT_BASE;
+      ort.env.wasm.numThreads = 1;   // threads need cross-origin isolation, which Pages can't give
+      let cache = null, res = null;
+      try{ cache = await caches.open(SUBJECT_MODEL_CACHE); res = await cache.match(SUBJECT_MODEL_URL); }catch(e){}
+      if(!res){
+        res = await fetch(SUBJECT_MODEL_URL);
+        if(!res.ok) throw new Error("model " + res.status);
+        if(cache){ try{ await cache.put(SUBJECT_MODEL_URL, res.clone()); }catch(e){} }
+      }
+      const session = await ort.InferenceSession.create(new Uint8Array(await res.arrayBuffer()));
+      const raw = Uint8Array.from(atob(SUBJECT_LABEL_EMBEDS), ch => ch.charCodeAt(0));
+      const labels = SUBJECT_LABEL_GROUPS.concat(SUBJECT_SECOND_LABELS).map((g, n) => {
+        const v = Float32Array.from(new Int8Array(raw.buffer, n * 512, 512));
+        const len = Math.hypot.apply(null, v);
+        return v.map(x => x / len);
+      });
+      return {ort: ort, session: session, labels: labels};
+    })();
+    subjectModel.catch(() => { subjectModel = null; });   // a failed load can be tried again
+  }
+  return subjectModel;
+}
+
+let subjectCanvas = null, subjectCtx = null;
+// COVER_SUBJECTS index for a loaded image, SUBJECT_NONE, or null if its pixels can't be read.
+async function classifyCoverSubject(img){
+  const m = await loadSubjectModel();
+  if(!subjectCanvas){
+    subjectCanvas = document.createElement("canvas");
+    subjectCanvas.width = subjectCanvas.height = SUBJECT_SIZE;
+    subjectCtx = subjectCanvas.getContext("2d", {willReadFrequently: true});
+    subjectCtx.imageSmoothingQuality = "high";
+  }
+  // Shortest side to 256, centre-cropped: what the model was trained on. Covers are nearly all square.
+  const w = img.naturalWidth, h = img.naturalHeight, side = Math.min(w, h);
+  if(!side) return null;
+  let px;
+  try{
+    subjectCtx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, SUBJECT_SIZE, SUBJECT_SIZE);
+    px = subjectCtx.getImageData(0, 0, SUBJECT_SIZE, SUBJECT_SIZE).data;
+  }catch(e){ return null; }   // tainted canvas: the CDN refused CORS for this one
+  const plane = SUBJECT_SIZE * SUBJECT_SIZE, input = new Float32Array(plane * 3);
+  for(let i = 0; i < plane; i++){
+    input[i] = px[i * 4] / 255;
+    input[plane + i] = px[i * 4 + 1] / 255;
+    input[plane * 2 + i] = px[i * 4 + 2] / 255;
+  }
+  const out = await m.session.run({pixel_values: new m.ort.Tensor("float32", input, [1, 3, SUBJECT_SIZE, SUBJECT_SIZE])});
+  const e = out.image_embeds.data;
+  // Softmax over the labels at CLIP's usual sharpness, then each subject takes its labels' sum.
+  // The image vector comes back at whatever length; cosine similarity needs it at unit length.
+  let len = 0;
+  for(let i = 0; i < 512; i++) len += e[i] * e[i];
+  len = Math.sqrt(len) || 1;
+  const sims = m.labels.map(v => { let d = 0; for(let i = 0; i < 512; i++) d += v[i] * e[i]; return d / len * 100; });
+  const first = subjectShares(sims.slice(0, SUBJECT_LABEL_GROUPS.length), SUBJECT_LABEL_GROUPS);
+  const subject = COVER_SUBJECTS[first.g];
+  if(first.share < (subject && subject.min || SUBJECT_MIN_SHARE)) return SUBJECT_NONE;
+  if(first.g !== SUBJECT_SECOND_PASS) return first.g;
+  const second = subjectShares(sims.slice(SUBJECT_LABEL_GROUPS.length), SUBJECT_SECOND_LABELS);
+  return second.share < SUBJECT_TEXT_MIN_SHARE ? SUBJECT_NONE : second.g;
+}
+// The group with the biggest summed share of a softmax over these similarities, and that share.
+function subjectShares(sims, groups){
+  const top = Math.max.apply(null, sims), score = new Map();
+  let total = 0;
+  sims.forEach((s, n) => {
+    const w = Math.exp(s - top);
+    total += w;
+    score.set(groups[n], (score.get(groups[n]) || 0) + w);
+  });
+  let g = null;
+  score.forEach((v, k) => { if(g === null || v > score.get(g)) g = k; });
+  return {g: g, share: score.get(g) / total};
+}
+
+// The stored reading: a COVER_SUBJECTS index, SUBJECT_NONE, or null if not read yet.
+function coverSubjectReading(artist, title){
+  const hit = coverCacheEntry(artist, title);
+  const k = hit ? hit.subject : null;
+  return k === SUBJECT_NONE || (typeof k === "number" && COVER_SUBJECTS[k]) ? k : null;
+}
+function cachedCoverSubject(artist, title){
+  const k = coverSubjectReading(artist, title);
+  return k === SUBJECT_NONE ? null : k;
+}
+
+// Nothing runs until you ask once; after that, covers logged since are read on each visit.
+const statsSubjectTried = new Set();
+let statsSubjectProgress = null;   // {done, total}, with total 0 while the model loads
+let statsSubjectError = "";
+let statsSubjectSel = null;        // COVER_SUBJECTS index shown under the rows; null: the biggest
+let statsSubjectTimer = null;
+function scheduleStatsSubjectRefresh(){
+  clearTimeout(statsSubjectTimer);
+  statsSubjectTimer = setTimeout(() => { if(section === "stats") fillStatsSubjects(); }, 250);
+}
+function readCoverSubject(artist, title){
+  return new Promise(resolve => {
+    const url = cachedCoverUrl(artist, title);
+    if(!url){ resolve(); return; }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    const timer = setTimeout(resolve, 10000);
+    img.onload = async () => {
+      clearTimeout(timer);
+      try{
+        const k = await classifyCoverSubject(img);
+        const entry = coverCacheEntry(artist, title);
+        if(k !== null && entry){ entry.subject = k; scheduleSpotifyCacheSave(); }
+      }catch(e){ statsSubjectError = "Couldn't read covers here"; }
+      resolve();
+    };
+    img.onerror = () => { clearTimeout(timer); resolve(); };
+    img.src = url;
+  });
+}
+async function statsReadSubjects(reviews, asked){
+  if(statsSubjectProgress) return;
+  if(!asked && !reviews.some(r => coverSubjectReading(r.artist, r.title) !== null)) return;
+  const todo = reviews.filter(r => coverSubjectReading(r.artist, r.title) === null &&
+    cachedCoverUrl(r.artist, r.title) && !statsSubjectTried.has(reviewKey(r.artist, r.title)));
+  if(!todo.length) return;
+  statsSubjectError = "";
+  statsSubjectProgress = {done: 0, total: 0};
+  scheduleStatsSubjectRefresh();
+  try{ await loadSubjectModel(); }
+  catch(e){
+    statsSubjectProgress = null;
+    statsSubjectError = "Couldn't load the model";
+    scheduleStatsSubjectRefresh();
+    return;
+  }
+  statsSubjectProgress.total = todo.length;
+  // One at a time: inference is the slow part, and it runs on one thread anyway.
+  for(const r of todo){
+    if(statsSubjectError) break;
+    statsSubjectTried.add(reviewKey(r.artist, r.title));
+    await readCoverSubject(r.artist, r.title);
+    statsSubjectProgress.done++;
+    scheduleStatsSubjectRefresh();
+  }
+  statsSubjectProgress = null;
+  scheduleStatsSubjectRefresh();
+}
+function startStatsSubjects(){
+  statsReadSubjects(Object.values(loadReviews()), true);
+}
+function setStatsSubject(k){
+  statsSubjectSel = k;
+  fillStatsSubjects();
+}
+
+function subjectCoverHtml(e){
+  const label = escapeHtml(e.r.artist + " – " + e.r.title);
+  const url = cachedCoverUrl(e.r.artist, e.r.title);
+  return '<button class="color-example" title="' + label + '" aria-label="' + label + '" onclick="openReviewModal(' +
+    escapeHtml(JSON.stringify(e.r.artist)) + ',' + escapeHtml(JSON.stringify(e.r.title)) + ')">' +
+    (url ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy">' : '') + '</button>';
+}
+function fillStatsSubjects(){
+  const host = document.getElementById("statsSubjects");
+  if(!host) return;
+  const buckets = COVER_SUBJECTS.map(() => null);
+  let read = 0, known = 0;
+  Object.values(loadReviews()).forEach(r => {
+    const k = coverSubjectReading(r.artist, r.title);
+    if(k === null) return;
+    read++;
+    if(k === SUBJECT_NONE) return;
+    known++;
+    statsAddToBucket(buckets[k] || (buckets[k] = statsNewBucket()), r);
+  });
+  const p = statsSubjectProgress;
+  const readout = p ? (p.total ? p.done + ' / ' + p.total : 'Loading model…')
+    : '<b>' + known.toLocaleString() + '</b> / ' + read.toLocaleString() + ' sorted';
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<span class="stats-card-title">Cover subjects</span>' +
+      '<span class="stats-readout">' + readout + '</span>' +
+    '</div>';
+  const rows = COVER_SUBJECTS.map((s, k) => ({k: k, s: s, b: buckets[k]})).filter(x => x.b)
+    .sort((a, c) => c.b.albums - a.b.albums || a.k - c.k);
+  if(!rows.length){
+    if(p) html += '<div class="stats-empty">Reading covers…</div>';
+    else if(read && !statsSubjectError) html += '<div class="stats-empty">No covers clearly show a subject yet</div>';
+    else html += '<div class="sync-note">' + (statsSubjectError ? statsSubjectError + '. ' : '') +
+      'Sorts covers that clearly show people, nature, buildings, animals, vehicles, space or text, on this device. ' +
+      'The first time, it downloads about 25 MB.</div>' +
+      '<button class="sync-btn secondary-btn" onclick="startStatsSubjects()">' + (statsSubjectError ? 'Try again' : 'Read covers') + '</button>';
+    host.innerHTML = html + '</div>';
+    return;
+  }
+  const most = rows[0].b.albums;
+  html += '<div class="color-strip">' + rows.map(x =>
+    '<span style="flex:' + x.b.albums + ' 1 0; background:' + x.s.hex + '" title="' + x.s.label + ': ' + x.b.albums + '"></span>').join("") + '</div>';
+  const sel = rows.find(x => x.k === statsSubjectSel) || rows[0];
+  html += '<div class="color-rows"><div class="color-row-head"><span></span><span>Albums</span><span>Avg</span></div>' +
+    rows.map(x =>
+      '<div class="color-row' + (x === sel ? ' active' : '') + '" onclick="setStatsSubject(' + x.k + ')">' +
+        '<span class="color-name"><span class="color-swatch" style="background:' + x.s.hex + '"></span><span class="color-label">' + x.s.label + '</span></span>' +
+        '<span class="color-bar-cell"><span class="color-bar" style="width:' + (x.b.albums / most * 100 * 0.82).toFixed(1) + '%; background:' + x.s.hex + '"></span>' +
+          '<span class="color-count">' + x.b.albums + '</span></span>' +
+        '<span class="color-avg">' + statsFmt(statsCompAvg(x.b)) + '</span>' +
+      '</div>').join("") + '</div>';
+  // The picked subject (the biggest until you tap one): its averages on each axis and its
+  // best-scored covers, most-played first on a tie. Each opens that album.
+  const picks = sel.b.list.slice().sort((a, c) => c.score - a.score || c.listens - a.listens).slice(0, STATS_EXAMPLES);
+  html += '<div class="combo-summary">' +
+      '<span class="combo-title"><span class="color-swatch" style="background:' + sel.s.hex + '"></span>' + sel.s.label + '</span>' +
+      '<span class="stats-readout"><b>' + sel.b.albums + '</b> albums · avg <b>' + statsFmt(statsCompAvg(sel.b)) + '</b></span>' +
+    '</div>' +
+    '<div class="stats-legend">' + statsLegendHtml(sel.b) + '</div>' +
+    '<div class="color-examples">' + picks.map(subjectCoverHtml).join("") + '</div>';
+  if(statsSubjectError && !p){
+    html += '<div class="sync-note">' + statsSubjectError + '. ' +
+      '<button class="stats-clear" onclick="startStatsSubjects()">Try again</button></div>';
+  }
+  host.innerHTML = html + '</div>';
+}
+
 /* ---------- STATS: CRITICS & CROWD ----------
    Your taste against two outside views, compared by rank rather than score: where an album
    sits among your logs by composite (with a sliver of re-listens), by critic score, and by
@@ -4152,6 +4422,7 @@ function openLoggedWithColors(key){
 const TASTE_CACHE_KEY = "ll_taste_sources";   // key -> {c: 0–100 | null, ct, l: listeners | null, lt}
 const TASTE_RELISTEN_WEIGHT = 0.1;
 const TASTE_STRONG = 0.2;                     // top / bottom fifth of your logs counts as a strong feeling
+const TASTE_DISLIKE_MAX_ROTATION = 2;         // dislikes stop at "Maybe someday" (level 2); "Wouldn't mind hearing it again" and up are out
 const TASTE_DAY = 86400000;
 let tasteCache = null;
 let tasteSaveTimer = null;
@@ -4399,8 +4670,10 @@ function fillStatsTaste(){
     '</div>';
 
   // Your strongest feelings, split by who's with you. Only albums both sides have a view on.
+  // An album you'd happily hear again isn't a dislike, however low it ranks.
+  const wouldRevisit = x => (statsAxisLevel(x.r, "rotation") || 0) > TASTE_DISLIKE_MAX_ROTATION;
   const strong = idx.rows.filter(x => x.critic !== null && x.crowd !== null &&
-    (love ? x.you >= 1 - TASTE_STRONG : x.you <= TASTE_STRONG));
+    (love ? x.you >= 1 - TASTE_STRONG : x.you <= TASTE_STRONG && !wouldRevisit(x)));
   const groups = [
     {label: "Everyone agrees", c: true, l: true},
     {label: "Critics agree", c: true, l: false},
@@ -4447,11 +4720,13 @@ function renderStats(){
       '<button class="count-btn' + (statsSpan === "year" ? ' active' : '') + '" onclick="setStatsSpan(\'year\')">Year</button>' +
       '<button class="count-btn' + (statsSpan === "decade" ? ' active' : '') + '" onclick="setStatsSpan(\'decade\')">Decade</button>' +
     '</div>' +
-    '<div id="statsTimeline"></div><div id="statsColors"></div><div id="statsTaste"></div>';
+    '<div id="statsTimeline"></div><div id="statsColors"></div><div id="statsSubjects"></div><div id="statsTaste"></div>';
   fillStatsTimeline();
   fillStatsColors();
+  fillStatsSubjects();
   fillStatsTaste();
   statsReadCovers(reviews);
+  statsReadSubjects(reviews, false);
   statsFetchTaste(reviews);
 }
 let statsResizeTimer = null;
@@ -5930,7 +6205,7 @@ function dropSpotifyCacheMisses(){
 
 // Compact form. Found: {found: 1, i: id, a: [artists], t: title, k: type (omitted for "album"),
 // n: tracks, d: releaseDate, m: image (i.scdn.co prefix dropped)}. Miss: {checkedAt, s: suggestion,
-// l: Last.fm cover, o: its colours}; checkedAt 0 is a stub holding only a Last.fm cover, Spotify not asked yet.
+// l: Last.fm cover, o: its colours, p: its subject}; checkedAt 0 is a stub holding only a Last.fm cover, Spotify not asked yet.
 // url, artist, artistLine and year are rebuilt on load. "found" and "checkedAt" keep their old
 // names so an older version of the app still reads matches as matches and retries misses on time.
 function compactSpotifySummary(s){
@@ -5945,6 +6220,8 @@ function compactSpotifyAlbumEntry(e){
     // The cover's one to three colours, packed into one integer (packCoverColors) — at most
     // 8 digits, and it evicts with the cover it describes. Older builds' h and c are dropped.
     if(e.colors !== undefined && e.colors !== null) out.o = e.colors;
+    // What the cover shows: one COVER_SUBJECTS index, a single digit.
+    if(e.subject !== undefined && e.subject !== null) out.p = e.subject;
     return out;
   }
   const out = {checkedAt: e.checkedAt || 0};
@@ -5953,6 +6230,7 @@ function compactSpotifyAlbumEntry(e){
   if(e.lastfmImage !== undefined){
     out.l = e.lastfmImage.indexOf(LASTFM_IMAGE_PREFIX) === 0 ? e.lastfmImage.slice(LASTFM_IMAGE_PREFIX.length) : e.lastfmImage;
     if(e.lastfmImage && e.colors !== undefined && e.colors !== null) out.o = e.colors;
+    if(e.lastfmImage && e.subject !== undefined && e.subject !== null) out.p = e.subject;
   }
   return out;
 }
@@ -5980,7 +6258,8 @@ function expandSpotifyAlbumEntry(v){
       releaseDate: d,
       year: /^\d{4}$/.test(y) && parseInt(y, 10) >= 1900 ? y : "",
       image: v.m ? (v.m.indexOf("://") === -1 ? SPOTIFY_IMAGE_PREFIX + v.m : v.m) : "",
-      colors: v.o !== undefined ? v.o : null
+      colors: v.o !== undefined ? v.o : null,
+      subject: v.p !== undefined ? v.p : null
     });
   }
   if(v.found === true){   // old full-format match: already the in-memory shape, just make sure artists is filled
@@ -5993,6 +6272,7 @@ function expandSpotifyAlbumEntry(v){
   if(typeof v.l === "string"){
     entry.lastfmImage = v.l && v.l.indexOf("://") === -1 ? LASTFM_IMAGE_PREFIX + v.l : v.l;
     if(v.o !== undefined) entry.colors = v.o;
+    if(v.p !== undefined) entry.subject = v.p;
   }
   return entry;
 }
@@ -6252,6 +6532,7 @@ function rememberLastfmCover(artist, title, url){
   if(!entry) entry = cache[key] = {checkedAt: 0, found: false};
   entry.lastfmImage = url || "";
   entry.colors = null;
+  entry.subject = null;
   scheduleSpotifyCacheSave();
 }
 function cachedCoverUrl(artist, title){
