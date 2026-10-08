@@ -1722,9 +1722,10 @@ function getFilteredReviews(){
     return i === -1 ? 999 : i;
   };
   const byReviewed = (a, b) => (b.reviewedAt || 0) - (a.reviewedAt || 0);
-  // Most recently listened first, like Recents; never-listened albums fall back to review date.
-  const byRecent = (a, b) =>
-    lastListenFor(b.artist, b.title) - lastListenFor(a.artist, a.title) || byReviewed(a, b);
+  // Most recently listened first, like Recents. Reviewing counts as a listen, so an album whose
+  // plays haven't reached the tally yet sorts by its review date instead of sinking to the bottom.
+  const recency = r => Math.max(lastListenFor(r.artist, r.title), Math.floor((r.reviewedAt || 0) / 1000));
+  const byRecent = (a, b) => recency(b) - recency(a) || byReviewed(a, b);
   const sorters = {
     recent: byRecent,
     // Personal scores: rotation first, pull breaks ties, then distinctiveness.
@@ -2775,8 +2776,9 @@ function tallyWeeksFromGroups(groups){
 
 /* Commit those buckets, but only the ones the query window actually covered in full.
    A rolling 7-day window clips its oldest bucket, and writing that partial count would
-   clobber a complete one recorded earlier. The in-progress current week is the deliberate
-   exception: partial is all that exists for it, and the next sync replaces it with more. */
+   clobber a complete one recorded earlier, so clipped buckets are merged in by max instead.
+   The in-progress current week is replaced outright: partial is all that exists for it, and
+   the next sync replaces it with more. */
 function commitTallyWeeks(tallied, fromUnix, toUnix){
   const byWeek = tallied.counts;
   const nowWeek = listenWeek(Math.floor(Date.now() / 1000));
@@ -2786,8 +2788,21 @@ function commitTallyWeeks(tallied, fromUnix, toUnix){
     const w = parseInt(weeks[i], 10);
     const start = listenWeekStart(w), end = start + WEEK_SECONDS;
     const fullyCovered = start >= fromUnix && end <= toUnix;
-    if(!fullyCovered && w !== nowWeek) continue;
-    setTallyWeek(w, byWeek[weeks[i]], tallied.last[weeks[i]]);
+    let counts = byWeek[weeks[i]], last = tallied.last[weeks[i]] || {};
+    if(!fullyCovered && w !== nowWeek){
+      // A clipped week can only under-count, so merge it in by max: it fills in albums the
+      // earlier record missed (e.g. played just before the Thursday bucket rollover) without
+      // lowering anything that record already had.
+      const st = loadTally();
+      const oldCounts = st.weeks[String(w)] || {}, oldLast = st.last[String(w)] || {};
+      counts = Object.assign({}, oldCounts);
+      last = Object.assign({}, oldLast);
+      Object.keys(byWeek[weeks[i]]).forEach(k => {
+        counts[k] = Math.max(counts[k] || 0, byWeek[weeks[i]][k]);
+        last[k] = Math.max(last[k] || 0, (tallied.last[weeks[i]] || {})[k] || 0);
+      });
+    }
+    setTallyWeek(w, counts, last);
     written++;
   }
   if(written) saveTally();
@@ -7646,7 +7661,7 @@ async function generateRecentListens(){
   }
 
   // Feed the cumulative tally that drives the listen stars. Weeks the rolling window only
-  // partially covers are skipped inside commitTallyWeeks, so nothing complete gets clobbered.
+  // partially covers are merged by max inside commitTallyWeeks, so nothing complete gets clobbered.
   commitTallyWeeks(tallyWeeksFromGroups(scored), fromUnix, toUnix);
 
   const MIN_TRACKS_FOR_ALBUM = 4; // filters out singles/EPs (2-3 track releases) — a couple scrobbles shouldn't count as a "full listen"
