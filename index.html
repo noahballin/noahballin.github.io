@@ -2756,13 +2756,20 @@ function tallyWeeksFromGroups(groups){
     for(let j = 0; j < g.utsList.length; j++){
       if(!g.utsList[j]) continue;
       const w = listenWeek(g.utsList[j]);
-      perWeek[w] = (perWeek[w] || 0) + 1;
+      (perWeek[w] = perWeek[w] || []).push(g.utsList[j]);
       if(g.utsList[j] > (latest[w] || 0)) latest[w] = g.utsList[j];
     }
-    const weeks = Object.keys(perWeek);
+    const weeks = Object.keys(perWeek).sort((a, b) => a - b);
+    // A listen that straddles the bucket rollover leaves both halves short of 80%, though This
+    // Week's rolling window counts it. Plays a bucket didn't credit carry into the next one, as
+    // long as they're within 7 days of its latest play — the same reach This Week has.
+    let carry = [];
     for(let j = 0; j < weeks.length; j++){
-      const ratio = perWeek[weeks[j]] / divisor;
-      if(ratio < TALLY_FULL_RATIO) continue;
+      const reach = latest[weeks[j]] - WEEK_SECONDS;
+      const plays = perWeek[weeks[j]].concat(carry.filter(u => u >= reach));
+      const ratio = plays.length / divisor;
+      if(ratio < TALLY_FULL_RATIO){ carry = plays; continue; }
+      carry = [];
       // 80% leniency only buys the first listen; past that it's strict floor division.
       const listens = Math.max(1, Math.floor(ratio));
       if(!byWeek[weeks[j]]) byWeek[weeks[j]] = {};
