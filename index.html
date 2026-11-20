@@ -66,12 +66,17 @@
   h1{
     font-family:var(--font-display); font-weight:600; font-size:20px; margin:3px 0 0;
     letter-spacing:-0.01em; line-height:1.15;
-    /* Gold at the baseline rising into the ink colour at the top. inline-block keeps the
-       gradient sized to the words rather than the full header width. */
+    /* Neon tube: near-white core with layered glow from the theme's accent (purple in Vinyl),
+       fading out into gold-dim (pink). The innermost accent layer is lifted toward white so the
+       glow still reads against the near-black header. */
     display:inline-block;
-    background:linear-gradient(to top, var(--gold), var(--ink));
-    -webkit-background-clip:text; background-clip:text;
-    -webkit-text-fill-color:transparent; color:transparent;
+    color:#fbf8ff;
+    text-shadow:
+      0 0 2px #fff,
+      0 0 6px color-mix(in srgb, var(--gold) 65%, #fff),
+      0 0 14px var(--gold),
+      0 0 28px var(--gold),
+      0 0 44px color-mix(in srgb, var(--gold-dim) 50%, transparent);
   }
 
   /* Header starfield: a layer behind the whole header. Stars never move — each one sits dark
@@ -97,15 +102,6 @@
     0%, 70%, 100%{opacity:0;}
     82%{opacity:var(--peak, 0.9);}
   }
-  select#listSelector{
-    appearance:none; -webkit-appearance:none; width:100%; margin-top:6px;
-    background:transparent; border:none; color:var(--ink);
-    font-family:var(--font-display); font-weight:600; font-size:24px; letter-spacing:-0.01em;
-    padding:0 22px 0 0;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%238A7020'%3E%3Cpath d='M5 7l5 6 5-6H5z'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right center; background-size:16px;
-  }
-  select#listSelector:focus{outline:none;}
 
   .triple-stat{color:var(--gold); font-weight:600;}
 
@@ -332,6 +328,11 @@
   .color-bar{height:8px; border-radius:0 4px 4px 0; min-width:2px; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.16);}
   .color-count{font-size:11px; color:var(--ink-dim); flex:none;}
   .color-avg{font-weight:600;}
+  .genre-bar{background:var(--teal);}
+  .genre-bar.muted{background:var(--ink-dim);}
+  .genre-title{margin-top:14px;}
+  .genre-note{font-size:11px; color:var(--ink-dim); line-height:1.5; margin-top:10px;}
+  .genre-cover-text{display:flex; align-items:center; justify-content:center; height:100%; padding:3px; font-size:8px; line-height:1.2; color:var(--ink-dim); text-align:center; overflow:hidden;}
   .color-examples{display:grid; grid-template-columns:repeat(6, 1fr); gap:6px; margin-top:12px;}
   .color-example{aspect-ratio:1; border:none; padding:0; border-radius:4px; overflow:hidden; background:var(--card-hi); cursor:pointer;}
   .color-example img{display:block; width:100%; height:100%; object-fit:cover;}
@@ -339,6 +340,23 @@
   .taste-tile{background:var(--card-hi); border-radius:6px; padding:8px 10px 9px;}
   .taste-tile-num{font-family:var(--font-display); font-size:22px; font-weight:600; color:var(--ink); line-height:1.1;}
   .taste-tile-label{font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.06em;}
+  .stats-tiles-3{grid-template-columns:repeat(3, minmax(0, 1fr));}
+  .stats-tiles-3 .taste-tile-num{font-size:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .week-bar-new{fill:var(--teal);}
+  .week-bar-old{fill:var(--ink-dim);}
+  .week-bar-new.dim, .week-bar-old.dim{opacity:0.4;}
+  .week-favs{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-top:10px;}
+  .week-fav{display:flex; gap:8px; align-items:center; min-width:0; background:var(--card-hi); border:none; border-radius:6px; padding:6px; text-align:left; cursor:pointer; font-family:var(--font-body); color:var(--ink);}
+  .week-fav.is-empty{cursor:default; min-height:60px;}
+  .week-fav-cover{width:48px; height:48px; flex:none; border-radius:4px; overflow:hidden; background:var(--card);}
+  .week-fav-cover img{display:block; width:100%; height:100%; object-fit:cover;}
+  .week-fav-text{display:flex; flex-direction:column; min-width:0; gap:1px;}
+  .week-fav-kind{font-size:9.5px; color:var(--teal); text-transform:uppercase; letter-spacing:0.06em;}
+  .week-fav-title{font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .week-fav-artist{font-size:11px; color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .week-fav-artist b{color:var(--ink); font-weight:600;}
+  .vibe-row-still{width:24px; height:24px;}
+  .genre-note b{color:var(--ink); font-weight:600;}
   .taste-meter{position:relative; height:4px; margin-top:7px; border-radius:2px; background:var(--line);}
   .taste-meter::after{content:""; position:absolute; left:50%; top:-2px; width:1px; height:8px; background:var(--ink-dim);}
   .taste-meter span{position:absolute; top:0; height:100%; border-radius:2px; background:var(--teal);}
@@ -683,7 +701,7 @@
     /* Parked mid-orbit rather than removed, so the ball still reads the same. */
     .tab-ball-spin{animation:none; transform:rotateY(58deg);}
     .tab-ball-moon{animation:none; transform:translateZ(12px) rotateY(-58deg) rotateX(20deg) rotateZ(25deg);}
-    .header-star{animation:none; opacity:0.25;}
+    .header-star{animation:none; opacity:0.1;}
   }
 </style>
 </head>
@@ -702,7 +720,7 @@
   </div>
 
   <div id="listHeader" class="hidden">
-    <select id="listSelector" onchange="goList(this.value)"></select>
+    <h1 id="listTitle"></h1>
     <div class="status-row">
       <div class="ring-wrap">
         <svg viewBox="0 0 64 64">
@@ -1058,6 +1076,7 @@
 </div>
 
 <script src="lists-data.js"></script>
+<script src="genre-data.js"></script>
 <script>
 
 /* ---------- ALBUM REVIEWS ---------- */
@@ -1138,6 +1157,7 @@ const CACHE_EVICTION_STEPS = [
   () => localStorage.removeItem("ll_discover_v3"),
   () => localStorage.removeItem("ll_recent_results"),
   () => localStorage.removeItem("ll_taste_sources"),
+  () => localStorage.removeItem("ll_album_lengths"),
   () => dropSpotifyCacheMisses(),
   () => localStorage.removeItem("ll_spotify_albums")
 ];
@@ -1421,14 +1441,15 @@ async function exportReviewsCSV(){
     note.textContent = "No reviews saved yet.";
     return;
   }
-  const header = ["Artist", "Album", "Rotation", "Distinctiveness", "Pull", "Vibe Emote URL", "Reviewed At"];
+  const header = ["Artist", "Album", "Rotation", "Distinctiveness", "Pull", "Vibe Emote URL", "Reviewed At", "Genres"];
   const lines = [header.map(csvEscape).join(",")];
   rows.forEach(r => {
     const vibe = VIBE_EMOTES.find(v => v.id === r.vibe);
     lines.push([
       r.artist, r.title, r.rotation, r.distinctiveness, r.pull,
       vibe ? vibe.url : "",
-      r.reviewedAt ? new Date(r.reviewedAt).toISOString() : ""
+      r.reviewedAt ? new Date(r.reviewedAt).toISOString() : "",
+      (r.genres || []).join("; ")
     ].map(csvEscape).join(","));
   });
   const csv = lines.join("\n");
@@ -3248,7 +3269,7 @@ function layoutHeaderStars(){
       "--rot:" + Math.round(Math.random() * 72) + "deg;" +
       "--dur:" + dur.toFixed(2) + "s;" +
       "--delay:" + (-Math.random() * dur).toFixed(2) + "s;" +
-      "--peak:" + (0.55 + Math.random() * 0.45).toFixed(2) + ";";
+      "--peak:" + (0.12 + Math.random() * 0.13).toFixed(2) + ";";   // kept faint so the title's glow stays the focus
     headerStarField.appendChild(el);
     headerStarList.push({x: x, y: y, size: size, el: el});
   }
@@ -3647,20 +3668,13 @@ function goList(id){
   mode = "albums";
   localStorage.setItem("ll_mode", "albums");
   localStorage.setItem("ll_active_list_id", activeList.id);
-  populateListSelector();
+  setListTitle();
   render();
 }
 
-function populateListSelector(){
-  const sel = document.getElementById("listSelector");
-  sel.innerHTML = "";
-  getAllLists().forEach(l => {
-    const opt = document.createElement("option");
-    opt.value = l.id;
-    opt.textContent = getListTitle(l);
-    if(l.id === activeList.id) opt.selected = true;
-    sel.appendChild(opt);
-  });
+// The open list's name as a plain header title — switching lists goes through the back button.
+function setListTitle(){
+  document.getElementById("listTitle").textContent = activeList ? getListTitle(activeList) : "";
 }
 
 /* ---------- STATS ----------
@@ -4167,272 +4181,744 @@ function openLoggedWithColors(key){
   switchSection("reviews");
 }
 
-/* ---------- STATS: COVER SUBJECTS ----------
-   What a cover shows, read in the browser by the image half of MobileCLIP-S0 (fp16, ~23 MB,
-   fetched once when you ask for it and kept in the Cache API, never in localStorage). The text
-   half is never loaded: each label's prompts were run through it ahead of time and averaged,
-   and ship below as int8 vectors, 512 apiece. A cover goes to the label nearest its own vector.
-   Only subjects you couldn't argue with, and only when the model is sure: a cover that isn't
-   clearly one of them stays unsorted. Several labels feed one subject (one face and a band are
-   both People, since the model can't reliably tell them apart), and some labels feed none —
-   painting, abstract, pattern, object — so an illustration isn't pushed into People for want
-   of anywhere else to go. Covers that look like graphics go through a second pass that only asks
-   whether they're text: asked alongside everything else, Text wins on nearly every cover, since
-   nearly every cover has some lettering. On 77 known covers, 29 were sorted and none were wrong.
-   The reading is one digit on the album's cover-cache entry (p), -1 for read but unsorted, and
-   goes with the cover. */
-const COVER_SUBJECTS = [
-  {id: "people", label: "People", hex: "#C98B6B"},
-  {id: "nature", label: "Nature", hex: "#6E9B5A"},
-  {id: "buildings", label: "Buildings", hex: "#8D8B87"},
-  {id: "animals", label: "Animals", hex: "#C9A23F"},
-  {id: "text", label: "Text", hex: "#D4C3A0"},
-  // Stricter: a person leaning on a car, or cartoon astronauts, otherwise gets in.
-  {id: "vehicles", label: "Vehicles", hex: "#C0504D", min: 0.85},
-  {id: "space", label: "Space", hex: "#6A6FB8", min: 0.85}
-];
-const SUBJECT_NONE = -1;          // read, but not clearly any subject
-const SUBJECT_SECOND_PASS = -2;
-// The first-pass labels, in the order of the vectors: portrait, group of people, nature, building,
-// animal, vehicle, space, painting or illustration, abstract, text only. Each maps to its
-// COVER_SUBJECTS index, to SUBJECT_NONE, or to SUBJECT_SECOND_PASS for the last two.
-const SUBJECT_LABEL_GROUPS = [0, 0, 1, 2, 3, 5, 6, SUBJECT_NONE, SUBJECT_SECOND_PASS, SUBJECT_SECOND_PASS];
-// The second-pass labels, after those: text, patterns, abstract, object.
-const SUBJECT_SECOND_LABELS = [4, SUBJECT_NONE, SUBJECT_NONE, SUBJECT_NONE];
-// How sure each pass has to be, as the winner's share of the softmax, unless the subject sets
-// its own min. Set on the test covers so nothing arguable got in: a painted landscape (31%) and
-// people with goats (54%) stay out.
-const SUBJECT_MIN_SHARE = 0.6;
-const SUBJECT_TEXT_MIN_SHARE = 0.75;
-const SUBJECT_LABEL_EMBEDS = "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";
-const SUBJECT_MODEL_URL = "https://huggingface.co/Xenova/mobileclip_s0/resolve/main/onnx/vision_model_fp16.onnx";
-const SUBJECT_ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
-const SUBJECT_SIZE = 256;          // the model's input: 256px square, RGB scaled to 0–1, no mean/std
-const SUBJECT_MODEL_CACHE = "ll-models";
-
-let subjectModel = null;           // Promise of {ort, session, labels}
-function loadSubjectModel(){
-  if(!subjectModel){
-    subjectModel = (async () => {
-      const ort = await import(SUBJECT_ORT_BASE + "ort.wasm.min.mjs");
-      ort.env.wasm.wasmPaths = SUBJECT_ORT_BASE;
-      ort.env.wasm.numThreads = 1;   // threads need cross-origin isolation, which Pages can't give
-      let cache = null, res = null;
-      try{ cache = await caches.open(SUBJECT_MODEL_CACHE); res = await cache.match(SUBJECT_MODEL_URL); }catch(e){}
-      if(!res){
-        res = await fetch(SUBJECT_MODEL_URL);
-        if(!res.ok) throw new Error("model " + res.status);
-        if(cache){ try{ await cache.put(SUBJECT_MODEL_URL, res.clone()); }catch(e){} }
-      }
-      const session = await ort.InferenceSession.create(new Uint8Array(await res.arrayBuffer()));
-      const raw = Uint8Array.from(atob(SUBJECT_LABEL_EMBEDS), ch => ch.charCodeAt(0));
-      const labels = SUBJECT_LABEL_GROUPS.concat(SUBJECT_SECOND_LABELS).map((g, n) => {
-        const v = Float32Array.from(new Int8Array(raw.buffer, n * 512, 512));
-        const len = Math.hypot.apply(null, v);
-        return v.map(x => x / len);
-      });
-      return {ort: ort, session: session, labels: labels};
-    })();
-    subjectModel.catch(() => { subjectModel = null; });   // a failed load can be tried again
-  }
-  return subjectModel;
-}
-
-let subjectCanvas = null, subjectCtx = null;
-// COVER_SUBJECTS index for a loaded image, SUBJECT_NONE, or null if its pixels can't be read.
-async function classifyCoverSubject(img){
-  const m = await loadSubjectModel();
-  if(!subjectCanvas){
-    subjectCanvas = document.createElement("canvas");
-    subjectCanvas.width = subjectCanvas.height = SUBJECT_SIZE;
-    subjectCtx = subjectCanvas.getContext("2d", {willReadFrequently: true});
-    subjectCtx.imageSmoothingQuality = "high";
-  }
-  // Shortest side to 256, centre-cropped: what the model was trained on. Covers are nearly all square.
-  const w = img.naturalWidth, h = img.naturalHeight, side = Math.min(w, h);
-  if(!side) return null;
-  let px;
-  try{
-    subjectCtx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, SUBJECT_SIZE, SUBJECT_SIZE);
-    px = subjectCtx.getImageData(0, 0, SUBJECT_SIZE, SUBJECT_SIZE).data;
-  }catch(e){ return null; }   // tainted canvas: the CDN refused CORS for this one
-  const plane = SUBJECT_SIZE * SUBJECT_SIZE, input = new Float32Array(plane * 3);
-  for(let i = 0; i < plane; i++){
-    input[i] = px[i * 4] / 255;
-    input[plane + i] = px[i * 4 + 1] / 255;
-    input[plane * 2 + i] = px[i * 4 + 2] / 255;
-  }
-  const out = await m.session.run({pixel_values: new m.ort.Tensor("float32", input, [1, 3, SUBJECT_SIZE, SUBJECT_SIZE])});
-  const e = out.image_embeds.data;
-  // Softmax over the labels at CLIP's usual sharpness, then each subject takes its labels' sum.
-  // The image vector comes back at whatever length; cosine similarity needs it at unit length.
-  let len = 0;
-  for(let i = 0; i < 512; i++) len += e[i] * e[i];
-  len = Math.sqrt(len) || 1;
-  const sims = m.labels.map(v => { let d = 0; for(let i = 0; i < 512; i++) d += v[i] * e[i]; return d / len * 100; });
-  const first = subjectShares(sims.slice(0, SUBJECT_LABEL_GROUPS.length), SUBJECT_LABEL_GROUPS);
-  const subject = COVER_SUBJECTS[first.g];
-  if(first.share < (subject && subject.min || SUBJECT_MIN_SHARE)) return SUBJECT_NONE;
-  if(first.g !== SUBJECT_SECOND_PASS) return first.g;
-  const second = subjectShares(sims.slice(SUBJECT_LABEL_GROUPS.length), SUBJECT_SECOND_LABELS);
-  return second.share < SUBJECT_TEXT_MIN_SHARE ? SUBJECT_NONE : second.g;
-}
-// The group with the biggest summed share of a softmax over these similarities, and that share.
-function subjectShares(sims, groups){
-  const top = Math.max.apply(null, sims), score = new Map();
-  let total = 0;
-  sims.forEach((s, n) => {
-    const w = Math.exp(s - top);
-    total += w;
-    score.set(groups[n], (score.get(groups[n]) || 0) + w);
+/* ---------- STATS: GENRES ----------
+   Overarching genres and their sub-genres, from genre-data.js. An album's genres come from, in
+   order: its hand-sorted entry in ALBUM_GENRES, its saved genre tags, then the genre its
+   built-in list gives it. Tags are matched against each sub-genre's tags, then each parent's own
+   tags (a plain "rock" counts as Rock with no sub-genre). An album with two sub-genres counts
+   under both, but only once under a parent they share, so a parent's count is albums, not tags. */
+let genreIndexCache = null;
+function genreAlbumKey(artist, title){ return normName(artist) + "|" + normName(stripEditionSuffix(title || "")); }
+function genreIndex(){
+  if(genreIndexCache) return genreIndexCache;
+  const tree = typeof GENRE_TREE !== "undefined" ? GENRE_TREE : [];
+  const albums = typeof ALBUM_GENRES !== "undefined" ? ALBUM_GENRES : {};
+  const subs = {}, tags = {};
+  tree.forEach((p, pi) => {
+    (p.tags || []).forEach(t => { if(!tags[t]) tags[t] = {pi: pi, sub: null}; });
+    p.subs.forEach(s => {
+      subs[s.id] = {pi: pi, sub: s};
+      s.tags.concat([s.label.toLowerCase()]).forEach(t => { tags[t] = {pi: pi, sub: s.id}; });
+    });
   });
-  let g = null;
-  score.forEach((v, k) => { if(g === null || v > score.get(g)) g = k; });
-  return {g: g, share: score.get(g) / total};
-}
-
-// The stored reading: a COVER_SUBJECTS index, SUBJECT_NONE, or null if not read yet.
-function coverSubjectReading(artist, title){
-  const hit = coverCacheEntry(artist, title);
-  const k = hit ? hit.subject : null;
-  return k === SUBJECT_NONE || (typeof k === "number" && COVER_SUBJECTS[k]) ? k : null;
-}
-function cachedCoverSubject(artist, title){
-  const k = coverSubjectReading(artist, title);
-  return k === SUBJECT_NONE ? null : k;
-}
-
-// Nothing runs until you ask once; after that, covers logged since are read on each visit.
-const statsSubjectTried = new Set();
-let statsSubjectProgress = null;   // {done, total}, with total 0 while the model loads
-let statsSubjectError = "";
-let statsSubjectSel = null;        // COVER_SUBJECTS index shown under the rows; null: the biggest
-let statsSubjectTimer = null;
-function scheduleStatsSubjectRefresh(){
-  clearTimeout(statsSubjectTimer);
-  statsSubjectTimer = setTimeout(() => { if(section === "stats") fillStatsSubjects(); }, 250);
-}
-function readCoverSubject(artist, title){
-  return new Promise(resolve => {
-    const url = cachedCoverUrl(artist, title);
-    if(!url){ resolve(); return; }
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    const timer = setTimeout(resolve, 10000);
-    img.onload = async () => {
-      clearTimeout(timer);
-      try{
-        const k = await classifyCoverSubject(img);
-        const entry = coverCacheEntry(artist, title);
-        if(k !== null && entry){ entry.subject = k; scheduleSpotifyCacheSave(); }
-      }catch(e){ statsSubjectError = "Couldn't read covers here"; }
-      resolve();
-    };
-    img.onerror = () => { clearTimeout(timer); resolve(); };
-    img.src = url;
+  const byAlbum = {};
+  Object.keys(albums).forEach(k => {
+    const cut = k.indexOf(" — ");
+    if(cut === -1) return;
+    byAlbum[genreAlbumKey(k.slice(0, cut), k.slice(cut + 3))] = albums[k].filter(id => subs[id]);
   });
+  const fromLists = {};
+  getAllLists().forEach(l => (l.albums || []).forEach(al => {
+    if(al.g){ const k = genreAlbumKey(al.a, al.t); if(!fromLists[k]) fromLists[k] = al.g; }
+  }));
+  return genreIndexCache = {tree: tree, subs: subs, tags: tags, byAlbum: byAlbum, fromLists: fromLists};
 }
-async function statsReadSubjects(reviews, asked){
-  if(statsSubjectProgress) return;
-  if(!asked && !reviews.some(r => coverSubjectReading(r.artist, r.title) !== null)) return;
-  const todo = reviews.filter(r => coverSubjectReading(r.artist, r.title) === null &&
-    cachedCoverUrl(r.artist, r.title) && !statsSubjectTried.has(reviewKey(r.artist, r.title)));
-  if(!todo.length) return;
-  statsSubjectError = "";
-  statsSubjectProgress = {done: 0, total: 0};
-  scheduleStatsSubjectRefresh();
-  try{ await loadSubjectModel(); }
-  catch(e){
-    statsSubjectProgress = null;
-    statsSubjectError = "Couldn't load the model";
-    scheduleStatsSubjectRefresh();
-    return;
-  }
-  statsSubjectProgress.total = todo.length;
-  // One at a time: inference is the slow part, and it runs on one thread anyway.
-  for(const r of todo){
-    if(statsSubjectError) break;
-    statsSubjectTried.add(reviewKey(r.artist, r.title));
-    await readCoverSubject(r.artist, r.title);
-    statsSubjectProgress.done++;
-    scheduleStatsSubjectRefresh();
-  }
-  statsSubjectProgress = null;
-  scheduleStatsSubjectRefresh();
+function genreTagHit(gi, tag){
+  const t = String(tag || "").toLowerCase().trim();
+  return gi.tags[t] || gi.tags[t.replace(/-/g, " ")] || gi.tags[t.replace(/ /g, "-")] || null;
 }
-function startStatsSubjects(){
-  statsReadSubjects(Object.values(loadReviews()), true);
+// {hits: [{pi, sub}], unknown: [tags nothing matched]} for one review.
+function genresForReview(r){
+  const gi = genreIndex();
+  const key = genreAlbumKey(r.artist, r.title);
+  const sorted = gi.byAlbum[key];
+  if(sorted && sorted.length) return {hits: sorted.map(id => ({pi: gi.subs[id].pi, sub: id})), unknown: []};
+  let raw = (r.genres || []).slice();
+  if(!raw.length && gi.fromLists[key]) raw = gi.fromLists[key].split(/\s*\/\s*/);
+  const hits = [], unknown = [];
+  raw.forEach(t => {
+    const h = genreTagHit(gi, t);
+    if(!h){ unknown.push(String(t).toLowerCase().trim()); return; }
+    if(!hits.some(x => x.pi === h.pi && x.sub === h.sub)) hits.push(h);
+  });
+  // A bare parent tag adds nothing once a sub-genre of that parent is there.
+  return {hits: hits.filter(h => h.sub || !hits.some(x => x.pi === h.pi && x.sub)), unknown: unknown};
 }
-function setStatsSubject(k){
-  statsSubjectSel = k;
-  fillStatsSubjects();
+function genreLabelsForReview(r){
+  const gi = genreIndex();
+  return genresForReview(r).hits.map(h => h.sub ? gi.subs[h.sub].sub.label : gi.tree[h.pi].label);
 }
 
-function subjectCoverHtml(e){
+let statsGenreSel = null;      // GENRE_TREE id, or "unsorted"; null: the biggest
+let statsGenreSub = null;      // sub-genre id within it, null: the whole parent
+let statsGenreSort = "albums"; // "albums" | "avg"
+function setStatsGenre(id){
+  statsGenreSub = null;
+  statsGenreSel = id;
+  fillStatsGenres();
+}
+function setStatsGenreSub(id){
+  statsGenreSub = statsGenreSub === id ? null : id;
+  fillStatsGenres();
+}
+function setStatsGenreSort(s){
+  statsGenreSort = s;
+  fillStatsGenres();
+}
+function genreCoverHtml(e){
   const label = escapeHtml(e.r.artist + " – " + e.r.title);
   const url = cachedCoverUrl(e.r.artist, e.r.title);
   return '<button class="color-example" title="' + label + '" aria-label="' + label + '" onclick="openReviewModal(' +
     escapeHtml(JSON.stringify(e.r.artist)) + ',' + escapeHtml(JSON.stringify(e.r.title)) + ')">' +
-    (url ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy">' : '') + '</button>';
+    (url ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy">' : '<span class="genre-cover-text">' + escapeHtml(e.r.title) + '</span>') + '</button>';
 }
-function fillStatsSubjects(){
-  const host = document.getElementById("statsSubjects");
-  if(!host) return;
-  const buckets = COVER_SUBJECTS.map(() => null);
-  let read = 0, known = 0;
-  Object.values(loadReviews()).forEach(r => {
-    const k = coverSubjectReading(r.artist, r.title);
-    if(k === null) return;
-    read++;
-    if(k === SUBJECT_NONE) return;
-    known++;
-    statsAddToBucket(buckets[k] || (buckets[k] = statsNewBucket()), r);
-  });
-  const p = statsSubjectProgress;
-  const readout = p ? (p.total ? p.done + ' / ' + p.total : 'Loading model…')
-    : '<b>' + known.toLocaleString() + '</b> / ' + read.toLocaleString() + ' sorted';
-  let html = '<div class="stats-card">' +
-    '<div class="stats-card-head">' +
-      '<span class="stats-card-title">Cover subjects</span>' +
-      '<span class="stats-readout">' + readout + '</span>' +
-    '</div>';
-  const rows = COVER_SUBJECTS.map((s, k) => ({k: k, s: s, b: buckets[k]})).filter(x => x.b)
-    .sort((a, c) => c.b.albums - a.b.albums || a.k - c.k);
-  if(!rows.length){
-    if(p) html += '<div class="stats-empty">Reading covers…</div>';
-    else if(read && !statsSubjectError) html += '<div class="stats-empty">No covers clearly show a subject yet</div>';
-    else html += '<div class="sync-note">' + (statsSubjectError ? statsSubjectError + '. ' : '') +
-      'Sorts covers that clearly show people, nature, buildings, animals, vehicles, space or text, on this device. ' +
-      'The first time, it downloads about 25 MB.</div>' +
-      '<button class="sync-btn secondary-btn" onclick="startStatsSubjects()">' + (statsSubjectError ? 'Try again' : 'Read covers') + '</button>';
-    host.innerHTML = html + '</div>';
-    return;
-  }
-  const most = rows[0].b.albums;
-  html += '<div class="color-strip">' + rows.map(x =>
-    '<span style="flex:' + x.b.albums + ' 1 0; background:' + x.s.hex + '" title="' + x.s.label + ': ' + x.b.albums + '"></span>').join("") + '</div>';
-  const sel = rows.find(x => x.k === statsSubjectSel) || rows[0];
-  html += '<div class="color-rows"><div class="color-row-head"><span></span><span>Albums</span><span>Avg</span></div>' +
+function genreRowsHtml(rows, activeId, onclick){
+  if(!rows.length) return '';
+  const most = Math.max.apply(null, rows.map(x => x.b.albums));
+  return '<div class="color-rows"><div class="color-row-head"><span></span><span>Albums</span><span>Avg</span></div>' +
     rows.map(x =>
-      '<div class="color-row' + (x === sel ? ' active' : '') + '" onclick="setStatsSubject(' + x.k + ')">' +
-        '<span class="color-name"><span class="color-swatch" style="background:' + x.s.hex + '"></span><span class="color-label">' + x.s.label + '</span></span>' +
-        '<span class="color-bar-cell"><span class="color-bar" style="width:' + (x.b.albums / most * 100 * 0.82).toFixed(1) + '%; background:' + x.s.hex + '"></span>' +
+      '<div class="color-row' + (x.id === activeId ? ' active' : '') + '" onclick="' + onclick + '(\'' + x.id + '\')">' +
+        '<span class="color-name"><span class="color-label">' + escapeHtml(x.label) + '</span></span>' +
+        '<span class="color-bar-cell"><span class="color-bar genre-bar' + (x.id === "unsorted" ? ' muted' : '') +
+          '" style="width:' + (x.b.albums / most * 100 * 0.82).toFixed(1) + '%"></span>' +
           '<span class="color-count">' + x.b.albums + '</span></span>' +
         '<span class="color-avg">' + statsFmt(statsCompAvg(x.b)) + '</span>' +
       '</div>').join("") + '</div>';
-  // The picked subject (the biggest until you tap one): its averages on each axis and its
-  // best-scored covers, most-played first on a tie. Each opens that album.
+}
+function genreSortRows(rows){
+  const avg = x => { const v = statsCompAvg(x.b); return v === null ? -1 : v; };
+  return rows.sort(statsGenreSort === "avg"
+    ? (a, c) => avg(c) - avg(a) || c.b.albums - a.b.albums
+    : (a, c) => c.b.albums - a.b.albums || a.label.localeCompare(c.label));
+}
+function fillStatsGenres(){
+  const host = document.getElementById("statsGenres");
+  if(!host) return;
+  host.style.minHeight = Math.max(host.offsetHeight, parseFloat(host.style.minHeight) || 0) + "px";
+  const gi = genreIndex();
+  const reviews = Object.values(loadReviews());
+  const parents = gi.tree.map(() => null), subs = {};
+  const unsorted = statsNewBucket(), unknownTags = {};
+  reviews.forEach(r => {
+    const g = genresForReview(r);
+    g.unknown.forEach(t => { if(t) unknownTags[t] = (unknownTags[t] || 0) + 1; });
+    if(!g.hits.length){ statsAddToBucket(unsorted, r); return; }
+    const seenP = {};
+    g.hits.forEach(h => {
+      if(!seenP[h.pi]){ seenP[h.pi] = 1; statsAddToBucket(parents[h.pi] || (parents[h.pi] = statsNewBucket()), r); }
+      if(h.sub) statsAddToBucket(subs[h.sub] || (subs[h.sub] = statsNewBucket()), r);
+    });
+  });
+  const sorted = reviews.length - unsorted.albums;
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<div class="stats-seg">' +
+        '<button class="' + (statsGenreSort === "albums" ? "active" : "") + '" onclick="setStatsGenreSort(\'albums\')">Most logged</button>' +
+        '<button class="' + (statsGenreSort === "avg" ? "active" : "") + '" onclick="setStatsGenreSort(\'avg\')">Top rated</button>' +
+      '</div>' +
+      '<span class="stats-readout"><b>' + sorted.toLocaleString() + '</b> / ' + reviews.length.toLocaleString() + ' sorted</span>' +
+    '</div>';
+  const rows = genreSortRows(gi.tree.map((p, pi) => ({id: p.id, label: p.label, pi: pi, b: parents[pi]})).filter(x => x.b));
+  if(unsorted.albums) rows.push({id: "unsorted", label: "Unsorted", pi: -1, b: unsorted});
+  if(!rows.length){
+    host.innerHTML = html + '<div class="stats-empty">No genres yet</div></div>';
+    return;
+  }
+  const sel = rows.find(x => x.id === statsGenreSel) || rows[0];
+  html += '<div class="stats-card-title genre-title">Genres</div>' + genreRowsHtml(rows, sel.id, "setStatsGenre") + '</div>';
+
+  // The picked genre: its sub-genres, then its averages and best-scored covers.
+  html += '<div class="stats-card">';
+  let focus = sel.b, focusLabel = sel.label;
+  if(sel.pi >= 0){
+    const p = gi.tree[sel.pi];
+    const subRows = genreSortRows(p.subs.map(s => ({id: s.id, label: s.label, b: subs[s.id]})).filter(x => x.b));
+    const pickedSub = subRows.find(x => x.id === statsGenreSub) || null;
+    if(!pickedSub) statsGenreSub = null;
+    html += '<div class="stats-card-head">' +
+        '<span class="stats-card-title">' + escapeHtml(p.label) + '</span>' +
+        (pickedSub ? '<button class="stats-clear" onclick="setStatsGenreSub(null)">Show all</button>'
+          : '<span class="stats-readout"><b>' + subRows.length + '</b> / ' + p.subs.length + ' sub-genres</span>') +
+      '</div>' + genreRowsHtml(subRows, statsGenreSub, "setStatsGenreSub");
+    // Sub-genres you haven't logged yet: somewhere to go next.
+    const missing = p.subs.filter(s => !subs[s.id]);
+    if(missing.length) html += '<div class="genre-note">Not logged yet: ' + missing.map(s => escapeHtml(s.label)).join(", ") + '</div>';
+    if(pickedSub){ focus = pickedSub.b; focusLabel = pickedSub.label; }
+  }else{
+    html += '<div class="stats-card-head"><span class="stats-card-title">Unsorted</span></div>';
+    const tags = Object.keys(unknownTags).sort((a, c) => unknownTags[c] - unknownTags[a]);
+    html += '<div class="genre-note">' + (tags.length
+      ? 'Tags not in the genre list yet: ' + tags.slice(0, 12).map(t => escapeHtml(t) + ' (' + unknownTags[t] + ')').join(", ") + '. '
+      : '') + 'Tap a cover to add genres to it.</div>';
+  }
+  const picks = focus.list.slice().sort((a, c) => c.score - a.score || c.listens - a.listens)
+    .slice(0, sel.pi >= 0 ? STATS_EXAMPLES : STATS_EXAMPLES * 4);
+  html += '<div class="combo-summary">' +
+      '<span class="combo-title">' + escapeHtml(focusLabel) + '</span>' +
+      '<span class="stats-readout"><b>' + focus.albums + '</b> albums · avg <b>' + statsFmt(statsCompAvg(focus)) + '</b></span>' +
+    '</div>' +
+    '<div class="stats-legend">' + statsLegendHtml(focus) + '</div>' +
+    '<div class="color-examples">' + picks.map(genreCoverHtml).join("") + '</div>';
+  host.innerHTML = html + '</div>';
+}
+
+/* ---------- STATS: WEEKS, VIBES, ARTISTS, ALBUM LENGTH ----------
+   Weeks read the listen tally (full listens per 7-day bucket), so they need nothing new. The one
+   thing stored is each album's length in minutes, in its own small cache (LENGTH_CACHE_KEY):
+   about 50 bytes an album, rebuildable, and cleared early if storage ever runs short. Lengths come
+   from Last.fm's tracklist, with Spotify's as the fallback. */
+const LENGTH_CACHE_KEY = "ll_album_lengths";   // reviewKey -> minutes, or -(day checked) when no length was found
+const LENGTH_MISS_RETRY_DAYS = 30;
+const LENGTH_GUESS_MINUTES = 45;               // stands in for unknown lengths until a few are known
+const STATS_WEEKS_SHOWN = 16;
+const STATS_ARTISTS_SHOWN = 10;
+const STATS_ARTISTS_MORE = 40;
+const STATS_DAY_MS = 86400000;
+const LENGTH_BUCKETS = {
+  min: [
+    {label: "Under 30 min", max: 30}, {label: "30–40 min", max: 40}, {label: "40–50 min", max: 50},
+    {label: "50–60 min", max: 60}, {label: "60–75 min", max: 75}, {label: "75+ min", max: Infinity}
+  ],
+  tracks: [
+    {label: "Up to 7 tracks", max: 8}, {label: "8–10 tracks", max: 11}, {label: "11–13 tracks", max: 14},
+    {label: "14–16 tracks", max: 17}, {label: "17–20 tracks", max: 21}, {label: "21+ tracks", max: Infinity}
+  ]
+};
+let lengthCache = null;
+let lengthSaveTimer = null;
+let statsLengthProgress = null;   // {done, total} while lengths are being fetched
+const statsLengthTried = new Set();
+let statsKnownTracks = null;      // buildKnownTrackCountIndex(), once per render
+let statsWeekPick = null;         // week number; null follows the latest week
+let statsVibeSel = null;          // VIBE_EMOTES id or "none"; null: the most used
+let statsVibeSort = "albums";     // "albums" | "avg"
+let statsArtistSel = null;        // lowercased artist; null: the top row
+let statsArtistSort = "albums";   // "albums" | "avg" | "plays"
+let statsArtistsAll = false;
+let statsLengthUnit = "min";      // "min" | "tracks"
+let statsLengthSel = null;        // bucket index; null: the biggest
+
+/* --- album lengths --- */
+function loadLengthCache(){
+  if(lengthCache) return lengthCache;
+  try{ lengthCache = JSON.parse(localStorage.getItem(LENGTH_CACHE_KEY)) || {}; }catch(e){ lengthCache = {}; }
+  if(!lengthCache || typeof lengthCache !== "object") lengthCache = {};
+  return lengthCache;
+}
+function scheduleLengthCacheSave(){
+  clearTimeout(lengthSaveTimer);
+  lengthSaveTimer = setTimeout(() => {
+    try{ localStorage.setItem(LENGTH_CACHE_KEY, JSON.stringify(lengthCache)); }catch(e){}   // a cache: losing it only costs a refetch
+  }, 1000);
+}
+function statsToday(){ return Math.floor(Date.now() / STATS_DAY_MS); }
+function albumMinutes(key){
+  const v = loadLengthCache()[key];
+  return typeof v === "number" && v > 0 ? v : null;
+}
+function lengthNeedsLookup(key){
+  const v = loadLengthCache()[key];
+  if(typeof v !== "number") return true;
+  return v <= 0 && statsToday() + v >= LENGTH_MISS_RETRY_DAYS;
+}
+// What an unknown length counts as in listening-time totals: the median of the ones you have.
+function statsTypicalMinutes(){
+  const known = Object.values(loadLengthCache()).filter(v => typeof v === "number" && v > 0).sort((a, b) => a - b);
+  return known.length >= 5 ? known[Math.floor(known.length / 2)] : LENGTH_GUESS_MINUTES;
+}
+function albumTrackCount(artist, title){
+  if(!statsKnownTracks) statsKnownTracks = buildKnownTrackCountIndex();
+  const known = statsKnownTracks[artist.toLowerCase() + "|" + title.toLowerCase()];
+  return preferredTrackCount(artist, title, spotifyCachedAlbum(artist, title), known ? known.trackCount : 0) || null;
+}
+// Minutes, or null when neither source has a length.
+async function fetchAlbumMinutes(artist, title, sp){
+  const spInfo = spotifyCachedAlbum(artist, title);
+  const want = preferredTrackCount(artist, title, spInfo, 0);
+  if(settings.apiKey){
+    const data = await fetchLastfmJson(lastfmAlbumUrl("album.getinfo", {artist: artist, title: title}));
+    const t = data && data.album && data.album.tracks && data.album.tracks.track;
+    const list = t ? (Array.isArray(t) ? t : [t]) : [];
+    const timed = list.map(x => parseInt(x && x.duration, 10) || 0).filter(s => s > 0);
+    if(timed.length && timed.length >= list.length / 2){
+      // Blank durations, and a deluxe edition where the standard one has fewer tracks, are
+      // filled in at the album's own average track length.
+      const avg = timed.reduce((a, b) => a + b, 0) / timed.length;
+      return Math.max(1, Math.round(avg * (want || list.length) / 60));
+    }
+  }
+  if(spInfo && spInfo.id && !sp.stop && isSpotifyConnected()){
+    try{
+      const al = await spotifyGet("/albums/" + spInfo.id);
+      const items = ((al && al.tracks && al.tracks.items) || []).filter(Boolean);
+      const ms = items.reduce((a, x) => a + (x.duration_ms || 0), 0);
+      if(ms > 0) return Math.max(1, Math.round(ms / items.length * ((al.tracks && al.tracks.total) || items.length) / 60000));
+    }catch(err){
+      if(err && (err.type === "reauth" || err.type === "rate")) sp.stop = true;   // leave the rest to Last.fm
+    }
+  }
+  return null;
+}
+function statsFetchLengths(model){
+  if(statsLengthProgress) return;
+  if(!settings.apiKey && !isSpotifyConnected()) return;
+  if(navigator.onLine === false) return;   // offline, every album would be stored as a miss
+  const seen = new Set(), todo = [];
+  const add = (key, artist, title) => {
+    if(seen.has(key)) return;
+    seen.add(key);
+    if(!statsLengthTried.has(key) && lengthNeedsLookup(key)) todo.push({key: key, artist: artist, title: title});
+  };
+  // Latest weeks first, so the cards at the top fill in first.
+  model.weeks.slice().reverse().forEach(x => x.albums.forEach(a => add(a.key, a.artist, a.title)));
+  Object.values(loadReviews()).forEach(r => add(reviewKey(r.artist, r.title), r.artist, r.title));
+  if(!todo.length) return;
+  statsLengthProgress = {done: 0, total: todo.length};
+  const sp = {stop: false};
+  const cache = loadLengthCache();
+  let next = 0;
+  const worker = async () => {
+    while(next < todo.length){
+      const a = todo[next++];
+      statsLengthTried.add(a.key);
+      let m = null;
+      try{ m = await fetchAlbumMinutes(a.artist, a.title, sp); }catch(e){}
+      cache[a.key] = m > 0 ? m : -statsToday();
+      scheduleLengthCacheSave();
+      statsLengthProgress.done++;
+      scheduleStatsListeningRefresh();
+    }
+  };
+  Promise.all([worker(), worker()]).then(() => {
+    statsLengthProgress = null;
+    scheduleStatsListeningRefresh();
+  });
+}
+let statsListeningRefreshTimer = null;
+function scheduleStatsListeningRefresh(){
+  clearTimeout(statsListeningRefreshTimer);
+  statsListeningRefreshTimer = setTimeout(() => { if(section === "stats") fillStatsListening(); }, 600);
+}
+function fillStatsListening(){
+  const model = statsWeekModel();
+  fillStatsWeeks(model);
+  fillStatsVibes();
+  fillStatsArtists(model);
+  fillStatsLength(model);
+}
+function statsHours(mins){
+  if(mins < 60) return Math.round(mins) + "m";
+  const h = mins / 60;
+  return (h < 10 ? h.toFixed(1).replace(/\.0$/, "") : Math.round(h).toLocaleString()) + "h";
+}
+// One album's length: "42m", "1h 14m".
+function statsAlbumLen(mins){
+  const m = Math.round(mins);
+  return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m";
+}
+// Listening time for a set of {key, listens}: known lengths, plus the typical one for the rest.
+function statsListenTime(albums){
+  const typical = statsTypicalMinutes();
+  let mins = 0, guessed = false;
+  albums.forEach(a => {
+    const m = albumMinutes(a.key);
+    if(m) mins += m * a.listens;
+    else if(a.listens){ mins += typical * a.listens; guessed = true; }
+  });
+  return {mins: mins, text: (guessed ? "≈" : "") + statsHours(mins)};
+}
+
+/* --- shared bits --- */
+function statsTileHtml(num, label){
+  return '<div class="taste-tile"><div class="taste-tile-num">' + num + '</div><div class="taste-tile-label">' + label + '</div></div>';
+}
+function statsCoverHtml(artist, title, note){
+  const label = escapeHtml(artist + " – " + title + (note ? " · " + note : ""));
+  const url = cachedCoverUrl(artist, title);
+  return '<button class="color-example" title="' + label + '" aria-label="' + label + '" onclick="openReviewModal(' +
+    escapeHtml(JSON.stringify(artist)) + ',' + escapeHtml(JSON.stringify(title)) + ')">' +
+    (url ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy">' : '<span class="genre-cover-text">' + escapeHtml(title) + '</span>') + '</button>';
+}
+// rows: [{id, nameHtml, count, avg, muted}]
+function statsRowsHtml(rows, activeId, onclickFn, countHead){
+  const most = Math.max.apply(null, rows.map(x => x.count).concat(1));
+  return '<div class="color-rows"><div class="color-row-head"><span></span><span>' + countHead + '</span><span>Avg</span></div>' +
+    rows.map(x =>
+      '<div class="color-row' + (x.id === activeId ? ' active' : '') + '" onclick="' + onclickFn + '(' + escapeHtml(JSON.stringify(x.id)) + ')">' +
+        '<span class="color-name">' + x.nameHtml + '</span>' +
+        '<span class="color-bar-cell"><span class="color-bar genre-bar' + (x.muted ? ' muted' : '') +
+          '" style="width:' + (x.count / most * 100 * 0.82).toFixed(1) + '%"></span>' +
+          '<span class="color-count">' + x.count.toLocaleString() + '</span></span>' +
+        '<span class="color-avg">' + statsFmt(x.avg) + '</span>' +
+      '</div>').join("") + '</div>';
+}
+function statsKeepHeight(host){
+  host.style.minHeight = Math.max(host.offsetHeight, parseFloat(host.style.minHeight) || 0) + "px";
+}
+function statsScoreSort(a, b){
+  return (b.score === null ? -1 : b.score) - (a.score === null ? -1 : a.score) || b.listens - a.listens;
+}
+
+/* --- weeks --- */
+// reviewKey -> {artist, title, r}: the tally only stores keys, so names come from your logs,
+// your lists and This Week, best spelling last.
+function statsAlbumNames(){
+  const out = {};
+  getAllLists().forEach(list => {
+    const prog = getProgressFor(list.id);
+    effectiveAlbums(list).forEach((al, i) => {
+      const e = entryForIn(prog, i);
+      const artist = e.ov_a || al.a, title = e.ov_t || al.t;
+      out[reviewKey(artist, title)] = {artist: artist, title: title, r: null};
+    });
+  });
+  const recent = loadRecentResultsFromStorage();
+  ((recent && recent.albums) || []).forEach(al => {
+    if(al && al.artist && al.album) out[reviewKey(al.artist, al.album)] = {artist: al.artist, title: al.album, r: null};
+  });
+  Object.values(loadReviews()).forEach(r => { out[reviewKey(r.artist, r.title)] = {artist: r.artist, title: r.title, r: r}; });
+  return out;
+}
+function statsWeekModel(){
+  const st = loadTally();
+  const names = statsAlbumNames();
+  const nums = Object.keys(st.weeks).map(n => parseInt(n, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+  const first = {};
+  nums.forEach(w => Object.keys(st.weeks[w]).forEach(k => { if(first[k] === undefined) first[k] = w; }));
+  const now = listenWeek(Math.floor(Date.now() / 1000));
+  const weeks = [];
+  if(nums.length){
+    for(let w = nums[0]; w <= Math.max(now, nums[nums.length - 1]); w++){
+      const wk = st.weeks[w] || {}, startMs = listenWeekStart(w) * 1000;
+      const albums = Object.keys(wk).map(k => {
+        const parts = k.split("|||");
+        const n = names[k] || {artist: parts[0] || "", title: parts[1] || "", r: null};
+        // Logged before this week began: an old friend, even if the tally starts later.
+        const known = !!(n.r && n.r.reviewedAt && n.r.reviewedAt < startMs);
+        return {key: k, artist: n.artist, title: n.title, r: n.r, listens: wk[k],
+          isNew: first[k] === w && !known, score: n.r ? statsComposite(n.r) : null};
+      });
+      weeks.push({w: w, albums: albums, listens: albums.reduce((s, a) => s + a.listens, 0),
+        newCount: albums.filter(a => a.isNew).length, oldCount: albums.filter(a => !a.isNew).length});
+    }
+  }
+  return {weeks: weeks, now: now};
+}
+function statsWeekDate(w, end){
+  const d = new Date((listenWeekStart(w) + (end ? WEEK_SECONDS - 1 : 0)) * 1000);
+  return d.toLocaleDateString(undefined, {month: "short", day: "numeric", timeZone: "UTC"});
+}
+function statsWeekLabel(w){ return statsWeekDate(w) + " – " + statsWeekDate(w, true); }
+function statsStreaks(weeks, now){
+  let longest = 0, run = 0;
+  weeks.forEach(x => { run = x.albums.length ? run + 1 : 0; if(run > longest) longest = run; });
+  // This week is still going, so an empty one doesn't break the streak yet.
+  let cur = 0;
+  for(let i = weeks.length - 1; i >= 0; i--){
+    if(weeks[i].albums.length) cur++;
+    else if(!(weeks[i].w === now && i === weeks.length - 1)) break;
+  }
+  return {longest: longest, cur: cur};
+}
+function setStatsWeek(w){
+  statsWeekPick = w;
+  fillStatsWeeks(statsWeekModel());
+}
+function statsWeekSvg(shown, pickW, W){
+  const H = 120, top = 8, bottom = 20, plotH = H - top - bottom;
+  const bands = statsBands(W, shown.length);
+  const max = statsNiceMax(Math.max.apply(null, shown.map(x => x.albums.length)));
+  const yOf = v => top + plotH - (v / max) * plotH;
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Albums per week">';
+  [0, max / 2, max].forEach(t => {
+    const y = yOf(t).toFixed(1);
+    svg += '<line class="stats-grid" x1="' + STATS_PAD.l + '" x2="' + (W - STATS_PAD.r) + '" y1="' + y + '" y2="' + y + '"/>';
+    svg += '<text x="' + (STATS_PAD.l - 6) + '" y="' + y + '" dy="3" text-anchor="end">' + Math.round(t).toLocaleString() + '</text>';
+  });
+  const w = Math.min(22, bands.band * 0.7);
+  const pi = shown.findIndex(x => x.w === pickW);
+  shown.forEach((x, i) => {
+    if(!x.albums.length) return;
+    const dim = x.w === pickW ? '' : ' dim';
+    const x0 = bands.cx(i) - w / 2, base = top + plotH, yAll = yOf(x.albums.length), yOld = yOf(x.oldCount);
+    const tip = '<title>' + statsWeekLabel(x.w) + ': ' + x.newCount + ' new, ' + x.oldCount + ' re-listened</title>';
+    // Re-listens underneath, new albums stacked on top.
+    if(x.oldCount) svg += '<path class="week-bar-old' + dim + '" d="' + statsRoundTopBar(x0, yAll, w, base - yAll) + '">' + tip + '</path>';
+    if(x.newCount) svg += '<path class="week-bar-new' + dim + '" d="' + statsRoundTopBar(x0, yAll, w, yOld - yAll) + '">' + tip + '</path>';
+  });
+  const every = Math.max(1, Math.ceil(40 / bands.band));
+  shown.forEach((x, i) => {
+    const picked = i === pi;
+    if(!picked && (shown.length - 1 - i) % every !== 0) return;
+    if(!picked && pi !== -1 && Math.abs(bands.cx(pi) - bands.cx(i)) < 34) return;
+    const d = new Date(listenWeekStart(x.w) * 1000);
+    const tick = (d.getUTCMonth() + 1) + "/" + d.getUTCDate();
+    svg += '<text x="' + bands.cx(i).toFixed(1) + '" y="' + (H - 5) + '" text-anchor="middle"' + (picked ? ' class="picked"' : '') + '>' + tick + '</text>';
+  });
+  return svg + '</svg>';
+}
+function statsFavHtml(kind, a){
+  if(!a) return '<div class="week-fav is-empty"><span class="week-fav-text"><span class="week-fav-kind">' + kind + '</span>' +
+    '<span class="week-fav-artist">None this week</span></span></div>';
+  const url = cachedCoverUrl(a.artist, a.title);
+  const sub = (a.score !== null ? 'Score <b>' + a.score.toFixed(1) + '</b>' : 'Not logged yet') + (a.listens > 1 ? ' · ' + a.listens + ' listens' : '');
+  return '<button class="week-fav" onclick="openReviewModal(' + escapeHtml(JSON.stringify(a.artist)) + ',' + escapeHtml(JSON.stringify(a.title)) + ')">' +
+    '<span class="week-fav-cover">' + (url ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy">' : '') + '</span>' +
+    '<span class="week-fav-text"><span class="week-fav-kind">' + kind + '</span>' +
+      '<span class="week-fav-title">' + escapeHtml(a.title) + '</span>' +
+      '<span class="week-fav-artist">' + escapeHtml(a.artist) + '</span>' +
+      '<span class="week-fav-artist">' + sub + '</span></span></button>';
+}
+function fillStatsWeeks(model){
+  const host = document.getElementById("statsWeeks");
+  if(!host) return;
+  statsKeepHeight(host);
+  const weeks = model.weeks;
+  if(!weeks.length){
+    host.innerHTML = '<div class="stats-card"><div class="stats-card-head"><span class="stats-card-title">Weeks</span></div>' +
+      '<div class="stats-empty">Check This Week to start the weekly tally</div></div>';
+    return;
+  }
+  const shown = weeks.slice(-STATS_WEEKS_SHOWN);
+  let pick = shown.find(x => x.w === statsWeekPick) || null;
+  if(!pick){ statsWeekPick = null; pick = shown[shown.length - 1]; }
+  const sorted = pick.albums.slice().sort(statsScoreSort);
+  const streak = statsStreaks(weeks, model.now);
+  const active = weeks.filter(x => x.albums.length);
+  const busiest = active.reduce((b, x) => !b || x.albums.length > b.albums.length ? x : b, null);
+  const perWeek = weeks.reduce((s, x) => s + x.albums.length, 0) / weeks.length;
+  const allTime = statsListenTime([].concat.apply([], weeks.map(x => x.albums)));
+  const pickTime = statsListenTime(pick.albums);
+
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<span class="stats-card-title">Weeks</span>' +
+      '<span class="stats-readout"><b>' + statsWeekLabel(pick.w) + '</b>' + (pick.w === model.now ? ' · so far' : '') + '</span>' +
+    '</div>' +
+    '<div class="stats-chart" id="statsWeekChart"></div>' +
+    '<div class="stats-legend">' +
+      '<span><span class="stats-key" style="background:var(--teal)"></span>New</span>' +
+      '<span><span class="stats-key" style="background:var(--ink-dim)"></span>Re-listened</span>' +
+    '</div>' +
+    '<div class="taste-tiles stats-tiles-3">' +
+      statsTileHtml(pick.albums.length, "Albums") +
+      statsTileHtml(pick.newCount, "New") +
+      statsTileHtml(pickTime.text, "Listening") +
+    '</div>' +
+    '<div class="week-favs">' +
+      statsFavHtml("Fav new", sorted.find(a => a.isNew) || null) +
+      statsFavHtml("Fav re-listen", sorted.find(a => !a.isNew) || null) +
+    '</div>';
+  if(sorted.length > 2) html += '<div class="color-examples">' + sorted.slice(0, 12).map(a =>
+    statsCoverHtml(a.artist, a.title, (a.isNew ? "new" : "re-listen") + (a.listens > 1 ? " · " + a.listens + " listens" : ""))).join("") + '</div>';
+  html += '<div class="genre-note">' +
+    'All weeks: <b>' + allTime.text + '</b> listening · ' + perWeek.toFixed(1) + ' albums a week · ' +
+    'streak <b>' + streak.cur + '</b> week' + (streak.cur === 1 ? '' : 's') + ' (best ' + streak.longest + ')' +
+    (busiest ? ' · busiest ' + statsWeekLabel(busiest.w) + ' (' + busiest.albums.length + ')' : '') +
+  '</div></div>';
+  host.innerHTML = html;
+
+  const chart = document.getElementById("statsWeekChart");
+  const W = Math.max(200, Math.round(chart.clientWidth || 300));
+  chart.innerHTML = statsWeekSvg(shown, pick.w, W);
+  const svg = chart.querySelector("svg");
+  svg.addEventListener("click", ev => {
+    const box = svg.getBoundingClientRect();
+    const x = (ev.clientX - box.left) * (W / box.width);
+    const i = Math.floor((x - STATS_PAD.l) / statsBands(W, shown.length).band);
+    if(i >= 0 && i < shown.length) setStatsWeek(shown[i].w);
+  });
+}
+
+/* --- vibes --- */
+function setStatsVibe(id){ statsVibeSel = id; fillStatsVibes(); }
+function setStatsVibeSort(s){ statsVibeSort = s; fillStatsVibes(); }
+function statsVibeStill(url, cls){
+  return url ? '<canvas class="vibe-still ' + cls + '" width="44" height="44" data-vibe-url="' + escapeHtml(url) + '"></canvas>' : '';
+}
+function fillStatsVibes(){
+  const host = document.getElementById("statsVibes");
+  if(!host) return;
+  statsKeepHeight(host);
+  const reviews = Object.values(loadReviews());
+  const buckets = {};
+  reviews.forEach(r => {
+    const id = VIBE_EMOTES.some(v => v.id === r.vibe) ? r.vibe : "none";
+    statsAddToBucket(buckets[id] || (buckets[id] = statsNewBucket()), r);
+  });
+  const avg = x => { const v = statsCompAvg(x.b); return v === null ? -1 : v; };
+  const rows = VIBE_EMOTES.filter(v => buckets[v.id]).map(v => ({id: v.id, url: v.url, b: buckets[v.id]}))
+    .sort(statsVibeSort === "avg" ? (a, c) => avg(c) - avg(a) || c.b.albums - a.b.albums : (a, c) => c.b.albums - a.b.albums);
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<span class="stats-card-title">Vibes</span>' +
+      '<div class="stats-seg">' +
+        '<button class="' + (statsVibeSort === "albums" ? "active" : "") + '" onclick="setStatsVibeSort(\'albums\')">Most used</button>' +
+        '<button class="' + (statsVibeSort === "avg" ? "active" : "") + '" onclick="setStatsVibeSort(\'avg\')">Top rated</button>' +
+      '</div>' +
+    '</div>';
+  if(!rows.length){
+    host.innerHTML = html + '<div class="stats-empty">No vibes picked yet</div></div>';
+    return;
+  }
+  if(buckets.none) rows.push({id: "none", url: "", b: buckets.none});
+  const sel = rows.find(x => x.id === statsVibeSel) || rows[0];
+  html += statsRowsHtml(rows.map(x => ({id: x.id, count: x.b.albums, avg: statsCompAvg(x.b), muted: x.id === "none",
+    nameHtml: x.url ? statsVibeStill(x.url, "vibe-row-still") : '<span class="color-label">No vibe</span>'})), sel.id, "setStatsVibe", "Albums");
+
+  // The picked vibe: what it sounds like, how long it runs, and its best-scored covers.
+  const genres = {};
+  sel.b.list.forEach(e => genreLabelsForReview(e.r).forEach(g => { genres[g] = (genres[g] || 0) + 1; }));
+  const topGenres = Object.keys(genres).sort((a, c) => genres[c] - genres[a]).slice(0, 3);
+  const mins = sel.b.list.map(e => albumMinutes(reviewKey(e.r.artist, e.r.title))).filter(Boolean);
   const picks = sel.b.list.slice().sort((a, c) => c.score - a.score || c.listens - a.listens).slice(0, STATS_EXAMPLES);
   html += '<div class="combo-summary">' +
-      '<span class="combo-title"><span class="color-swatch" style="background:' + sel.s.hex + '"></span>' + sel.s.label + '</span>' +
-      '<span class="stats-readout"><b>' + sel.b.albums + '</b> albums · avg <b>' + statsFmt(statsCompAvg(sel.b)) + '</b></span>' +
+      '<span class="combo-title">' + (sel.url ? statsVibeStill(sel.url, "vibe-row-still") : 'No vibe') + '</span>' +
+      '<span class="stats-readout"><b>' + sel.b.albums + '</b> albums · avg <b>' + statsFmt(statsCompAvg(sel.b)) + '</b> · ' +
+        sel.b.relistens + ' re-listens</span>' +
     '</div>' +
     '<div class="stats-legend">' + statsLegendHtml(sel.b) + '</div>' +
-    '<div class="color-examples">' + picks.map(subjectCoverHtml).join("") + '</div>';
-  if(statsSubjectError && !p){
-    html += '<div class="sync-note">' + statsSubjectError + '. ' +
-      '<button class="stats-clear" onclick="startStatsSubjects()">Try again</button></div>';
+    ((topGenres.length || mins.length) ? '<div class="genre-note">' +
+      (topGenres.length ? 'Mostly ' + topGenres.map(escapeHtml).join(", ") : '') +
+      (topGenres.length && mins.length ? ' · ' : '') +
+      (mins.length ? 'avg length ' + statsAlbumLen(mins.reduce((a, b) => a + b, 0) / mins.length) : '') +
+    '</div>' : '') +
+    '<div class="color-examples">' + picks.map(e => statsCoverHtml(e.r.artist, e.r.title, e.score ? "score " + e.score.toFixed(1) : "")).join("") + '</div>';
+  host.innerHTML = html + '</div>';
+  host.querySelectorAll(".vibe-still").forEach(c => drawStillFrame(c, c.dataset.vibeUrl));
+}
+
+/* --- artists --- */
+function setStatsArtist(id){ statsArtistSel = id; fillStatsArtists(statsWeekModel()); }
+function setStatsArtistSort(s){ statsArtistSort = s; statsArtistSel = null; fillStatsArtists(statsWeekModel()); }
+function toggleStatsArtistsAll(){ statsArtistsAll = !statsArtistsAll; fillStatsArtists(statsWeekModel()); }
+function statsArtistIndex(model){
+  const by = {};
+  const get = (name, proper) => {
+    const id = String(name || "").toLowerCase().trim();
+    const a = by[id] || (by[id] = {id: id, label: name, albums: {}, b: statsNewBucket(), plays: 0});
+    if(proper) a.label = name;   // a logged album's spelling beats a lowercased tally key
+    return a;
+  };
+  Object.values(loadReviews()).forEach(r => {
+    const a = get(r.artist, true);
+    a.albums[reviewKey(r.artist, r.title)] = {artist: r.artist, title: r.title, r: r, listens: 0};
+    statsAddToBucket(a.b, r);
+  });
+  model.weeks.forEach(x => x.albums.forEach(al => {
+    if(!al.artist) return;
+    const a = get(al.artist, false);
+    const e = a.albums[al.key] || (a.albums[al.key] = {artist: al.artist, title: al.title, r: null, listens: 0});
+    e.listens += al.listens;
+    a.plays += al.listens;
+  }));
+  return Object.values(by).filter(a => a.id).map(a => {
+    const list = Object.keys(a.albums).map(k => Object.assign({key: k}, a.albums[k]));
+    return Object.assign(a, {list: list, count: list.length, avg: statsCompAvg(a.b)});
+  });
+}
+function fillStatsArtists(model){
+  const host = document.getElementById("statsArtists");
+  if(!host) return;
+  statsKeepHeight(host);
+  const all = statsArtistIndex(model);
+  let rows;
+  if(statsArtistSort === "avg"){
+    rows = all.filter(a => a.b.compN >= 2).sort((a, c) => c.avg - a.avg || c.count - a.count);
+  }else if(statsArtistSort === "plays"){
+    rows = all.filter(a => a.plays > 0).sort((a, c) => c.plays - a.plays || c.count - a.count);
+  }else{
+    rows = all.slice().sort((a, c) => c.count - a.count || c.plays - a.plays || (c.avg || 0) - (a.avg || 0));
   }
+  const seg = (k, label) => '<button class="' + (statsArtistSort === k ? "active" : "") + '" onclick="setStatsArtistSort(\'' + k + '\')">' + label + '</button>';
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<span class="stats-card-title">Artists</span>' +
+      '<div class="stats-seg">' + seg("albums", "Albums") + seg("avg", "Top rated") + seg("plays", "Plays") + '</div>' +
+    '</div>';
+  if(!rows.length){
+    const why = statsArtistSort === "avg" ? "No artist has two scored albums yet" : statsArtistSort === "plays" ? "No listens tallied yet" : "No artists yet";
+    host.innerHTML = html + '<div class="stats-empty">' + why + '</div></div>';
+    return;
+  }
+  const limit = statsArtistsAll ? STATS_ARTISTS_MORE : STATS_ARTISTS_SHOWN;
+  const visible = rows.slice(0, limit);
+  const sel = rows.find(a => a.id === statsArtistSel) || visible[0];
+  html += statsRowsHtml(visible.map(a => ({id: a.id, count: statsArtistSort === "plays" ? a.plays : a.count, avg: a.avg,
+    nameHtml: '<span class="color-label">' + escapeHtml(a.label) + '</span>'})), sel.id, "setStatsArtist",
+    statsArtistSort === "plays" ? "Listens" : "Albums");
+  if(rows.length > STATS_ARTISTS_SHOWN){
+    html += '<button class="stats-clear" onclick="toggleStatsArtistsAll()">' +
+      (statsArtistsAll ? 'Show fewer' : 'Show more (' + Math.min(rows.length, STATS_ARTISTS_MORE) + ')') + '</button>';
+  }
+  const picks = sel.list.map(e => Object.assign({}, e, {score: e.r ? statsComposite(e.r) : null}))
+    .sort(statsScoreSort).slice(0, STATS_EXAMPLES * 2);
+  html += '<div class="combo-summary">' +
+      '<span class="combo-title">' + escapeHtml(sel.label) + '</span>' +
+      '<span class="stats-readout"><b>' + sel.count + '</b> album' + (sel.count === 1 ? '' : 's') + ' · avg <b>' + statsFmt(sel.avg) + '</b>' +
+        (sel.plays ? ' · ' + sel.plays + ' listens · ' + statsListenTime(sel.list).text : '') + '</span>' +
+    '</div>' +
+    (sel.b.albums ? '<div class="stats-legend">' + statsLegendHtml(sel.b) + '</div>' : '') +
+    '<div class="color-examples">' + picks.map(e => statsCoverHtml(e.artist, e.title,
+      (e.score !== null ? "score " + e.score.toFixed(1) : "not logged") + (e.listens ? " · " + e.listens + " listens" : ""))).join("") + '</div>';
+  host.innerHTML = html + '</div>';
+}
+
+/* --- album length --- */
+function setStatsLengthUnit(u){ statsLengthUnit = u; statsLengthSel = null; fillStatsLength(statsWeekModel()); }
+function setStatsLength(i){ statsLengthSel = i; fillStatsLength(statsWeekModel()); }
+function fillStatsLength(model){
+  const host = document.getElementById("statsLength");
+  if(!host) return;
+  statsKeepHeight(host);
+  const mins = statsLengthUnit === "min";
+  const defs = LENGTH_BUCKETS[statsLengthUnit];
+  const reviews = Object.values(loadReviews());
+  const buckets = defs.map(() => statsNewBucket());
+  const sized = [];
+  reviews.forEach(r => {
+    const v = mins ? albumMinutes(reviewKey(r.artist, r.title)) : albumTrackCount(r.artist, r.title);
+    if(!v) return;
+    sized.push({r: r, v: v});
+    statsAddToBucket(buckets[defs.findIndex(d => v < d.max)], r);
+  });
+  const fmt = v => mins ? statsAlbumLen(v) : Math.round(v) + " tracks";
+  const readout = mins && statsLengthProgress
+    ? 'Looking up lengths ' + statsLengthProgress.done + ' / ' + statsLengthProgress.total
+    : '<b>' + sized.length.toLocaleString() + '</b> / ' + reviews.length.toLocaleString() + ' known';
+  let html = '<div class="stats-card">' +
+    '<div class="stats-card-head">' +
+      '<div class="stats-seg">' +
+        '<button class="' + (mins ? "active" : "") + '" onclick="setStatsLengthUnit(\'min\')">Minutes</button>' +
+        '<button class="' + (mins ? "" : "active") + '" onclick="setStatsLengthUnit(\'tracks\')">Tracks</button>' +
+      '</div>' +
+      '<span class="stats-readout">' + readout + '</span>' +
+    '</div>';
+  const allTime = statsListenTime([].concat.apply([], model.weeks.map(x => x.albums)));
+  // The sweet spot: the best-scored length with enough albums in it to mean something.
+  const best = buckets.map((b, i) => ({i: i, avg: statsCompAvg(b), n: b.compN})).filter(x => x.n >= 3 && x.avg !== null)
+    .sort((a, c) => c.avg - a.avg)[0];
+  html += '<div class="stats-card-title genre-title">Album length</div>' +
+    '<div class="taste-tiles stats-tiles-3">' +
+      statsTileHtml(sized.length ? fmt(sized.reduce((s, x) => s + x.v, 0) / sized.length) : "–", "Avg length") +
+      statsTileHtml(best ? defs[best.i].label.replace(/ (min|tracks)$/, "") : "–", "Sweet spot") +
+      statsTileHtml(model.weeks.length ? allTime.text : "–", "All listening") +
+    '</div>';
+  if(!sized.length){
+    const why = mins && statsLengthProgress ? "Looking up lengths…"
+      : mins && !settings.apiKey && !isSpotifyConnected() ? "Add a Last.fm API key or connect Spotify in settings" : "No lengths known yet";
+    host.innerHTML = html + '<div class="stats-empty">' + why + '</div></div>';
+    return;
+  }
+  const rows = defs.map((d, i) => ({id: i, nameHtml: '<span class="color-label">' + d.label + '</span>', count: buckets[i].albums, avg: statsCompAvg(buckets[i])}))
+    .filter(x => x.count);
+  const sel = rows.find(x => x.id === statsLengthSel) || rows.slice().sort((a, c) => c.count - a.count)[0];
+  html += statsRowsHtml(rows, sel.id, "setStatsLength", "Albums");
+  const b = buckets[sel.id];
+  const picks = b.list.slice().sort((a, c) => c.score - a.score || c.listens - a.listens).slice(0, STATS_EXAMPLES);
+  sized.sort((a, c) => c.v - a.v);
+  const longest = sized[0], shortest = sized[sized.length - 1];
+  html += '<div class="combo-summary">' +
+      '<span class="combo-title">' + defs[sel.id].label + '</span>' +
+      '<span class="stats-readout"><b>' + b.albums + '</b> albums · avg <b>' + statsFmt(statsCompAvg(b)) + '</b></span>' +
+    '</div>' +
+    '<div class="stats-legend">' + statsLegendHtml(b) + '</div>' +
+    '<div class="color-examples">' + picks.map(e => {
+      const v = mins ? albumMinutes(reviewKey(e.r.artist, e.r.title)) : albumTrackCount(e.r.artist, e.r.title);
+      return statsCoverHtml(e.r.artist, e.r.title, fmt(v) + (e.score ? " · score " + e.score.toFixed(1) : ""));
+    }).join("") + '</div>' +
+    (sized.length > 1 ? '<div class="genre-note">Longest: ' + escapeHtml(longest.r.title) + ' (' + fmt(longest.v) + ') · ' +
+      'Shortest: ' + escapeHtml(shortest.r.title) + ' (' + fmt(shortest.v) + ')</div>' : '');
   host.innerHTML = html + '</div>';
 }
 
@@ -4742,20 +5228,33 @@ function renderStats(){
       '<button class="count-btn' + (statsSpan === "year" ? ' active' : '') + '" onclick="setStatsSpan(\'year\')">Year</button>' +
       '<button class="count-btn' + (statsSpan === "decade" ? ' active' : '') + '" onclick="setStatsSpan(\'decade\')">Decade</button>' +
     '</div>' +
-    '<div id="statsTimeline"></div><div id="statsColors"></div><div id="statsSubjects"></div><div id="statsTaste"></div>';
+    '<div id="statsTimeline"></div><div id="statsWeeks"></div><div id="statsColors"></div><div id="statsGenres"></div>' +
+    '<div id="statsVibes"></div><div id="statsArtists"></div><div id="statsLength"></div><div id="statsTaste"></div>';
+  statsKnownTracks = null;
+  const model = statsWeekModel();
   fillStatsTimeline();
+  fillStatsWeeks(model);
   fillStatsColors();
-  fillStatsSubjects();
+  fillStatsGenres();
+  fillStatsVibes();
+  fillStatsArtists(model);
+  fillStatsLength(model);
   fillStatsTaste();
   statsReadCovers(reviews);
-  statsReadSubjects(reviews, false);
   statsFetchTaste(reviews);
+  statsFetchLengths(model);
+  // Covers for albums you've heard but not logged, so the week's picks aren't blank squares.
+  const bare = [];
+  model.weeks.slice(-STATS_WEEKS_SHOWN).forEach(x => x.albums.forEach(a => {
+    if(!a.r && !cachedCoverUrl(a.artist, a.title)) bare.push({artist: a.artist, title: a.title});
+  }));
+  if(bare.length) hydrateMissingCovers(bare);
 }
 let statsResizeTimer = null;
 window.addEventListener("resize", () => {
   if(section !== "stats") return;
   clearTimeout(statsResizeTimer);
-  statsResizeTimer = setTimeout(fillStatsTimeline, 150);
+  statsResizeTimer = setTimeout(() => { fillStatsTimeline(); fillStatsWeeks(statsWeekModel()); }, 150);
 });
 
 /* ---------- DASHBOARD ---------- */
@@ -6242,7 +6741,8 @@ function compactSpotifyAlbumEntry(e){
     // The cover's one to three colours, packed into one integer (packCoverColors) — at most
     // 8 digits, and it evicts with the cover it describes. Older builds' h and c are dropped.
     if(e.colors !== undefined && e.colors !== null) out.o = e.colors;
-    // What the cover shows: one COVER_SUBJECTS index, a single digit.
+    // What the cover shows: one subject index, a single digit. Its Stats card is parked in
+    // removed/cover-subjects.js; the reading is still kept so it comes back if that does.
     if(e.subject !== undefined && e.subject !== null) out.p = e.subject;
     return out;
   }
@@ -7871,7 +8371,7 @@ function drawStillFrame(canvas, url){
 }
 
 /* ---------- INIT ---------- */
-populateListSelector();
+setListTitle();
 render();
 syncTabBall();
 handleSpotifyCallback();
